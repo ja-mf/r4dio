@@ -3,6 +3,8 @@ name: Build All Platforms
 on:
   push:
     branches: [main]
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 # IMPORTANT: Grant write permissions for releases
