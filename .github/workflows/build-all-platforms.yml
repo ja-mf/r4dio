@@ -268,20 +268,25 @@ jobs:
     runs-on: macos-13
     steps:
       - uses: actions/checkout@v4
-      - run: mkdir -p dist/Radio\ TUI.app/Contents/MacOS
+      - run: mkdir -p dist/Radio\ TUI.app/Contents/MacOS dist/artifacts
       
       - uses: actions/download-artifact@v4
         with:
           name: vibra-macos-intel
-          path: dist/Radio\ TUI.app/Contents/MacOS/
+          path: dist/artifacts/vibra/
       
       - uses: actions/download-artifact@v4
         with:
           name: radio-tui-macos-intel
-          path: dist/Radio\ TUI.app/Contents/MacOS/
+          path: dist/artifacts/radio/
       
       - name: Setup app bundle
         run: |
+          # Find and move binaries (artifacts preserve directory structure)
+          find dist/artifacts -name "vibra" -type f -exec cp {} dist/Radio\ TUI.app/Contents/MacOS/ \;
+          find dist/artifacts -name "radio-tui" -type f -exec cp {} dist/Radio\ TUI.app/Contents/MacOS/ \;
+          find dist/artifacts -name "radio-daemon" -type f -exec cp {} dist/Radio\ TUI.app/Contents/MacOS/ \;
+          
           # Make binaries executable
           chmod +x dist/Radio\ TUI.app/Contents/MacOS/*
           
@@ -442,20 +447,25 @@ jobs:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
-      - run: mkdir -p dist/Radio\ TUI.app/Contents/MacOS
+      - run: mkdir -p dist/Radio\ TUI.app/Contents/MacOS dist/artifacts
       
       - uses: actions/download-artifact@v4
         with:
           name: vibra-macos-arm
-          path: dist/Radio\ TUI.app/Contents/MacOS/
+          path: dist/artifacts/vibra/
       
       - uses: actions/download-artifact@v4
         with:
           name: radio-tui-macos-arm
-          path: dist/Radio\ TUI.app/Contents/MacOS/
+          path: dist/artifacts/radio/
       
       - name: Setup app bundle
         run: |
+          # Find and move binaries (artifacts preserve directory structure)
+          find dist/artifacts -name "vibra" -type f -exec cp {} dist/Radio\ TUI.app/Contents/MacOS/ \;
+          find dist/artifacts -name "radio-tui" -type f -exec cp {} dist/Radio\ TUI.app/Contents/MacOS/ \;
+          find dist/artifacts -name "radio-daemon" -type f -exec cp {} dist/Radio\ TUI.app/Contents/MacOS/ \;
+          
           # Make binaries executable
           chmod +x dist/Radio\ TUI.app/Contents/MacOS/*
           
