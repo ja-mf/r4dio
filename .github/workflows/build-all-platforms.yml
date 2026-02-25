@@ -231,7 +231,8 @@ jobs:
       
       - name: Install dependencies
         run: |
-          brew install cmake fftw libcurl pkg-config
+          brew install cmake fftw pkg-config
+          # curl is already installed on macOS, no need to install libcurl
       
       - name: Build vibra
         run: |
