@@ -1,0 +1,420 @@
+name: Build All Platforms
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  MPV_VERSION: "20260207"
+  MPV_COMMIT: "git-9ccd889"
+  FFMPEG_COMMIT: "git-c352a9ab0"
+
+jobs:
+  # ============================================================================
+  # WINDOWS BUILD
+  # ============================================================================
+  build-vibra-windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: BayernMuller/vibra
+          ref: main
+      - run: vcpkg install curl:x64-windows fftw3:x64-windows
+      - run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake"
+          cmake --build build --config Release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vibra-windows
+          path: build/cli/Release/vibra.exe
+
+  build-radio-tui-windows:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - run: cargo install cargo-xwin
+      - run: cargo xwin build --target x86_64-pc-windows-msvc --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: radio-tui-windows
+          path: |
+            target/x86_64-pc-windows-msvc/release/radio-tui.exe
+            target/x86_64-pc-windows-msvc/release/radio-daemon.exe
+
+  package-windows:
+    needs: [build-vibra-windows, build-radio-tui-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: mkdir -p dist/radio-tui-windows
+      
+      - uses: actions/download-artifact@v4
+        with:
+          name: vibra-windows
+          path: dist/radio-tui-windows/
+      
+      - uses: actions/download-artifact@v4
+        with:
+          name: radio-tui-windows
+          path: dist/radio-tui-windows/
+      
+      - run: |
+          cd dist/radio-tui-windows
+          wget -q "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/${{ env.MPV_VERSION }}/mpv-x86_64-${{ env.MPV_COMMIT }}-${{ env.MPV_VERSION }}.7z" -O mpv.7z
+          7z x mpv.7z -y && rm mpv.7z
+          wget -q "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/${{ env.MPV_VERSION }}/ffmpeg-x86_64-${{ env.FFMPEG_COMMIT }}-${{ env.MPV_VERSION }}.7z" -O ffmpeg.7z
+          7z x ffmpeg.7z -y && rm ffmpeg.7z
+      
+      - run: |
+          cp songs.vds.template dist/radio-tui-windows/songs.vds
+          cp stations.toml dist/radio-tui-windows/
+      
+      - run: |
+          cat > dist/radio-tui-windows/config.toml << 'EOF'
+          # Radio TUI Configuration (Windows Portable)
+          [daemon]
+          [http]
+          enabled = true
+          bind_address = "127.0.0.1"
+          port = 8989
+          [mpv]
+          default_volume = 0.5
+          [stations]
+          stations_toml = "stations.toml"
+          m3u_url = "https://raw.githubusercontent.com/ja-mf/radio-curation/refs/heads/main/jamf_radios.m3u"
+          EOF
+      
+      - run: |
+          cat > dist/radio-tui-windows/README.txt << 'EOF'
+          Radio TUI for Windows
+          =======================
+          
+          A terminal-based internet radio player.
+          
+          USAGE
+          -----
+          1. Run radio.exe
+          2. Navigate with arrow keys
+          3. Enter to play, Space to pause
+          4. Press 'r' to recognize songs
+          5. Press 'q' to quit
+          
+          FILES
+          -----
+          - radio.exe, radio-daemon.exe, mpv.exe, vibra.exe
+          - stations.toml, config.toml, songs.vds
+          
+          REQUIREMENTS
+          ------------
+          - Windows 10/11
+          - No installation required
+          EOF
+      
+      - run: |
+          cat > dist/radio-tui-windows/radio.bat << 'EOF'
+          @echo off
+          cd /d "%~dp0"
+          "%~dp0radio.exe"
+          EOF
+      
+      - run: cd dist && zip -r radio-tui-windows.zip radio-tui-windows/
+      
+      - uses: actions/upload-artifact@v4
+        with:
+          name: radio-tui-windows-complete
+          path: dist/radio-tui-windows.zip
+
+  # ============================================================================
+  # LINUX BUILD
+  # ============================================================================
+  build-radio-tui-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: radio-tui-linux
+          path: |
+            target/release/radio-tui
+            target/release/radio-daemon
+
+  package-linux:
+    needs: [build-radio-tui-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: mkdir -p dist/radio-tui-linux
+      
+      - uses: actions/download-artifact@v4
+        with:
+          name: radio-tui-linux
+          path: dist/radio-tui-linux/
+      
+      - run: |
+          chmod +x dist/radio-tui-linux/radio-tui
+          chmod +x dist/radio-tui-linux/radio-daemon
+          cp songs.vds.template dist/radio-tui-linux/songs.vds
+          cp stations.toml dist/radio-tui-linux/
+      
+      - run: |
+          cat > dist/radio-tui-linux/README.md << 'EOF'
+          # Radio TUI for Linux
+          
+          A terminal-based internet radio player.
+          
+          ## Installation
+          
+          1. Extract the archive
+          2. Ensure MPV is installed: `sudo apt install mpv` (or your package manager)
+          3. Run: `./radio-tui`
+          
+          ## Usage
+          
+          - Navigate with arrow keys
+          - Enter to play, Space to pause
+          - 'r' to recognize songs (requires vibra - build separately)
+          - 'q' to quit
+          
+          ## Files
+          
+          - radio-tui, radio-daemon - Main binaries
+          - stations.toml - Station list
+          - songs.vds - Song database
+          
+          ## Requirements
+          
+          - Linux with terminal
+          - MPV installed system-wide
+          - Optional: Vibra for song recognition (https://github.com/BayernMuller/vibra)
+          EOF
+      
+      - run: |
+          cat > dist/radio-tui-linux/install.sh << 'EOF'
+          #!/bin/bash
+          # Install radio-tui to /usr/local/bin
+          
+          set -e
+          
+          echo "Installing Radio TUI..."
+          sudo cp radio-tui radio-daemon /usr/local/bin/
+          echo "Creating config directory..."
+          mkdir -p ~/.config/radio
+          cp stations.toml ~/.config/radio/ 2>/dev/null || true
+          echo "Done! Run: radio-tui"
+          EOF
+          chmod +x dist/radio-tui-linux/install.sh
+      
+      - run: cd dist && tar czf radio-tui-linux.tar.gz radio-tui-linux/
+      
+      - uses: actions/upload-artifact@v4
+        with:
+          name: radio-tui-linux-complete
+          path: dist/radio-tui-linux.tar.gz
+
+  # ============================================================================
+  # MACOS BUILD
+  # ============================================================================
+  build-vibra-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: BayernMuller/vibra
+          ref: main
+      
+      - name: Install dependencies
+        run: |
+          brew install cmake fftw libcurl pkg-config
+      
+      - name: Build vibra
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release
+      
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vibra-macos
+          path: build/cli/vibra
+
+  build-radio-tui-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: radio-tui-macos
+          path: |
+            target/release/radio-tui
+            target/release/radio-daemon
+
+  package-macos:
+    needs: [build-vibra-macos, build-radio-tui-macos]
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: mkdir -p dist/Radio\ TUI.app/Contents/MacOS dist/Radio\ TUI.app/Contents/Resources
+      
+      - uses: actions/download-artifact@v4
+        with:
+          name: vibra-macos
+          path: dist/Radio\ TUI.app/Contents/MacOS/
+      
+      - uses: actions/download-artifact@v4
+        with:
+          name: radio-tui-macos
+          path: dist/Radio\ TUI.app/Contents/MacOS/
+      
+      - run: |
+          chmod +x dist/Radio\ TUI.app/Contents/MacOS/*
+          cp songs.vds.template dist/Radio\ TUI.app/Contents/MacOS/songs.vds
+          cp stations.toml dist/Radio\ TUI.app/Contents/MacOS/
+      
+      - run: |
+          cat > dist/Radio\ TUI.app/Contents/Info.plist << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleName</key>
+              <string>Radio TUI</string>
+              <key>CFBundleDisplayName</key>
+              <string>Radio TUI</string>
+              <key>CFBundleIdentifier</key>
+              <string>com.jamf.radio-tui</string>
+              <key>CFBundleVersion</key>
+              <string>1.0</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+              <key>CFBundleExecutable</key>
+              <string>launcher</string>
+              <key>LSUIElement</key>
+              <false/>
+          </dict>
+          </plist>
+          EOF
+      
+      - run: |
+          cat > dist/Radio\ TUI.app/Contents/MacOS/launcher << 'EOF'
+          #!/bin/bash
+          # Launcher script that opens Terminal and runs radio-tui
+          
+          APP_DIR="$(cd "$(dirname "$0")" && pwd)"
+          
+          osascript << APPLESCRIPT
+          tell application "Terminal"
+              activate
+              do script "cd '\"$APP_DIR\"' && ./radio-tui; exit"
+          end tell
+          APPLESCRIPT
+          EOF
+          chmod +x dist/Radio\ TUI.app/Contents/MacOS/launcher
+      
+      - run: |
+          cat > dist/Radio\ TUI.app/Contents/MacOS/config.toml << 'EOF'
+          # Radio TUI Configuration (macOS)
+          [daemon]
+          [http]
+          enabled = true
+          bind_address = "127.0.0.1"
+          port = 8989
+          [mpv]
+          default_volume = 0.5
+          [stations]
+          stations_toml = "stations.toml"
+          m3u_url = "https://raw.githubusercontent.com/ja-mf/radio-curation/refs/heads/main/jamf_radios.m3u"
+          EOF
+      
+      - run: |
+          cat > dist/README-macOS.txt << 'EOF'
+          Radio TUI for macOS
+          =====================
+          
+          INSTALLATION
+          ------------
+          1. Extract Radio TUI.app from the DMG
+          2. Drag Radio TUI.app to your Applications folder
+          3. Double-click to launch (opens in Terminal)
+          
+          USAGE
+          -----
+          - Navigate with arrow keys
+          - Enter to play, Space to pause
+          - 'r' to recognize songs
+          - 'q' to quit
+          
+          LAUNCHING FROM SPOTLIGHT
+          -------------------------
+          Press Cmd+Space, type "Radio TUI", press Enter
+          
+          REQUIREMENTS
+          ------------
+          - macOS 11.0 or later
+          - MPV installed: brew install mpv
+          - Terminal.app (standard macOS terminal)
+          
+          TROUBLESHOOTING
+          ---------------
+          If "Radio TUI can't be opened":
+          1. Right-click the app and select "Open"
+          2. Or go to System Preferences > Security & Privacy > Open Anyway
+          EOF
+      
+      - run: |
+          # Create a simple DMG
+          hdiutil create -volname "Radio TUI" -srcfolder dist/Radio\ TUI.app -ov -format UDZO dist/Radio-TUI-macOS.dmg
+      
+      - uses: actions/upload-artifact@v4
+        with:
+          name: radio-tui-macos-complete
+          path: |
+            dist/Radio-TUI-macOS.dmg
+            dist/README-macOS.txt
+
+  # ============================================================================
+  # CREATE RELEASE
+  # ============================================================================
+  release:
+    needs: [package-windows, package-linux, package-macos]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+      
+      - uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            radio-tui-windows-complete/radio-tui-windows.zip
+            radio-tui-linux-complete/radio-tui-linux.tar.gz
+            radio-tui-macos-complete/Radio-TUI-macOS.dmg
+          body: |
+            Radio TUI - Terminal Radio Player
+            
+            ## Downloads
+            
+            - **Windows**: `radio-tui-windows.zip` - Extract and run `radio.exe`
+            - **Linux**: `radio-tui-linux.tar.gz` - Extract and run `./radio-tui`
+            - **macOS**: `Radio-TUI-macOS.dmg` - Mount and copy to Applications
+            
+            ## Features
+            - Terminal-based radio player
+            - MPV backend for audio playback
+            - Vibra integration for song recognition (Windows/macOS)
+            - Portable - no installation required (Windows)
+            
+            ## Quick Start
+            1. Launch the application
+            2. Navigate stations with arrow keys
+            3. Enter to play, Space to pause
+            4. 'r' to recognize and save songs
+            5. 'q' to quit
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
