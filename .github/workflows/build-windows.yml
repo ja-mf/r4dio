@@ -1,0 +1,44 @@
+name: Build Windows Release
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  build-vibra:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: BayernMuller/vibra
+          ref: main
+      
+      - name: Install dependencies
+        run: vcpkg install curl:x64-windows fftw3:x64-windows
+      
+      - name: Build vibra
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake"
+          cmake --build build --config Release
+      
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vibra-windows
+          path: build/cli/Release/*.exe
+  build-radio-tui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      
+      - run: cargo install cargo-xwin
+      
+      - name: Build
+        run: cargo xwin build --target x86_64-pc-windows-msvc --release
+      
+      - uses: actions/upload-artifact@v4
+        with:
+          name: radio-tui-windows
+          path: target/x86_64-pc-windows-msvc/release/*.exe
