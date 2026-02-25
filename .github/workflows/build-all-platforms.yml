@@ -5,8 +5,17 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# IMPORTANT: Grant write permissions for releases
+permissions:
+  contents: write
+  actions: read
+
 env:
   MPV_VERSION: "20260207"
+  MPV_COMMIT: "git-9ccd889"
+  FFMPEG_COMMIT: "git-c352a9ab0"
+
+jobs:
   MPV_COMMIT: "git-9ccd889"
   FFMPEG_COMMIT: "git-c352a9ab0"
 
