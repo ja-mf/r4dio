@@ -267,23 +267,28 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: vibra-macos
-          path: dist/Radio\ TUI.app/Contents/MacOS/
+          path: dist/vibra/
       
       - uses: actions/download-artifact@v4
         with:
           name: radio-tui-macos
-          path: dist/Radio\ TUI.app/Contents/MacOS/
+          path: dist/radio/
       
       - name: Setup app bundle files
         run: |
-          # List what we downloaded for debugging
-          echo "Contents of MacOS directory:"
-          ls -la dist/Radio\ TUI.app/Contents/MacOS/
+          # Debug: list what we downloaded
+          echo "Downloaded vibra:"
+          ls -la dist/vibra/
+          echo "Downloaded radio:"
+          ls -la dist/radio/
+          
+          # Move files to app bundle
+          mv dist/vibra/vibra dist/Radio\ TUI.app/Contents/MacOS/
+          mv dist/radio/radio-tui dist/Radio\ TUI.app/Contents/MacOS/
+          mv dist/radio/radio-daemon dist/Radio\ TUI.app/Contents/MacOS/
           
           # Make binaries executable
-          chmod +x dist/Radio\ TUI.app/Contents/MacOS/radio-tui
-          chmod +x dist/Radio\ TUI.app/Contents/MacOS/radio-daemon
-          chmod +x dist/Radio\ TUI.app/Contents/MacOS/vibra
+          chmod +x dist/Radio\ TUI.app/Contents/MacOS/*
           
           # Copy config files
           cp songs.vds.template dist/Radio\ TUI.app/Contents/MacOS/songs.vds
