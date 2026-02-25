@@ -1,0 +1,54 @@
+[package]
+name = "radio-tui"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "radio-daemon"
+path = "src/daemon/main.rs"
+
+[[bin]]
+name = "radio-tui"
+path = "src/tui/main.rs"
+
+[dependencies]
+# Core
+tokio = { version = "1.35", features = ["rt-multi-thread", "macros", "process", "time", "io-std", "sync", "net", "fs"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+anyhow = "1.0"
+thiserror = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Config
+toml = "0.8"
+dirs = "5.0"
+
+# HTTP API
+axum = "0.7"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors"] }
+
+# TUI
+ratatui = "0.25"
+crossterm = "0.27"
+
+# Radio metadata fetching
+reqwest = { version = "0.11", features = ["json"] }
+
+# Random
+rand = "0.8"
+
+# Date/time formatting for ticker timestamps
+chrono = { version = "0.4", features = ["serde"] }
+
+[target.'cfg(windows)'.dependencies]
+tokio = { version = "1.35", features = ["rt-multi-thread", "macros", "process", "time", "io-std", "sync", "net", "fs", "windows-sys"] }
+
+[profile.release]
+opt-level = 's'
+lto = true
+codegen-units = 1
+strip = true
+panic = 'abort'

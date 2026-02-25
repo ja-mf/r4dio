@@ -1,0 +1,31 @@
+# Build artifacts
+/target/
+*.exe
+*.dll
+*.pdb
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data files (user-specific)
+/config/
+*.vds
+*.log
+
+# But keep dist/ for releases
+!dist/
+
+# Chrome and browser data
+.config/
+.google-chrome/
+'**.config/google-chrome/**'
+'*/.config/google-chrome/**'
+'**/.config/google-chrome/**'

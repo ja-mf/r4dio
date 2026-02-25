@@ -1,0 +1,835 @@
+# radio-tui station list
+# Fields:
+#   name        – display name
+#   url         – stream URL
+#   network     – parent brand/network (e.g. "NTS", "SomaFM", "BBC")
+#   description – one-line blurb
+#   tags        – searchable keywords
+#   city        – city (optional)
+#   country     – country (optional)
+
+# ── Chile ─────────────────────────────────────────────────────────────────────
+
+[[station]]
+name        = "Radio Valentin Letelier"
+url         = "https://streaming.prositel.cl/8068/stream"
+network     = "Universidad de Chile"
+description = "Cultural radio from the University of Chile — news, arts, academia"
+tags        = ["talk", "culture", "academia", "news", "spanish", "latin america"]
+city        = "Santiago"
+country     = "Chile"
+
+[[station]]
+name        = "Radio Universidad de Chile"
+url         = "https://sonic-us.arkeo.cl/8186/stream"
+network     = "Universidad de Chile"
+description = "Flagship public radio of Universidad de Chile — journalism, culture, classical"
+tags        = ["talk", "culture", "classical", "news", "spanish", "latin america", "university"]
+city        = "Santiago"
+country     = "Chile"
+
+# ── Australia ─────────────────────────────────────────────────────────────────
+
+[[station]]
+name        = "FBI Radio"
+url         = "https://streamer.fbiradio.com/stream"
+network     = "FBI"
+description = "Independent community radio championing local Australian music"
+tags        = ["indie", "alternative", "local music", "community", "eclectic"]
+city        = "Sydney"
+country     = "Australia"
+
+[[station]]
+name        = "Skid Row Radio"
+url         = "https://28803.live.streamtheworld.com/2RSRAAC.aac"
+network     = "2RRR"
+description = "Community broadcaster for western Sydney — music, talk, diversity"
+tags        = ["community", "talk", "eclectic", "local music"]
+city        = "Sydney"
+country     = "Australia"
+
+# ── France ────────────────────────────────────────────────────────────────────
+
+[[station]]
+name        = "Big Cactus County"
+url         = "https://radio10.pro-fhi.net/radio/9038/stream.mp3"
+network     = "Big Cactus"
+description = "French country and Americana radio"
+tags        = ["country", "americana", "roots", "french"]
+city        = "Paris"
+country     = "France"
+
+[[station]]
+name        = "FIP"
+url         = "https://icecast.radiofrance.fr/fip-midfi.mp3"
+network     = "Radio France"
+description = "Eclectic public radio mixing jazz, world, pop and rock with minimal DJ chat"
+tags        = ["eclectic", "jazz", "world", "pop", "rock", "public radio"]
+city        = "Paris"
+country     = "France"
+
+[[station]]
+name        = "France Musique"
+url         = "https://icecast.radiofrance.fr/francemusique-midfi.mp3"
+network     = "Radio France"
+description = "24/7 classical and contemporary music from Radio France"
+tags        = ["classical", "contemporary", "opera", "public radio"]
+city        = "Paris"
+country     = "France"
+
+[[station]]
+name        = "France Culture"
+url         = "https://icecast.radiofrance.fr/franceculture-midfi.mp3"
+network     = "Radio France"
+description = "Talk, philosophy, literature and arts from Radio France"
+tags        = ["talk", "culture", "philosophy", "literature", "documentary", "public radio"]
+city        = "Paris"
+country     = "France"
+
+[[station]]
+name        = "Radio Nova"
+url         = "https://novazz.ice.infomaniak.ch/novazz-128.mp3"
+network     = "Radio Nova"
+description = "Legendary French independent mixing funk, soul, world, jazz and hip-hop"
+tags        = ["funk", "soul", "world", "jazz", "hip-hop", "eclectic", "independent"]
+city        = "Paris"
+country     = "France"
+
+# ── Belgium ───────────────────────────────────────────────────────────────────
+
+[[station]]
+name        = "Lyl.live"
+url         = "https://icecast.lyl.live/live"
+network     = "Lyl Radio"
+description = "Brussels-based underground radio — live DJ sets, experimental and dance"
+tags        = ["experimental", "electronic", "dance", "dj sets", "underground", "live"]
+city        = "Brussels"
+country     = "Belgium"
+
+# ── UK ────────────────────────────────────────────────────────────────────────
+
+[[station]]
+name        = "NTS 1"
+url         = "https://stream-relay-geo.ntslive.net/stream"
+network     = "NTS"
+description = "NTS channel 1 — live broadcasts, eclectic music and culture from London"
+tags        = ["eclectic", "live", "experimental", "culture", "london"]
+city        = "London"
+country     = "UK"
+
+[[station]]
+name        = "NTS 2"
+url         = "https://stream-relay-geo.ntslive.net/stream2"
+network     = "NTS"
+description = "NTS channel 2 — second live stream running simultaneously"
+tags        = ["eclectic", "live", "experimental", "culture", "london"]
+city        = "London"
+country     = "UK"
+
+[[station]]
+name        = "NTS: Slow Focus"
+url         = "https://stream-mixtape-geo.ntslive.net/mixtape"
+network     = "NTS"
+description = "Meditative, slow-tempo sounds — ambient, drone, minimalism"
+tags        = ["ambient", "drone", "meditation", "slow", "minimalism", "nts mixtape"]
+city        = "London"
+country     = "UK"
+
+[[station]]
+name        = "NTS: Labyrinth"
+url         = "https://stream-mixtape-geo.ntslive.net/mixtape31"
+network     = "NTS"
+description = "Enter the void — dark, psychedelic and experimental music"
+tags        = ["experimental", "psychedelic", "dark", "avant-garde", "nts mixtape"]
+city        = "London"
+country     = "UK"
+
+[[station]]
+name        = "NTS: Expansions"
+url         = "https://stream-mixtape-geo.ntslive.net/mixtape3"
+network     = "NTS"
+description = "Jazz and spiritual jazz in the tradition of Lonnie Liston Smith"
+tags        = ["jazz", "spiritual jazz", "soul jazz", "nts mixtape"]
+city        = "London"
+country     = "UK"
+
+[[station]]
+name        = "NTS: Sheet Music"
+url         = "https://stream-mixtape-geo.ntslive.net/mixtape35"
+network     = "NTS"
+description = "Classical music curated by NTS"
+tags        = ["classical", "chamber", "orchestral", "nts mixtape"]
+city        = "London"
+country     = "UK"
+
+[[station]]
+name        = "NTS: Field Recordings"
+url         = "https://stream-mixtape-geo.ntslive.net/mixtape23"
+network     = "NTS"
+description = "Sounds from the world — environmental audio and field recordings"
+tags        = ["field recordings", "ambient", "nature", "sound art", "nts mixtape"]
+city        = "London"
+country     = "UK"
+
+[[station]]
+name        = "NTS: Island Time"
+url         = "https://stream-mixtape-geo.ntslive.net/mixtape21"
+network     = "NTS"
+description = "Tropical rhythms, island vibes — reggae, calypso, afrobeat"
+tags        = ["reggae", "calypso", "afrobeat", "tropical", "world", "nts mixtape"]
+city        = "London"
+country     = "UK"
+
+[[station]]
+name        = "NTS: Feelings"
+url         = "https://stream-mixtape-geo.ntslive.net/mixtape27"
+network     = "NTS"
+description = "Deep soul and R&B from the NTS archive"
+tags        = ["soul", "r&b", "deep soul", "nts mixtape"]
+city        = "London"
+country     = "UK"
+
+[[station]]
+name        = "NTS: Lowkey"
+url         = "https://stream-mixtape-geo.ntslive.net/mixtape2"
+network     = "NTS"
+description = "Understated soul — late-night quiet storm vibes"
+tags        = ["soul", "quiet storm", "r&b", "late night", "nts mixtape"]
+city        = "London"
+country     = "UK"
+
+[[station]]
+name        = "NTS: Poolside"
+url         = "https://stream-mixtape-geo.ntslive.net/mixtape4"
+network     = "NTS"
+description = "Sunshine soul and breezy daytime grooves"
+tags        = ["soul", "funk", "breezy", "summer", "grooves", "nts mixtape"]
+city        = "London"
+country     = "UK"
+
+[[station]]
+name        = "NTS: Memory Lane"
+url         = "https://stream-mixtape-geo.ntslive.net/mixtape6"
+network     = "NTS"
+description = "Nostalgia and golden-era soul, pop and r&b"
+tags        = ["soul", "r&b", "nostalgia", "classic", "nts mixtape"]
+city        = "London"
+country     = "UK"
+
+[[station]]
+name        = "NTS: Sweat"
+url         = "https://stream-mixtape-geo.ntslive.net/mixtape24"
+network     = "NTS"
+description = "High-energy party music — dance, house, electro"
+tags        = ["party", "dance", "house", "electro", "high energy", "nts mixtape"]
+city        = "London"
+country     = "UK"
+
+[[station]]
+name        = "NTS: House"
+url         = "https://stream-mixtape-geo.ntslive.net/mixtape5"
+network     = "NTS"
+description = "Four to the floor — classic and contemporary house music"
+tags        = ["house", "dance", "electronic", "four-to-the-floor", "nts mixtape"]
+city        = "London"
+country     = "UK"
+
+[[station]]
+name        = "NTS: The Pit"
+url         = "https://stream-mixtape-geo.ntslive.net/mixtape34"
+network     = "NTS"
+description = "Heavy metal and extreme music"
+tags        = ["metal", "heavy metal", "hardcore", "extreme", "nts mixtape"]
+city        = "London"
+country     = "UK"
+
+[[station]]
+name        = "NTS: The Tube"
+url         = "https://stream-mixtape-geo.ntslive.net/mixtape26"
+network     = "NTS"
+description = "Oddball post-punk, new wave and leftfield guitar music"
+tags        = ["post-punk", "new wave", "alternative", "indie", "leftfield", "nts mixtape"]
+city        = "London"
+country     = "UK"
+
+[[station]]
+name        = "NTS: Xmas Crackers"
+url         = "https://stream-mixtape-geo.ntslive.net/mixtape32"
+network     = "NTS"
+description = "Festive sounds — seasonal music from the NTS archive"
+tags        = ["christmas", "festive", "seasonal", "nts mixtape"]
+city        = "London"
+country     = "UK"
+
+[[station]]
+name        = "Resonance FM"
+url         = "http://stream.resonance.fm:8000/resonance"
+network     = "Resonance FM"
+description = "Experimental art radio — radio art, sound and music from London"
+tags        = ["experimental", "art", "sound art", "avant-garde", "community"]
+city        = "London"
+country     = "UK"
+
+[[station]]
+name        = "Noods Radio"
+url         = "https://noods-radio.radiocult.fm/stream"
+network     = "Noods Radio"
+description = "Bristol's underground radio — eclectic DJ sets across all genres"
+tags        = ["eclectic", "underground", "dj sets", "electronic", "community"]
+city        = "Bristol"
+country     = "UK"
+
+[[station]]
+name        = "Worldwide FM"
+url         = "https://worldwide-fm.radiocult.fm/stream"
+network     = "Worldwide FM"
+description = "Gilles Peterson's global music radio — jazz, soul, world, hip-hop"
+tags        = ["jazz", "soul", "world", "hip-hop", "gilles peterson", "eclectic"]
+city        = "London"
+country     = "UK"
+
+[[station]]
+name        = "Jazz London Radio"
+url         = "http://radio.canstream.co.uk:8075/live.mp3"
+network     = "Jazz London Radio"
+description = "Contemporary and classic jazz from London"
+tags        = ["jazz", "contemporary jazz", "classic jazz"]
+city        = "London"
+country     = "UK"
+
+[[station]]
+name        = "Jazz FM"
+url         = "https://stream-al.hellorayo.co.uk/jazz.mp3"
+network     = "Jazz FM"
+description = "UK national jazz radio — jazz, soul, blues and funk"
+tags        = ["jazz", "soul", "blues", "funk"]
+city        = "London"
+country     = "UK"
+
+[[station]]
+name        = "Switch FM"
+url         = "https://stream.switchfm.co.uk/listen/switchfm/switchfm.mp3"
+network     = "Switch FM"
+description = "London community radio with eclectic mix"
+tags        = ["eclectic", "community", "london"]
+city        = "London"
+country     = "UK"
+
+[[station]]
+name        = "Cambridge Radio"
+url         = "https://stream.cambridge105.co.uk/105"
+network     = "Cambridge 105"
+description = "Local community radio for Cambridge"
+tags        = ["community", "local", "talk", "music"]
+city        = "Cambridge"
+country     = "UK"
+
+[[station]]
+name        = "Radio Skye"
+url         = "http://comet.shoutca.st:8338/live"
+network     = "Radio Skye"
+description = "Community radio from the Isle of Skye, Scotland"
+tags        = ["community", "local", "scotland"]
+city        = "Isle of Skye"
+country     = "UK"
+
+[[station]]
+name        = "Vectis Radio"
+url         = "http://stream.gointernet.co.uk:8004/live"
+network     = "Vectis Radio"
+description = "Community radio from the Isle of Wight"
+tags        = ["community", "local", "isle of wight"]
+city        = "Isle of Wight"
+country     = "UK"
+
+[[station]]
+name        = "BBC Radio 6 Music"
+url         = "http://as-hls-ww-live.akamaized.net/pool_81827798/live/ww/bbc_6music/bbc_6music.isml/bbc_6music-audio=320000.norewind.m3u8"
+network     = "BBC"
+description = "BBC's alternative and independent music station — the home of great music"
+tags        = ["alternative", "indie", "rock", "electronic", "public radio", "bbc"]
+city        = "London"
+country     = "UK"
+
+[[station]]
+name        = "BBC World Service"
+url         = "http://a.files.bbci.co.uk/media/live/manifesto/audio/simulcast/hls/nonuk/sbr_low/ak/bbc_world_service.m3u8"
+network     = "BBC"
+description = "Global news, analysis and features in English from the BBC"
+tags        = ["news", "talk", "world news", "documentary", "public radio", "bbc"]
+city        = "London"
+country     = "UK"
+
+# ── Spain / Catalonia ─────────────────────────────────────────────────────────
+
+[[station]]
+name        = "Catalunya Radio"
+url         = "https://directes-radio-int.3catdirectes.cat/live-content/catalunya-radio-hls/master.m3u8"
+network     = "Catalunya Radio"
+description = "Flagship public broadcaster of Catalonia — news, culture, sport in Catalan"
+tags        = ["catalan", "talk", "news", "culture", "public radio", "iberia"]
+city        = "Barcelona"
+country     = "Spain"
+
+[[station]]
+name        = "RAC1"
+url         = "https://playerservices.streamtheworld.com/api/livestream-redirect/RAC_1.mp3"
+network     = "RAC1"
+description = "Leading private Catalan-language radio — news, sport, talk"
+tags        = ["catalan", "talk", "news", "sport", "iberia"]
+city        = "Barcelona"
+country     = "Spain"
+
+[[station]]
+name        = "Juanito's local stream #1"
+url         = "http://localhost:11000/local1"
+network     = "Juanito Local"
+description = "Local Icecast channel 1 from Juanito"
+tags        = ["local", "barcelona", "personal", "icecast"]
+city        = "Barcelona"
+country     = "Spain"
+
+[[station]]
+name        = "Juanito's local stream #2"
+url         = "http://localhost:11000/local2"
+network     = "Juanito Local"
+description = "Local Icecast channel 2 from Juanito"
+tags        = ["local", "barcelona", "personal", "icecast"]
+city        = "Barcelona"
+country     = "Spain"
+
+[[station]]
+name        = "Juanito's local stream #3"
+url         = "http://localhost:11000/local3"
+network     = "Juanito Local"
+description = "Analog Africa + South America + rarities"
+tags        = ["local", "barcelona", "world", "latin", "africa", "rarities", "icecast"]
+city        = "Barcelona"
+country     = "Spain"
+
+[[station]]
+name        = "Juanito's local stream #4"
+url         = "http://localhost:11000/local4"
+network     = "Juanito Local"
+description = "Classic FLACs + good classics"
+tags        = ["local", "barcelona", "classics", "flac", "icecast"]
+city        = "Barcelona"
+country     = "Spain"
+
+[[station]]
+name        = "RNE Radio 3"
+url         = "https://rtvelivestream.rtve.es/rtvesec/rne/rne_r3_main.m3u8"
+network     = "RNE"
+description = "Spain's national alternative music and culture radio"
+tags        = ["alternative", "indie", "culture", "spanish", "public radio"]
+city        = "Madrid"
+country     = "Spain"
+
+# ── Germany ───────────────────────────────────────────────────────────────────
+
+[[station]]
+name        = "FSK Hamburg"
+url         = "https://streaming.fueralle.org/fsk.mp3"
+network     = "FSK"
+description = "Freies Sender Kombinat — Hamburg's non-commercial community radio since 1981"
+tags        = ["community", "talk", "eclectic", "non-commercial", "german", "alternative"]
+city        = "Hamburg"
+country     = "Germany"
+
+[[station]]
+name        = "MDR Kultur"
+url         = "https://mdr-284320-0.sslcast.mdr.de/mdr/284320/0/mp3/high/stream.mp3"
+network     = "MDR"
+description = "Central German public radio for culture, classical and arts"
+tags        = ["classical", "culture", "arts", "public radio", "german"]
+city        = "Leipzig"
+country     = "Germany"
+
+# ── Hungary ───────────────────────────────────────────────────────────────────
+
+[[station]]
+name        = "Tilos Radio"
+url         = "https://stream.tilos.hu/tilos_128.mp3"
+network     = "Tilos"
+description = "Budapest's legendary independent radio — eclectic, alternative, community"
+tags        = ["eclectic", "alternative", "community", "independent", "eastern europe"]
+city        = "Budapest"
+country     = "Hungary"
+
+# ── USA ───────────────────────────────────────────────────────────────────────
+
+[[station]]
+name        = "KEXP"
+url         = "https://live-aacplus-64.kexp.org/kexp64.aac"
+network     = "KEXP"
+description = "Seattle's listener-supported radio — champion of independent music"
+tags        = ["indie", "alternative", "rock", "electronic", "community", "eclectic"]
+city        = "Seattle"
+country     = "USA"
+
+[[station]]
+name        = "WFMU"
+url         = "http://stream0.wfmu.org/freeform-128k"
+network     = "WFMU"
+description = "Freeform radio from Jersey City — the most eclectic station in the world"
+tags        = ["freeform", "eclectic", "experimental", "avant-garde", "independent"]
+city        = "Jersey City"
+country     = "USA"
+
+[[station]]
+name        = "Dublab"
+url         = "https://dublab.out.airtime.pro/dublab_a"
+network     = "Dublab"
+description = "Non-profit radio from LA — future roots music, experimental, global sounds"
+tags        = ["experimental", "electronic", "world", "future roots", "non-profit", "eclectic"]
+city        = "Los Angeles"
+country     = "USA"
+
+[[station]]
+name        = "KCRW"
+url         = "https://streams.kcrw.com/kcrw_aac"
+network     = "KCRW"
+description = "Public radio from Santa Monica — news, music and arts"
+tags        = ["indie", "eclectic", "news", "public radio", "arts"]
+city        = "Los Angeles"
+country     = "USA"
+
+[[station]]
+name        = "KCRW Eclectic 24"
+url         = "https://streams.kcrw.com/e24_aac"
+network     = "KCRW"
+description = "KCRW's 24/7 music-only stream — no talk, pure eclectic programming"
+tags        = ["indie", "eclectic", "electronic", "world", "music only"]
+city        = "Los Angeles"
+country     = "USA"
+
+[[station]]
+name        = "The Lot Radio"
+url         = "https://livepeercdn.studio/hls/85c28sa2o8wppm58/index.m3u8"
+network     = "The Lot Radio"
+description = "Brooklyn's outdoor radio station — live DJ sets, all genres"
+tags        = ["dj sets", "electronic", "dance", "eclectic", "live", "community"]
+city        = "Brooklyn"
+country     = "USA"
+
+[[station]]
+name        = "Radio Paradise"
+url         = "http://stream.radioparadise.com/mp3-192"
+network     = "Radio Paradise"
+description = "Eclectic commercial-free radio — rock, world, indie, classical"
+tags        = ["eclectic", "rock", "world", "indie", "commercial-free"]
+city        = "Paradise"
+country     = "USA"
+
+[[station]]
+name        = "SomaFM: Sonic Universe"
+url         = "https://ice2.somafm.com/sonicuniverse-256-mp3"
+network     = "SomaFM"
+description = "Exploring music from the edges of the jazz universe"
+tags        = ["jazz", "fusion", "experimental jazz", "somafm"]
+city        = "San Francisco"
+country     = "USA"
+
+[[station]]
+name        = "SomaFM: Drone Zone"
+url         = "https://ice4.somafm.com/dronezone-256-mp3"
+network     = "SomaFM"
+description = "Served up in 256kbps — slow, heavy beats and ambience"
+tags        = ["drone", "ambient", "slow", "atmospheric", "somafm"]
+city        = "San Francisco"
+country     = "USA"
+
+[[station]]
+name        = "SomaFM: Deep Space One"
+url         = "https://ice2.somafm.com/deepspaceone-128-aac"
+network     = "SomaFM"
+description = "Deep ambient electronic, experimental and space music"
+tags        = ["ambient", "space", "electronic", "experimental", "somafm"]
+city        = "San Francisco"
+country     = "USA"
+
+[[station]]
+name        = "SomaFM: Space Station Soma"
+url         = "https://ice5.somafm.com/spacestation-128-mp3"
+network     = "SomaFM"
+description = "Experimental electronic, chillout and ambient — music for zero gravity"
+tags        = ["electronic", "ambient", "chillout", "experimental", "somafm"]
+city        = "San Francisco"
+country     = "USA"
+
+[[station]]
+name        = "SomaFM: Groove Salad"
+url         = "https://ice2.somafm.com/groovesalad-256-mp3"
+network     = "SomaFM"
+description = "A nicely chilled plate of ambient/downtempo beats and grooves"
+tags        = ["downtempo", "ambient", "chillout", "grooves", "beats", "somafm"]
+city        = "San Francisco"
+country     = "USA"
+
+[[station]]
+name        = "SomaFM: Underground 80s"
+url         = "https://ice4.somafm.com/u80s-256-mp3"
+network     = "SomaFM"
+description = "Early 80s UK indie and underground — post-punk, new wave, synth pop"
+tags        = ["80s", "post-punk", "new wave", "synth pop", "indie", "somafm"]
+city        = "San Francisco"
+country     = "USA"
+
+[[station]]
+name        = "SomaFM: Left Coast 70s"
+url         = "https://ice2.somafm.com/seventies-320-mp3"
+network     = "SomaFM"
+description = "Classic 70s west coast rock, soft rock and California sound"
+tags        = ["70s", "rock", "classic rock", "california", "somafm"]
+city        = "San Francisco"
+country     = "USA"
+
+[[station]]
+name        = "SomaFM: Boot Liquor"
+url         = "https://ice2.somafm.com/bootliquor-320-mp3"
+network     = "SomaFM"
+description = "Americana roots for cowhands, cowpokes and cowtippers"
+tags        = ["americana", "country", "roots", "western", "somafm"]
+city        = "San Francisco"
+country     = "USA"
+
+[[station]]
+name        = "SomaFM: Bossa Beyond"
+url         = "https://ice2.somafm.com/bossa-256-mp3"
+network     = "SomaFM"
+description = "Silky smooth Brazilian-style bossa nova, samba and beyond"
+tags        = ["bossa nova", "samba", "brazil", "latin", "jazz", "somafm"]
+city        = "San Francisco"
+country     = "USA"
+
+[[station]]
+name        = "SomaFM: Covers"
+url         = "https://ice4.somafm.com/covers-128-mp3"
+network     = "SomaFM"
+description = "Cover songs — songs you know by artists you don't"
+tags        = ["covers", "eclectic", "somafm"]
+city        = "San Francisco"
+country     = "USA"
+
+[[station]]
+name        = "SomaFM: Tiki Time"
+url         = "https://ice4.somafm.com/tikitime-256-mp3"
+network     = "SomaFM"
+description = "Classic tiki music and vintage island rhythms"
+tags        = ["tiki", "exotica", "vintage", "lounge", "island", "somafm"]
+city        = "San Francisco"
+country     = "USA"
+
+[[station]]
+name        = "SomaFM: Digitalis"
+url         = "https://ice4.somafm.com/digitalis-256-mp3"
+network     = "SomaFM"
+description = "Digitally affected analog rock to calm the agitated heart"
+tags        = ["indie rock", "alternative", "electronic", "post-rock", "somafm"]
+city        = "San Francisco"
+country     = "USA"
+
+[[station]]
+name        = "SomaFM: Vaporwaves"
+url         = "https://ice2.somafm.com/vaporwaves-128-mp3"
+network     = "SomaFM"
+description = "All vaporwave, all the time"
+tags        = ["vaporwave", "electronic", "lo-fi", "retro", "somafm"]
+city        = "San Francisco"
+country     = "USA"
+
+[[station]]
+name        = "Nightwave Plaza"
+url         = "http://radio.plaza.one/mp3"
+network     = "Nightwave Plaza"
+description = "24/7 vaporwave and future funk internet radio"
+tags        = ["vaporwave", "future funk", "lo-fi", "electronic", "internet radio"]
+country     = "USA"
+
+# ── Argentina ─────────────────────────────────────────────────────────────────
+
+[[station]]
+name        = "Radio Nacional Argentina"
+url         = "https://sa.mp3.icecast.magma.edge-access.net/sc_rad1"
+network     = "Radio Nacional"
+description = "Argentina's national public broadcaster — news, culture, music"
+tags        = ["talk", "news", "culture", "public radio", "spanish", "latin america"]
+city        = "Buenos Aires"
+country     = "Argentina"
+
+# ── Brazil ────────────────────────────────────────────────────────────────────
+
+[[station]]
+name        = "Radio Eldorado FM"
+url         = "https://eldoradolive01.akamaized.net/hls/live/2041487/eldorado/master.m3u8"
+network     = "Eldorado"
+description = "São Paulo's classic FM — news, jazz, MPB and culture"
+tags        = ["jazz", "mpb", "bossa nova", "news", "culture", "portuguese", "latin america"]
+city        = "São Paulo"
+country     = "Brazil"
+
+# ── Peru ──────────────────────────────────────────────────────────────────────
+
+[[station]]
+name        = "Doble Nueve Live"
+url         = "https://conectperu.com:7000/stream?icy=http"
+network     = "Doble Nueve"
+description = "Live radio from Lima"
+tags        = ["latin america", "spanish", "pop", "local"]
+city        = "Lima"
+country     = "Peru"
+
+[[station]]
+name        = "Filarmonía 102.7 FM"
+url         = "https://c22.radioboss.fm:18100/live"
+network     = "Filarmonía"
+description = "Classical and film music radio from Lima"
+tags        = ["classical", "film music", "orchestral", "latin america"]
+city        = "Lima"
+country     = "Peru"
+
+[[station]]
+name        = "Radio 1550"
+url         = "https://streaming.virtugo.digital:8002/stream"
+network     = "Radio 1550"
+description = "AM-heritage station from Huancayo broadcasting regionally"
+tags        = ["regional", "talk", "spanish", "latin america", "andean"]
+city        = "Huancayo"
+country     = "Peru"
+
+# ── Bolivia ───────────────────────────────────────────────────────────────────
+
+[[station]]
+name        = "Radio Estrella 93.1 FM"
+url         = "https://cesarradio.realserver.es/listen/lne_93.1/radio.mp3"
+network     = "Radio Estrella"
+description = "Popular music radio from Cochabamba"
+tags        = ["pop", "latin", "regional", "spanish", "latin america"]
+city        = "Cochabamba"
+country     = "Bolivia"
+
+[[station]]
+name        = "Quechua FM"
+url         = "https://stream-174.zeno.fm/e78z1h3drd0uv"
+network     = "Quechua FM"
+description = "Radio broadcasting in Quechua — indigenous Andean language and music"
+tags        = ["quechua", "indigenous", "andean", "latin america", "folk"]
+city        = "Cochabamba"
+country     = "Bolivia"
+
+[[station]]
+name        = "Radio Ritmo 97.3 FM"
+url         = "https://azura1.bitstreaming.net/listen/radio_ritmo/radio.aac"
+network     = "Radio Ritmo"
+description = "Rhythms and popular music from Cochabamba"
+tags        = ["pop", "cumbia", "latin", "regional", "spanish", "latin america"]
+city        = "Cochabamba"
+country     = "Bolivia"
+
+# ── Senegal ───────────────────────────────────────────────────────────────────
+
+[[station]]
+name        = "Dakar Musique"
+url         = "http://listen.senemultimedia.net:8090/stream"
+network     = "Sene Multimedia"
+description = "Music radio from Dakar — mbalax, afrobeats and Senegalese pop"
+tags        = ["mbalax", "afrobeats", "senegalese", "west africa", "african"]
+city        = "Dakar"
+country     = "Senegal"
+
+[[station]]
+name        = "Radio Thiossane"
+url         = "https://listen.senemultimedia.net:8112/stream"
+network     = "Sene Multimedia"
+description = "Senegalese culture radio — griot music, mbalax, traditional"
+tags        = ["mbalax", "griot", "traditional", "senegalese", "west africa", "african"]
+city        = "Dakar"
+country     = "Senegal"
+
+# ── Mali ──────────────────────────────────────────────────────────────────────
+
+[[station]]
+name        = "Radio Kledu 101.2"
+url         = "https://stream.zeno.fm/f38bxpt3v2quv"
+network     = "Radio Kledu"
+description = "Popular radio from Bamako — music and news in French and Bambara"
+tags        = ["west africa", "african", "bambara", "french", "pop", "news"]
+city        = "Bamako"
+country     = "Mali"
+
+# ── Ivory Coast ───────────────────────────────────────────────────────────────
+
+[[station]]
+name        = "Powermix FM"
+url         = "https://cast.iplayradio.net/listen/powermixfm/stream"
+network     = "Powermix FM"
+description = "Dance, afrobeats and electronic music from Abidjan"
+tags        = ["afrobeats", "dance", "electronic", "west africa", "african"]
+city        = "Abidjan"
+country     = "Ivory Coast"
+
+[[station]]
+name        = "Radio Jam"
+url         = "https://listen.radioking.com/radio/61201/stream/98566"
+network     = "Radio Jam"
+description = "Contemporary hits and Ivorian music from Abidjan"
+tags        = ["pop", "afrobeats", "ivorian", "west africa", "african"]
+city        = "Abidjan"
+country     = "Ivory Coast"
+
+[[station]]
+name        = "Africa Radio"
+url         = "https://africaradio.ice.infomaniak.ch/abidjan128.mp3"
+network     = "Africa Radio"
+description = "Pan-African contemporary music and news"
+tags        = ["afrobeats", "pop", "news", "pan-african", "african", "french"]
+city        = "Abidjan"
+country     = "Ivory Coast"
+
+# ── South Africa ──────────────────────────────────────────────────────────────
+
+[[station]]
+name        = "Tuks FM"
+url         = "http://edge.iono.fm/xice/tuksfm_live_medium.aac"
+network     = "Tuks FM"
+description = "University of Pretoria campus radio — alternative and student music"
+tags        = ["alternative", "indie", "student radio", "university", "south africa"]
+city        = "Pretoria"
+country     = "South Africa"
+
+[[station]]
+name        = "KAYA FM 95.9"
+url         = "http://edge.iono.fm/xhls/82_high.m3u8"
+network     = "KAYA FM"
+description = "Contemporary African music and lifestyle — for the black professional"
+tags        = ["afrobeats", "r&b", "soul", "african", "south africa", "contemporary"]
+city        = "Johannesburg"
+country     = "South Africa"
+
+[[station]]
+name        = "UbuntuFM"
+url         = "https://streaming.coollective.nl:8443/UbuntuFM"
+network     = "UbuntuFM"
+description = "Global African music radio — connecting Africa and the diaspora"
+tags        = ["african", "world", "afrobeats", "diaspora", "global"]
+country     = "South Africa"
+
+[[station]]
+name        = "Fine Music Radio"
+url         = "https://edge.iono.fm/xhls/fmr_live_high.m3u8"
+network     = "Fine Music Radio"
+description = "Classical, jazz and fine music from Cape Town"
+tags        = ["classical", "jazz", "fine music", "south africa"]
+city        = "Cape Town"
+country     = "South Africa"
+
+# ── DR Congo ──────────────────────────────────────────────────────────────────
+
+[[station]]
+name        = "Top Congo FM 88.4"
+url         = "http://topcongofm2.ice.infomaniak.ch/topcongofm2-64.mp3"
+network     = "Top Congo FM"
+description = "Kinshasa's leading FM station — rumba, soukous, Congolese pop"
+tags        = ["rumba", "soukous", "congolese", "central africa", "african", "french"]
+city        = "Kinshasa"
+country     = "DR Congo"

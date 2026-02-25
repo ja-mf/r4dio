@@ -1,0 +1,73 @@
+#EXTM3U
+#EXTINF:-1,Radio Valentin Letelier
+https://cast235.indax.cl/8026/stream
+#EXTINF:-1,FBI (Australia)
+https://streamer.fbiradio.com/stream
+#EXTINF:-1,Skid Row (Sydney)
+https://28803.live.streamtheworld.com/2RSRAAC.aac
+#EXTINF:-1,Big Cactus County (Country-Fr)
+https://radio10.pro-fhi.net/radio/9038/stream.mp3
+#EXTINF:-1,Lyl.live
+https://icecast.lyl.live/live
+#EXTINF:-1,NTS 1
+https://stream-relay-geo.ntslive.net/stream
+#EXTINF:-1,NTS 2
+https://stream-relay-geo.ntslive.net/stream2
+#EXTINF:-1,(NTS) Labyrinth (Enter the void)
+https://stream-mixtape-geo.ntslive.net/mixtape31
+#EXTINF:-1,(NTS) Expansions (jazz)
+https://stream-mixtape-geo.ntslive.net/mixtape3
+#EXTINF:-1,SomaFM: Sonic Universe (jazz)
+icyx://ice2.somafm.com/sonicuniverse-256-mp3
+#EXTINF:-1,(NTS) Sheet music (classical)
+https://stream-mixtape-geo.ntslive.net/mixtape35
+#EXTINF:-1,(NTS) Slow focus 
+https://stream-mixtape-geo.ntslive.net/mixtape
+#EXTINF:-1,SomaFM: Drone Zone
+icyx://ice4.somafm.com/dronezone-256-mp3
+#EXTINF:-1,SomaFM: Deep Space One
+icyx://ice2.somafm.com/deepspaceone-128-aac
+#EXTINF:-1,(NTS) Field recordings
+https://stream-mixtape-geo.ntslive.net/mixtape23
+#EXTINF:-1,(NTS) Xmas crackers
+https://stream-mixtape-geo.ntslive.net/mixtape32
+#EXTINF:-1,(NTS) Island time
+https://stream-mixtape-geo.ntslive.net/mixtape21
+#EXTINF:-1,(NTS) Feelings (soul)
+https://stream-mixtape-geo.ntslive.net/mixtape27
+#EXTINF:-1,(NTS) Low-key (soul)
+https://stream-mixtape-geo.ntslive.net/mixtape2
+#EXTINF:-1,SomaFM: Space Station Soma
+icyx://ice5.somafm.com/spacestation-128-mp3
+#EXTINF:-1,SomaFM: Groove Salad
+icyx://ice2.somafm.com/groovesalad-256-mp3
+#EXTINF:-1,(NTS) Pool-side (soul)
+https://stream-mixtape-geo.ntslive.net/mixtape4
+#EXTINF:-1,(NTS) Memory Lane
+https://stream-mixtape-geo.ntslive.net/mixtape6
+#EXTINF:-1,SomaFM: Underground 80s
+icyx://ice4.somafm.com/u80s-256-mp3
+#EXTINF:-1,SomaFM: Left Coast 70s
+icyx://ice2.somafm.com/seventies-320-mp3
+#EXTINF:-1,(NTS) Sweat (party music)
+https://stream-mixtape-geo.ntslive.net/mixtape24
+#EXTINF:-1,(NTS) House (4 to the floor)
+https://stream-mixtape-geo.ntslive.net/mixtape5
+#EXTINF:-1,(NTS) The Pit (metal)
+https://stream-mixtape-geo.ntslive.net/mixtape34
+#EXTINF:-1,(NTS) The Tube (oddball postpunk)
+https://stream-mixtape-geo.ntslive.net/mixtape26
+#EXTINF:-1,SomaFM: Boot Liquor: Americana Roots music for Cowhands,Cowpokes and Cowtippers
+icyx://ice2.somafm.com/bootliquor-320-mp3
+#EXTINF:-1,SomaFM: Bossa Beyond (Special): Silky-smooth,laid-back Brazilian-style rhythms of Bossa Nova,Samba and beyond
+icyx://ice2.somafm.com/bossa-256-mp3
+#EXTINF:-1,SomaFM: Covers: Just covers. Songs you know by artists you don't. We've got you covered.
+icyx://ice4.somafm.com/covers-128-mp3
+#EXTINF:-1,SomaFM: Tiki Time (Special): Classic Tiki music and Vintage island rhythms to sip cocktails by.
+icyx://ice4.somafm.com/tikitime-256-mp3
+#EXTINF:-1,SomaFM: Digitalis: Digitally affected analog rock to calm the agitated heart.
+icyx://ice4.somafm.com/digitalis-256-mp3
+#EXTINF:-1,SomaFM: Vaporwaves: All Vaporwave. All the time.
+icyx://ice2.somafm.com/vaporwaves-128-mp3
+#EXTINF:-1,Nightwave Plaza 
+http://radio.plaza.one/mp3
