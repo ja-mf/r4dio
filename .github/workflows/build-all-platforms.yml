@@ -63,10 +63,14 @@ jobs:
           name: radio-tui-windows
           path: dist/radio-tui-windows/
       
-      - run: |
+      - name: Download MPV and FFmpeg
+        run: |
           cd dist/radio-tui-windows
-          wget -q "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/${{ env.MPV_VERSION }}/mpv-x86_64-${{ env.MPV_COMMIT }}-${{ env.MPV_VERSION }}.7z" -O mpv.7z
+          # Download MPV - note the date comes before the commit in the filename
+          wget -q "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/${{ env.MPV_VERSION }}/mpv-x86_64-${{ env.MPV_VERSION }}-${{ env.MPV_COMMIT }}.7z" -O mpv.7z || \
+            wget -q "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/${{ env.MPV_VERSION }}/mpv-x86_64-${{ env.MPV_COMMIT }}-${{ env.MPV_VERSION }}.7z" -O mpv.7z
           7z x mpv.7z -y && rm mpv.7z
+          # Download FFmpeg
           wget -q "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/${{ env.MPV_VERSION }}/ffmpeg-x86_64-${{ env.FFMPEG_COMMIT }}-${{ env.MPV_VERSION }}.7z" -O ffmpeg.7z
           7z x ffmpeg.7z -y && rm ffmpeg.7z
       
