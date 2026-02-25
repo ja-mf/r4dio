@@ -63,16 +63,17 @@ jobs:
           name: radio-tui-windows
           path: dist/radio-tui-windows/
       
-      - name: Download MPV and FFmpeg
+      - name: Download MPV
         run: |
           cd dist/radio-tui-windows
-          # Download MPV - note the date comes before the commit in the filename
+          # Download MPV - try both URL formats
           wget -q "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/${{ env.MPV_VERSION }}/mpv-x86_64-${{ env.MPV_VERSION }}-${{ env.MPV_COMMIT }}.7z" -O mpv.7z || \
             wget -q "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/${{ env.MPV_VERSION }}/mpv-x86_64-${{ env.MPV_COMMIT }}-${{ env.MPV_VERSION }}.7z" -O mpv.7z
           7z x mpv.7z -y && rm mpv.7z
-          # Download FFmpeg
-          wget -q "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/${{ env.MPV_VERSION }}/ffmpeg-x86_64-${{ env.FFMPEG_COMMIT }}-${{ env.MPV_VERSION }}.7z" -O ffmpeg.7z
-          7z x ffmpeg.7z -y && rm ffmpeg.7z
+          # Move files from subdirectory if present
+          if ls -d mpv-x86_64*/ 1> /dev/null 2>&1; then
+            mv mpv-x86_64*/* . && rm -rf mpv-x86_64*/
+          fi
       
       - run: |
           cp songs.vds.template dist/radio-tui-windows/songs.vds
