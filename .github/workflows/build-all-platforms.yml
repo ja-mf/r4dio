@@ -274,8 +274,18 @@ jobs:
           name: radio-tui-macos
           path: dist/Radio\ TUI.app/Contents/MacOS/
       
-      - run: |
-          chmod +x dist/Radio\ TUI.app/Contents/MacOS/*
+      - name: Setup app bundle files
+        run: |
+          # List what we downloaded for debugging
+          echo "Contents of MacOS directory:"
+          ls -la dist/Radio\ TUI.app/Contents/MacOS/
+          
+          # Make binaries executable
+          chmod +x dist/Radio\ TUI.app/Contents/MacOS/radio-tui
+          chmod +x dist/Radio\ TUI.app/Contents/MacOS/radio-daemon
+          chmod +x dist/Radio\ TUI.app/Contents/MacOS/vibra
+          
+          # Copy config files
           cp songs.vds.template dist/Radio\ TUI.app/Contents/MacOS/songs.vds
           cp stations.toml dist/Radio\ TUI.app/Contents/MacOS/
       
