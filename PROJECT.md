@@ -1,12 +1,12 @@
 # r4dio — Project Status & Roadmap
 
-> Developer reference. Updated after v1.0.1 release (2026-02).
+> Developer reference. Updated after v1.1 release (2026-02).
 
 ---
 
 ## Current Status
 
-**v1.0.1 released.** All platforms building and shipping.
+**v1.1 released.** All platforms building and shipping.
 | Platform | Binary | Bundled |
 |---|---|---|
 | macOS arm64 | `r4dio.app` DMG | mpv, ffmpeg, ffprobe, yt-dlp, vibra, starred.toml |
@@ -14,7 +14,7 @@
 | Linux x86_64 | `r4dio` tarball | mpv (AppImage), ffmpeg, ffprobe, yt-dlp, vibra, starred.toml |
 | Windows x86_64 | `r4dio.exe` zip | mpv.exe, ffmpeg.exe, ffprobe.exe, yt-dlp.exe, vibra.exe, DLLs, starred.toml |
 
-**Windows zip layout (v1.0.1):**
+**Windows zip layout (v1.0.1+):**
 ```
 r4dio-windows-x86_64/
   r4dio.exe, config.toml, README.txt
@@ -23,9 +23,11 @@ r4dio-windows-x86_64/
 ```
 
 **Working features:**
-- Radio streaming via proxy (ICY-aware, HLS detection)
+- Radio streaming via shared in-process proxy (ICY-aware, HLS detection)
+- VU meter + oscilloscope synced to playback: mpv and ffmpeg PCM tap share one upstream connection via proxy broadcast channel
+- Passive background polling: all stations annotated with currently-playing title (~13s cycle, 6 concurrent workers, full round-robin)
+- NTS Infinite Mixtape metadata via Firestore `mixtape_titles`
 - Local file playback with chapter navigation
-- VU meter (PCM/lavfi dual path), oscilloscope, adaptive title lamp
 - Song identification via vibra (Shazam-like fingerprinting) + NTS show metadata
 - NTS show download via yt-dlp (`d` key in songs ticker) with progress indicators
 - NTS live schedule panel (NTS 1 & 2)
@@ -33,6 +35,12 @@ r4dio-windows-x86_64/
 - HTTP remote control API on :8989
 - stations.toml + starred.toml bundled and found correctly at runtime; starred.toml auto-seeded on first run
 - macOS app bundle: Finder drag-to-Applications, Spotlight indexable, Terminal.app launcher
+
+**New in v1.1:**
+- ✅ Passive polling: all stations show current track in the list (`p` to toggle)
+- ✅ VU/scope sync: ffmpeg PCM tap shares proxy stream with mpv — no more dual-connection desync
+- ✅ NTS Infinite Mixtape metadata in passive polling and song recognition
+- ✅ Non-NTS polling overhaul: 6 workers, all stations every cycle, no special-casing
 
 **Fixed in v1.0.1:**
 - ✅ All 4 Windows DLL errors on `i` key: VCRUNTIME140.dll, MSVCP140.dll, libcurl.dll, libfftw3-3.dll — vibra now statically linked (`x64-windows-static` + `/MT`)
@@ -49,6 +57,9 @@ r4dio-windows-x86_64/
 - **Scope stutters at high load**: The 30fps `meter_tick` redraw and PCM ring are correct
   but the terminal emulator itself is the bottleneck; nothing in the code can fix this.
   Consider reducing redraw rate to 24fps or making it configurable.
+- **VU/scope desync (stations)**: ✅ Resolved in v1.1. ffmpeg PCM tap now connects to the
+  in-process proxy (`proxy_url(idx)`) instead of the station URL directly. mpv and ffmpeg
+  subscribe to the same broadcast channel, receiving identical byte sequences.
 - **VU meter lavfi path (local files) lags behind PCM path (stations)**: The `astats`
   observer fires at mpv's internal rate which is not wall-clock locked. The PCM path
   is more accurate. Consider running ffmpeg PCM tap for local files too.
@@ -207,7 +218,7 @@ const PROXY_BROADCAST_CAPACITY: usize = 4096;  // already named, needs doc comme
 - **Duplicate detection**: When adding to `songs.vds`, check if same song already
   identified within the last X minutes to avoid redundant entries.
 
-### NTS Infinite Mixtape Metadata (implemented on `dev`, target v1.1+)
+### NTS Infinite Mixtape Metadata (shipped in v1.1)
 - **Goal**: Add current-show metadata for `NTS: <Mixtape>` stations in the song-ID path,
   without Selenium/browser automation. ✅
 - **Discovery source**: query Firestore `mixtape_titles` for latest record by
@@ -223,7 +234,7 @@ const PROXY_BROADCAST_CAPACITY: usize = 4096;  // already named, needs doc comme
   - title present + no URL fields => patch title only
 - **Non-goals**: keep NTS 1/2 flow unchanged (`/api/v2/live`). ✅
 
-### Passive Polling (implemented on `dev`, target v1.1+)
+### Passive Polling (shipped in v1.1)
 - **Config**: `[polling] auto_polling=true`, `poll_interval_secs=120` in `config.toml`.
 - **Toggle**: `p` toggles background polling on/off (`P` keeps previous-station behavior).
 - **Scheduler architecture**:
@@ -233,10 +244,11 @@ const PROXY_BROADCAST_CAPACITY: usize = 4096;  // already named, needs doc comme
   - per-station results are applied immediately as they arrive (no end-of-cycle-only UI update)
 - **NTS polling path**: NTS1/2 via `/api/v2/live`, NTS Infinite Mixtapes via Firestore `mixtape_titles`.
 - **Non-NTS polling path**:
-  - lightweight ICY probe workers (`NON_NTS_MAX_CONCURRENCY = 5`)
-  - per-cycle cap (`NON_NTS_MAX_JOBS_PER_CYCLE = 32`)
-  - cycle budget (`NON_NTS_CYCLE_BUDGET_SECS = 95`)
-  - SomaFM-prioritized sampling + round-robin cursor over remaining stations
+  - lightweight ICY probe workers (`NON_NTS_MAX_CONCURRENCY = 6`)
+  - full round-robin over all non-NTS stations per cycle (`NON_NTS_MAX_JOBS_PER_CYCLE = 64`)
+  - cycle budget (`NON_NTS_CYCLE_BUDGET_SECS = 30`)
+  - connect timeout 4s, request timeout 8s, metadata timeout 5s
+  - no station special-casing — uniform queue for all non-NTS stations
   - playlist one-hop resolve (`.m3u/.m3u8/.pls`), HLS skip, adaptive ICY metadata block reads
 - **UI update policy**:
   - station list appends last polled show text
@@ -244,11 +256,9 @@ const PROXY_BROADCAST_CAPACITY: usize = 4096;  // already named, needs doc comme
   - currently playing station prefers daemon/mpv ICY source to stay in sync with the ICY ticker
 - **Failure policy**: soft-fail only (log warnings, no user notifications), retry on future cycles.
 
-Passive polling timings observed in dev logs (2026-02-27):
-- Cycle with 22 targets: ~8.5–9.2s end-to-end, `errors=0`
-- Cycle with 37 targets: ~7.6s, `errors=2`
-- Cycle with 49 targets (2 NTS live + 15 mixtape + 32 non-NTS): ~7.2s, `errors=2`
-- Non-NTS latency sample from recent run: p50 ~588ms, p90 ~2081ms, max ~3118ms
+Passive polling timings validated (2026-02-27, 71 non-NTS stations):
+- ~13s wall time, 42/71 title hits, 0 timeouts, 5 errors (dead stations)
+- Non-NTS latency: p50 ~588ms, p90 ~2081ms, max ~3118ms
 
 Known improvement directions (next iteration):
 - Persist non-NTS scheduler cursor and recent-failure backoff across app restarts
@@ -278,13 +288,14 @@ Validation harnesses (isolated from TUI runtime):
 ### Audio pipeline (two paths, intentional)
 
 ```
-Station  → ffmpeg PCM tap → PcmChunk broadcast → pcm_ring + VU
+Station  → proxy (port 8990) → mpv (audio) + ffmpeg PCM tap (shared) → PcmChunk broadcast → pcm_ring + VU
 File     → mpv lavfi astats → AudioLevel broadcast → VU only (no ring)
 ```
 
-The PCM path gives the oscilloscope its data. The lavfi path is simpler but
-only gives scalar RMS. Unifying both to PCM (running ffmpeg for files too) is
-the cleanest future improvement.
+For stations, both mpv and the ffmpeg PCM tap subscribe to the same in-process proxy
+broadcast channel (`proxy.rs`), so VU/scope reflects exactly what mpv is playing.
+The lavfi path is simpler but only gives scalar RMS. Unifying both to PCM (running
+ffmpeg for files too) is the cleanest future improvement.
 
 ### Where state lives
 

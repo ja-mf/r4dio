@@ -43,7 +43,7 @@ r4dio/
 - `src/app.rs` — `App` struct, main event loop, message dispatch, draw calls
 - `src/app_state.rs` — `AppState`: all UI + playback state
 
-### Passive polling subsystem (dev branch, target v1.1+)
+### Passive polling subsystem
 - Config keys live in `config.toml` under `[polling]`:
   - `auto_polling` (default `true`)
   - `poll_interval_secs` (default `120`)
@@ -51,7 +51,8 @@ r4dio/
   - non-overlapping cycles (`auto_poll_in_flight` guard)
   - NTS 1/2 resolver via `/api/v2/live`
   - NTS Infinite Mixtape resolver via `recognize_via_nts_mixtape()`
-  - non-NTS resolver: lightweight ICY probes over a random sample (currently up to 5 stations/cycle)
+  - non-NTS resolver: 6 concurrent ICY probe workers, full round-robin over all non-NTS stations per cycle (`NON_NTS_MAX_CONCURRENCY=6`, `NON_NTS_MAX_JOBS_PER_CYCLE=64`)
+  - per-station results applied immediately as they arrive (no end-of-cycle batch)
 - UI behavior:
   - station list appends last polled title from `AppState.station_poll_titles`
   - `p` toggles auto polling, with toast feedback and keys-bar indicator (`poll:on` / `poll:off`)
@@ -72,7 +73,7 @@ r4dio/
 Downloads saved to `~/radio-downloads/`. Binary found via `find_yt_dlp_binary()` in `platform.rs` (checks `YT_DLP_PATH` env, beside exe, `external/` subdir, PATH).
 
 **Key flows:**
-- `play_station(idx)`: aborts lavfi observer, aborts old VU task, loads proxy URL into mpv, spawns `run_vu_ffmpeg` against real station URL (⚠️ not yet synced via proxy)
+- `play_station(idx)`: aborts lavfi observer, aborts old VU task, loads proxy URL into mpv, spawns `run_vu_ffmpeg` against the **same proxy URL** so mpv and ffmpeg share one upstream connection
 - `play_file(path)`: aborts VU task, loads file into mpv, spawns `spawn_audio_observer` (lavfi) for audio level
 - `stop()`: aborts VU task and lavfi observer, stops mpv stream
 - `ensure_mpv_handle()`: reconnects to existing mpv socket or spawns fresh mpv; single forwarding task per connection (no fan-out)
@@ -81,31 +82,20 @@ Downloads saved to `~/radio-downloads/`. Binary found via `find_yt_dlp_binary()`
 
 ### Audio pipeline
 
-**⚠️ Known issue (v1.0): Dual-connection desync**
-
-The current design opens **two independent TCP connections** to the radio server:
-- **Connection A** (via proxy.rs): feeds mpv the audio
-- **Connection B** (via ffmpeg in core.rs): feeds the VU meter and oscilloscope
-
-These are NOT synchronised — they buffer differently and start at different points in the live stream. **The VU/scope shows what ffmpeg is receiving, not what mpv is playing.**
-
-**Planned fix (v1.1)**: Route ffmpeg's PCM tap through the same proxy as mpv. Change `run_vu_ffmpeg()` to use `proxy_url(idx)` instead of the real station URL. This makes both mpv and ffmpeg read from the same upstream source.
-
-**Stations (PCM source of truth — to be unified):**
+**Stations (PCM tap via shared proxy):**
 ```
-ffmpeg -i <station_url> -ac 1 -ar 22050 -f s16le pipe:1
-  → 1024-sample chunks (~46ms at 22050Hz) → PcmChunk broadcast
+ffmpeg -i <proxy_url> -ac 1 -ar 44100 -f s16le pipe:1
+  → 1024-sample chunks (~23ms at 44100Hz) → PcmChunk broadcast
   → app.rs PcmChunk handler: push to pcm_ring, compute RMS → update_audio_trackers()
 ```
 
-**Local files (lavfi path — to be replaced with PCM):**
+Both mpv and the ffmpeg PCM tap connect to the **same in-process proxy** (`proxy.rs`, port 8990). The proxy opens a single upstream TCP connection and fans out to all subscribers via a `tokio::sync::broadcast` channel. This means mpv and ffmpeg receive identical byte sequences — VU/scope reflects exactly what is playing.
+
+**Local files (lavfi path):**
 ```
 mpv lavfi.astats.Overall.RMS_level property observer
   → AudioLevel broadcast → update_audio_trackers()
 ```
-
-**Planned unification (v1.1)**: Run ffmpeg PCM tap for local files too (currently lavfi only).
-This enables the oscilloscope for files and makes both paths identical.
 
 `update_audio_trackers()` maintains: `audio_level`, `peak_level` (fast attack, 6 dB/s decay), `meter_mean_db` (EMA τ=4s), `meter_spread_db` (EMA τ=8s).
 
@@ -114,7 +104,7 @@ This enables the oscilloscope for files and makes both paths identical.
 - Toggle: `o` key → `RightPane::Scope`; scope occupies right half of the 2-row header
 - Keys when focused: `Up`/`Down` scale ±0.01 (×10 Shift), `Left`/`Right` samples ±25, `Esc` reset
 - Redraws at 30fps via `meter_tick` (40ms); `PcmChunk` messages never trigger a redraw
-- **v1.0 limitation**: Scope only works for stations (lavfi path for files has no PCM). Planned: run ffmpeg for files too (see Audio pipeline notes).
+- **v1.1 limitation**: Scope only works for stations (lavfi path for files has no PCM). Running ffmpeg PCM tap for files too would unify both paths.
 
 ### Network services (in-process)
 - `src/proxy.rs` — Axum HTTP proxy on port 8990: `GET /stream/:idx` rewrites station URL for mpv, forwards ICY headers
@@ -298,7 +288,7 @@ See PROJECT.md for the full 5-pass compiler warnings cleanup plan (74 total warn
 
 ### Architecture improvements
 - **DaemonCore god object**: `core.rs` struct has 15+ fields and ~900 lines. Split into `PlaybackEngine` (mpv + audio) and `AppCore` (state + config + broadcast).
-- **VU/scope sync via proxy**: ffmpeg PCM tap should use `proxy_url(idx)` instead of the real station URL (currently causes dual-connection desync — see Audio pipeline notes)
+- **VU/scope sync via proxy**: ✅ Resolved in v1.1. ffmpeg PCM tap uses `proxy_url(idx)`; mpv and ffmpeg share one upstream TCP connection via the in-process broadcast proxy.
 - **Oscilloscope for files**: Run ffmpeg PCM tap for local files too, replacing the lavfi path (currently files have no scope, only VU meter)
 - **m3u fallback URL**: `config.rs::default_m3u_url()` points to private `ja-mf/radio-curation` repo — either make it public or change to empty string
 - **macOS code signing**: App is unsigned; users need `xattr -d com.apple.quarantine` to bypass Gatekeeper

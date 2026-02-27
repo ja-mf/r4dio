@@ -349,8 +349,8 @@ jobs:
             <key>CFBundleIdentifier</key><string>com.ja-mf.r4dio</string>
             <key>CFBundleName</key><string>r4dio</string>
             <key>CFBundlePackageType</key><string>APPL</string>
-            <key>CFBundleShortVersionString</key><string>1.0</string>
-            <key>CFBundleVersion</key><string>1</string>
+            <key>CFBundleShortVersionString</key><string>1.1</string>
+            <key>CFBundleVersion</key><string>2</string>
             <key>LSMinimumSystemVersion</key><string>10.14</string>
             <key>NSHighResolutionCapable</key><true/>
           </dict>
