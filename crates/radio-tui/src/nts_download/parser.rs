@@ -5,20 +5,20 @@ use chrono::NaiveDate;
 use regex::Regex;
 use scraper::{Html, Selector};
 
-use crate::nts_download::{EpisodeMetadata, Track};
 use crate::nts_download::api::EpisodeApiData;
+use crate::nts_download::{EpisodeMetadata, Track};
 
 /// Parse NTS episode URL to extract show name and episode alias
 pub fn parse_episode_url(url: &str) -> Result<(String, String)> {
     // Pattern: https://www.nts.live/shows/{show}/episodes/{episode}
     let re = Regex::new(r"nts\.live/shows/([^/]+)/episodes/([^/?]+)")?;
-    
+
     if let Some(caps) = re.captures(url) {
         let show_name = caps.get(1).unwrap().as_str().to_string();
         let episode_alias = caps.get(2).unwrap().as_str().to_string();
         return Ok((show_name, episode_alias));
     }
-    
+
     anyhow::bail!("Invalid NTS episode URL: {}", url)
 }
 
@@ -26,11 +26,11 @@ pub fn parse_episode_url(url: &str) -> Result<(String, String)> {
 pub fn parse_show_url(url: &str) -> Result<String> {
     // Pattern: https://www.nts.live/shows/{show}
     let re = Regex::new(r"nts\.live/shows/([^/]+)/?$")?;
-    
+
     if let Some(caps) = re.captures(url) {
         return Ok(caps.get(1).unwrap().as_str().to_string());
     }
-    
+
     anyhow::bail!("Invalid NTS show URL: {}", url)
 }
 
@@ -76,24 +76,24 @@ pub fn parse_nts_data(
     // Parse title
     let title = api_data.name.clone();
     let safe_title = safe_filename(&title);
-    
+
     // Parse station/location
     let station = api_data
         .location_long
         .clone()
         .unwrap_or_else(|| "London".to_string());
-    
+
     // Parse image URL
     let image_url = api_data
         .media
         .as_ref()
         .and_then(|m| m.picture_large.clone())
         .unwrap_or_default();
-    
+
     // Parse date
-    let date = parse_broadcast_date(&api_data.broadcast)
-        .context("Failed to parse broadcast date")?;
-    
+    let date =
+        parse_broadcast_date(&api_data.broadcast).context("Failed to parse broadcast date")?;
+
     // Parse genres
     let genres: Vec<String> = api_data
         .genres
@@ -111,16 +111,16 @@ pub fn parse_nts_data(
                 .collect()
         })
         .unwrap_or_default();
-    
+
     // Parse tracklist from API
     let tracks = parse_tracklist(api_data);
-    
+
     // Parse description
     let description = api_data.description.clone().unwrap_or_default();
-    
+
     // Parse artists from HTML and title
     let (artists, parsed_artists) = parse_artists(&title, html)?;
-    
+
     Ok(EpisodeMetadata {
         title,
         safe_title,
@@ -142,12 +142,12 @@ fn parse_broadcast_date(date_str: &str) -> Result<NaiveDate> {
     if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(date_str) {
         return Ok(dt.naive_local().date());
     }
-    
+
     // Try parsing just date portion
     if let Ok(date) = NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
         return Ok(date);
     }
-    
+
     anyhow::bail!("Cannot parse date: {}", date_str)
 }
 
@@ -170,17 +170,17 @@ fn parse_tracklist(api_data: &EpisodeApiData) -> Vec<Track> {
 }
 
 /// Parse artists from title and HTML
-/// 
+///
 /// Extracts artists from:
 /// 1. HTML bio-artists section ( BeautifulSoup equivalent: `.bio-artists a` )
 /// 2. Title patterns like "w/ Artist", "with Artist", "Artist1 & Artist2"
 pub fn parse_artists(title: &str, html: &str) -> Result<(Vec<String>, Vec<String>)> {
     let document = Html::parse_document(html);
-    
+
     // Parse artists from HTML bio-artists section
     let mut artists = Vec::new();
     let selector = Selector::parse(".bio-artists a").ok();
-    
+
     if let Some(sel) = selector {
         for element in document.select(&sel) {
             let text = element.text().collect::<String>().trim().to_string();
@@ -189,15 +189,15 @@ pub fn parse_artists(title: &str, html: &str) -> Result<(Vec<String>, Vec<String
             }
         }
     }
-    
+
     // Parse artists from title patterns
     let parsed_artists = parse_artists_from_title(title);
-    
+
     Ok((artists, parsed_artists))
 }
 
 /// Parse artists from title text
-/// 
+///
 /// Handles patterns:
 /// - "Show Title w/ Artist Name"
 /// - "Show Title with Artist Name"
@@ -205,7 +205,7 @@ pub fn parse_artists(title: &str, html: &str) -> Result<(Vec<String>, Vec<String
 /// - "Show Title w/ Artist1, Artist2 & Artist3"
 fn parse_artists_from_title(title: &str) -> Vec<String> {
     let mut result = Vec::new();
-    
+
     // Find the "w/" or "with" prefix and extract everything after it
     let after_prefix = if let Some(pos) = title.to_lowercase().find("w/") {
         &title[pos + 2..]
@@ -214,10 +214,10 @@ fn parse_artists_from_title(title: &str) -> Vec<String> {
     } else {
         return result;
     };
-    
+
     // Trim leading whitespace
     let after_prefix = after_prefix.trim_start();
-    
+
     // Find where the artist section ends (before " - ", " ~ ", or end of string)
     let artist_section = if let Some(end_pos) = after_prefix.find(" - ") {
         &after_prefix[..end_pos]
@@ -226,7 +226,7 @@ fn parse_artists_from_title(title: &str) -> Vec<String> {
     } else {
         after_prefix
     };
-    
+
     // Split by separators: ",", "&", " and "
     let parts: Vec<&str> = artist_section
         .split(&[',', '&'])
@@ -234,11 +234,11 @@ fn parse_artists_from_title(title: &str) -> Vec<String> {
         .map(|p| p.trim())
         .filter(|p| !p.is_empty())
         .collect();
-    
+
     for part in parts {
         result.push(part.to_string());
     }
-    
+
     result
 }
 
@@ -256,7 +256,10 @@ mod parser_tests {
 
     #[test]
     fn test_safe_filename() {
-        assert_eq!(safe_filename("Show: Name / Edition"), "Show- Name - Edition");
+        assert_eq!(
+            safe_filename("Show: Name / Edition"),
+            "Show- Name - Edition"
+        );
         assert_eq!(safe_filename("Normal Name"), "Normal Name");
     }
 

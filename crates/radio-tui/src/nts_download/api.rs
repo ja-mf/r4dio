@@ -59,7 +59,7 @@ pub async fn fetch_episode(show_name: &str, episode_alias: &str) -> Result<Episo
         "https://www.nts.live/api/v2/shows/{}/episodes/{}",
         show_name, episode_alias
     );
-    
+
     let client = reqwest::Client::new();
     let response = client
         .get(&url)
@@ -67,16 +67,16 @@ pub async fn fetch_episode(show_name: &str, episode_alias: &str) -> Result<Episo
         .send()
         .await
         .context("Failed to fetch NTS API")?;
-    
+
     if !response.status().is_success() {
         anyhow::bail!("NTS API returned status: {}", response.status());
     }
-    
+
     let data: EpisodeApiData = response
         .json()
         .await
         .context("Failed to parse NTS API response")?;
-    
+
     Ok(data)
 }
 
@@ -89,16 +89,16 @@ pub async fn fetch_episode_html(url: &str) -> Result<String> {
         .send()
         .await
         .context("Failed to fetch NTS episode page")?;
-    
+
     if !response.status().is_success() {
         anyhow::bail!("NTS page returned status: {}", response.status());
     }
-    
+
     let html = response
         .text()
         .await
         .context("Failed to read NTS page HTML")?;
-    
+
     Ok(html)
 }
 
@@ -110,24 +110,24 @@ pub async fn fetch_image(url: &str) -> Result<(Vec<u8>, String)> {
         .send()
         .await
         .context("Failed to fetch image")?;
-    
+
     if !response.status().is_success() {
         anyhow::bail!("Image fetch returned status: {}", response.status());
     }
-    
+
     let content_type = response
         .headers()
         .get("content-type")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("image/jpeg")
         .to_string();
-    
+
     let data = response
         .bytes()
         .await
         .context("Failed to read image data")?
         .to_vec();
-    
+
     Ok((data, content_type))
 }
 
@@ -152,53 +152,46 @@ struct MixcloudUser {
 /// Try to find Mixcloud URL via search API
 pub async fn mixcloud_search(title: &str, date: &chrono::NaiveDate) -> Result<Option<String>> {
     use crate::nts_download::parser::get_ordinal_suffix;
-    
+
     let day = date.day();
     let suffix = get_ordinal_suffix(day);
-    let full_title = format!(
-        "{} - {}{} {}",
-        title,
-        day,
-        suffix,
-        date.format("%B %Y")
-    );
-    
+    let full_title = format!("{} - {}{} {}", title, day, suffix, date.format("%B %Y"));
+
     // Create search query
     let query = full_title
         .replace(['-', '/'], "")
         .split_whitespace()
         .collect::<Vec<_>>()
         .join("+");
-    
+
     let url = format!(
         "https://api.mixcloud.com/search/?q={}&type=cloudcast",
         query
     );
-    
+
     let client = reqwest::Client::new();
     let response = client
         .get(&url)
         .send()
         .await
         .context("Failed to search Mixcloud")?;
-    
+
     if !response.status().is_success() {
         return Ok(None);
     }
-    
+
     let search: MixcloudSearchResponse = match response.json().await {
         Ok(s) => s,
         Err(_) => return Ok(None),
     };
-    
+
     // Find matching result from NTSRadio user
     for result in search.data {
-        if result.user.username.to_lowercase() == "ntsradio" 
-            && result.name == full_title {
+        if result.user.username.to_lowercase() == "ntsradio" && result.name == full_title {
             return Ok(Some(result.url));
         }
     }
-    
+
     Ok(None)
 }
 
@@ -213,7 +206,7 @@ pub async fn resolve_audio_source(
             return Ok(mixcloud.clone());
         }
     }
-    
+
     // 2. Try audio_sources
     if let Some(sources) = &api_data.audio_sources {
         if let Some(first) = sources.first() {
@@ -223,12 +216,12 @@ pub async fn resolve_audio_source(
             }
         }
     }
-    
+
     // 3. Try Mixcloud search
     if let Some(url) = mixcloud_search(&metadata.title, &metadata.date).await? {
         return Ok(url);
     }
-    
+
     anyhow::bail!("No audio source found for this episode")
 }
 
@@ -237,30 +230,30 @@ pub async fn fetch_show_episodes(show_name: &str) -> Result<Vec<String>> {
     let mut episodes = Vec::new();
     let mut offset = 0;
     let mut total_count = None;
-    
+
     let client = reqwest::Client::new();
-    
+
     loop {
         let url = format!(
             "https://www.nts.live/api/v2/shows/{}/episodes?offset={}",
             show_name, offset
         );
-        
+
         let response = client
             .get(&url)
             .send()
             .await
             .context("Failed to fetch show episodes")?;
-        
+
         if !response.status().is_success() {
             anyhow::bail!("Show API returned status: {}", response.status());
         }
-        
+
         let data: serde_json::Value = response
             .json()
             .await
             .context("Failed to parse show episodes response")?;
-        
+
         // Get total count on first request
         if total_count.is_none() {
             total_count = data
@@ -269,14 +262,14 @@ pub async fn fetch_show_episodes(show_name: &str) -> Result<Vec<String>> {
                 .and_then(|r| r.get("count"))
                 .and_then(|c| c.as_i64());
         }
-        
+
         let limit = data
             .get("metadata")
             .and_then(|m| m.get("resultset"))
             .and_then(|r| r.get("limit"))
             .and_then(|l| l.as_i64())
             .unwrap_or(20);
-        
+
         if let Some(results) = data.get("results").and_then(|r| r.as_array()) {
             for ep in results {
                 if let (Some(status), Some(alias)) = (
@@ -292,9 +285,9 @@ pub async fn fetch_show_episodes(show_name: &str) -> Result<Vec<String>> {
                 }
             }
         }
-        
+
         offset += limit as usize;
-        
+
         // Check if we've got all episodes
         if let Some(count) = total_count {
             if episodes.len() >= count as usize {
@@ -303,12 +296,12 @@ pub async fn fetch_show_episodes(show_name: &str) -> Result<Vec<String>> {
         } else {
             break;
         }
-        
+
         // Safety limit
         if offset > 10000 {
             break;
         }
     }
-    
+
     Ok(episodes)
 }

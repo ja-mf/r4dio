@@ -100,7 +100,10 @@ impl DownloadManager {
             .or_else(nts_download::download::find_yt_dlp)
             .ok_or("yt-dlp not found")?;
 
-        info!("Starting download of {} using yt-dlp at {:?}", url, yt_dlp_path);
+        info!(
+            "Starting download of {} using yt-dlp at {:?}",
+            url, yt_dlp_path
+        );
 
         // Set initial status
         self.statuses
@@ -122,7 +125,8 @@ impl DownloadManager {
         // Spawn download task
         tokio::spawn(async move {
             let result =
-                Self::do_download(&url_clone, &download_dir, &yt_dlp_path, progress_tx.clone()).await;
+                Self::do_download(&url_clone, &download_dir, &yt_dlp_path, progress_tx.clone())
+                    .await;
 
             let status = match result {
                 Ok(path) => {
@@ -177,7 +181,7 @@ impl DownloadManager {
     /// Check if file exists for a given metadata
     pub fn check_downloaded(&self, metadata: &EpisodeMetadata) -> Option<PathBuf> {
         let base_name = metadata.file_base_name();
-        
+
         // Check for common audio extensions
         for ext in &["opus", "m4a", "mp3", "ogg", "flac"] {
             let path = self.download_dir.join(format!("{}.{}", base_name, ext));

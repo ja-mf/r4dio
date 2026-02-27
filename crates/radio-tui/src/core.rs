@@ -17,11 +17,16 @@ use std::sync::Arc;
 
 use radio_proto::config::Config;
 use radio_proto::protocol::{Command, MpvHealth, PlaybackStatus, Station};
-use radio_proto::state::{StateManager, load_stations_from_m3u, load_stations_from_toml, parse_m3u_from_str};
+use radio_proto::state::{
+    load_stations_from_m3u, load_stations_from_toml, parse_m3u_from_str, StateManager,
+};
 use tokio::sync::{broadcast, mpsc};
 use tracing::{debug, error, info, warn};
 
-use crate::mpv::{MpvDriver, MpvEvent, MpvHandle, OBS_AUDIO_LEVEL, OBS_CORE_IDLE, OBS_DURATION, OBS_ICY_TITLE, OBS_PAUSE, OBS_TIME_POS};
+use crate::mpv::{
+    MpvDriver, MpvEvent, MpvHandle, OBS_AUDIO_LEVEL, OBS_CORE_IDLE, OBS_DURATION, OBS_ICY_TITLE,
+    OBS_PAUSE, OBS_TIME_POS,
+};
 use crate::BroadcastMessage;
 
 // ── DaemonEvent ───────────────────────────────────────────────────────────────
@@ -198,7 +203,9 @@ impl DaemonCore {
                         self.obs_core_idle = val;
                         self.maybe_update_status().await;
                         // push timeline immediately too
-                        self.state_manager.set_timeline(self.obs_time_pos, self.obs_duration).await;
+                        self.state_manager
+                            .set_timeline(self.obs_time_pos, self.obs_duration)
+                            .await;
                         let _ = self.broadcast_tx.send(BroadcastMessage::StateUpdated);
                     }
                 }
@@ -220,7 +227,11 @@ impl DaemonCore {
                     // Filter trivial values
                     let val = raw_val.and_then(|t| {
                         let trimmed = t.trim().trim_matches('-').trim().to_string();
-                        if trimmed.is_empty() { None } else { Some(t) }
+                        if trimmed.is_empty() {
+                            None
+                        } else {
+                            Some(t)
+                        }
                     });
                     if val != self.obs_icy_title {
                         info!("mpv: icy-title {:?} → {:?}", self.obs_icy_title, val);
@@ -235,14 +246,18 @@ impl DaemonCore {
                 OBS_TIME_POS => {
                     let val = if data.is_null() { None } else { data.as_f64() };
                     self.obs_time_pos = val;
-                    self.state_manager.set_timeline(self.obs_time_pos, self.obs_duration).await;
+                    self.state_manager
+                        .set_timeline(self.obs_time_pos, self.obs_duration)
+                        .await;
                     let _ = self.broadcast_tx.send(BroadcastMessage::StateUpdated);
                 }
                 OBS_DURATION => {
                     let val = if data.is_null() { None } else { data.as_f64() };
                     if val != self.obs_duration {
                         self.obs_duration = val;
-                        self.state_manager.set_timeline(self.obs_time_pos, self.obs_duration).await;
+                        self.state_manager
+                            .set_timeline(self.obs_time_pos, self.obs_duration)
+                            .await;
                         let _ = self.broadcast_tx.send(BroadcastMessage::StateUpdated);
                     }
                 }
@@ -268,13 +283,19 @@ impl DaemonCore {
         // Handle named events (non-property-change)
         match evt.event_name() {
             Some("end-file") => {
-                let reason = evt.raw.get("reason").and_then(|v| v.as_str()).unwrap_or("unknown");
+                let reason = evt
+                    .raw
+                    .get("reason")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
                 info!("mpv: end-file reason={}", reason);
                 if reason == "error" || reason == "network" || reason == "quit" {
                     // If we intended to play, mark error
                     if self.intend_playing && !self.obs_pause {
                         warn!("mpv: stream ended with error/network reason, marking Error");
-                        self.state_manager.set_playback_status(PlaybackStatus::Error).await;
+                        self.state_manager
+                            .set_playback_status(PlaybackStatus::Error)
+                            .await;
                         let _ = self.broadcast_tx.send(BroadcastMessage::StateUpdated);
                         self.last_status = PlaybackStatus::Error;
                         self.connecting_since = None;
@@ -333,9 +354,14 @@ impl DaemonCore {
                     PlaybackStatus::Playing
                 }
                 other => {
-                    let since = self.connecting_since.get_or_insert_with(tokio::time::Instant::now);
+                    let since = self
+                        .connecting_since
+                        .get_or_insert_with(tokio::time::Instant::now);
                     let elapsed = since.elapsed().as_secs();
-                    debug!("mpv: waiting for playback core_idle={:?} elapsed={}s", other, elapsed);
+                    debug!(
+                        "mpv: waiting for playback core_idle={:?} elapsed={}s",
+                        other, elapsed
+                    );
                     if elapsed >= 15 {
                         warn!("mpv: no audio after {}s, marking Error", elapsed);
                         PlaybackStatus::Error
@@ -368,7 +394,10 @@ impl DaemonCore {
     /// Update tracked mpv health and broadcast state if it changed.
     async fn set_mpv_health(&mut self, health: MpvHealth) {
         if self.mpv_health != health {
-            info!("DaemonCore: mpv health {:?} → {:?}", self.mpv_health, health);
+            info!(
+                "DaemonCore: mpv health {:?} → {:?}",
+                self.mpv_health, health
+            );
             self.mpv_health = health.clone();
             self.state_manager.set_mpv_health(health).await;
             let _ = self.broadcast_tx.send(BroadcastMessage::StateUpdated);
@@ -479,8 +508,12 @@ impl DaemonCore {
             info!("Playing station: {}", station.name);
 
             // Abort any running VU ffmpeg task and lavfi observer before starting a new one.
-            if let Some(h) = self.vu_task_handle.take() { h.abort(); }
-            if let Some(h) = self.audio_observer_handle.take() { h.abort(); }
+            if let Some(h) = self.vu_task_handle.take() {
+                h.abort();
+            }
+            if let Some(h) = self.audio_observer_handle.take() {
+                h.abort();
+            }
 
             // Always reset the connecting timer when a new play command arrives,
             // even if the same station is being replayed (user pressed Enter twice).
@@ -525,7 +558,10 @@ impl DaemonCore {
                         return Ok(());
                     }
                     if used_proxy {
-                        info!("Playing '{}' via shared proxy: {}", station.name, stream_url);
+                        info!(
+                            "Playing '{}' via shared proxy: {}",
+                            station.name, stream_url
+                        );
                     } else if wants_proxy {
                         info!("Playing '{}' direct URL (proxy unavailable)", station.name);
                     } else {
@@ -570,8 +606,12 @@ impl DaemonCore {
         info!("Stopping playback");
         self.intend_playing = false;
         self.connecting_since = None;
-        if let Some(h) = self.vu_task_handle.take() { h.abort(); }
-        if let Some(h) = self.audio_observer_handle.take() { h.abort(); }
+        if let Some(h) = self.vu_task_handle.take() {
+            h.abort();
+        }
+        if let Some(h) = self.audio_observer_handle.take() {
+            h.abort();
+        }
         if let Some(handle) = self.mpv_handle.as_ref() {
             handle.stop().await?;
         }
@@ -628,8 +668,12 @@ impl DaemonCore {
                     }
                     // File playback: use lavfi observer (main meter source for files).
                     // Kill any lingering VU ffmpeg task (used for stations).
-                    if let Some(h) = self.vu_task_handle.take() { h.abort(); }
-                    if let Some(prev) = self.audio_observer_handle.take() { prev.abort(); }
+                    if let Some(h) = self.vu_task_handle.take() {
+                        h.abort();
+                    }
+                    if let Some(prev) = self.audio_observer_handle.take() {
+                        prev.abort();
+                    }
                     let obs = crate::mpv::spawn_audio_observer(
                         self.mpv_driver.socket_name.clone(),
                         self.broadcast_tx.clone(),
@@ -741,7 +785,11 @@ pub async fn load_stations(config: &Config) -> anyhow::Result<Vec<Station>> {
     if toml_path.exists() {
         match load_stations_from_toml(toml_path) {
             Ok(s) => {
-                info!("Loaded {} stations from TOML: {}", s.len(), toml_path.display());
+                info!(
+                    "Loaded {} stations from TOML: {}",
+                    s.len(),
+                    toml_path.display()
+                );
                 return Ok(s);
             }
             Err(e) => warn!("Failed to parse TOML stations: {}", e),
@@ -755,7 +803,11 @@ pub async fn load_stations(config: &Config) -> anyhow::Result<Vec<Station>> {
             if beside.exists() {
                 match load_stations_from_toml(&beside) {
                     Ok(s) => {
-                        info!("Loaded {} stations from beside-exe: {}", s.len(), beside.display());
+                        info!(
+                            "Loaded {} stations from beside-exe: {}",
+                            s.len(),
+                            beside.display()
+                        );
                         return Ok(s);
                     }
                     Err(e) => warn!("Failed to parse beside-exe stations.toml: {}", e),
@@ -806,7 +858,11 @@ pub async fn load_stations(config: &Config) -> anyhow::Result<Vec<Station>> {
         let path = PathBuf::from(filename);
         if path.exists() {
             if let Ok(s) = load_stations_from_m3u(&path) {
-                info!("Loaded {} stations from local fallback {}", s.len(), filename);
+                info!(
+                    "Loaded {} stations from local fallback {}",
+                    s.len(),
+                    filename
+                );
                 return Ok(s);
             }
         }
@@ -846,17 +902,26 @@ async fn run_vu_ffmpeg(
     let mut child = Command::new(ffmpeg_bin)
         .args([
             "-hide_banner",
-            "-loglevel", "error",
+            "-loglevel",
+            "error",
             "-nostdin",
-            "-fflags", "nobuffer",
-            "-flags", "low_delay",
-            "-probesize", "64k",
-            "-analyzeduration", "200000",
-            "-i", url,
+            "-fflags",
+            "nobuffer",
+            "-flags",
+            "low_delay",
+            "-probesize",
+            "64k",
+            "-analyzeduration",
+            "200000",
+            "-i",
+            url,
             "-vn",
-            "-ac", "1",
-            "-ar", &rate,
-            "-f", "s16le",
+            "-ac",
+            "1",
+            "-ar",
+            &rate,
+            "-f",
+            "s16le",
             "pipe:1",
         ])
         .stdout(std::process::Stdio::piped())
@@ -871,7 +936,9 @@ async fn run_vu_ffmpeg(
 
     loop {
         let n = stdout.read(&mut buf).await?;
-        if n == 0 { break; }
+        if n == 0 {
+            break;
+        }
         let samples_in = n / 2;
         for i in 0..samples_in {
             let sample = i16::from_le_bytes([buf[i * 2], buf[i * 2 + 1]]);
@@ -892,8 +959,20 @@ async fn run_vu_ffmpeg(
 }
 
 fn pcm_rms_db(samples: &[i16]) -> f32 {
-    if samples.is_empty() { return -90.0; }
-    let sum_sq: f64 = samples.iter().map(|&s| { let f = s as f64 / 32768.0; f * f }).sum();
+    if samples.is_empty() {
+        return -90.0;
+    }
+    let sum_sq: f64 = samples
+        .iter()
+        .map(|&s| {
+            let f = s as f64 / 32768.0;
+            f * f
+        })
+        .sum();
     let rms = (sum_sq / samples.len() as f64).sqrt();
-    if rms < 1e-10 { -90.0 } else { (20.0 * rms.log10()) as f32 }
+    if rms < 1e-10 {
+        -90.0
+    } else {
+        (20.0 * rms.log10()) as f32
+    }
 }

@@ -344,7 +344,7 @@ impl Component for SongsTicker {
                 if entry.nts_url.is_some() {
                     spans.push(Span::styled(" ↗", Style::default().fg(C_MUTED)));
                 }
-                
+
                 // Download status indicator
                 if let Some(url) = &entry.nts_url {
                     use crate::app_state::DownloadStatus;
@@ -356,14 +356,23 @@ impl Component for SongsTicker {
                                 .map(|d| d.as_millis() % 1000 < 500)
                                 .unwrap_or(true);
                             if blink {
-                                spans.push(Span::styled(" ↓", Style::default().fg(ratatui::style::Color::Yellow)));
+                                spans.push(Span::styled(
+                                    " ↓",
+                                    Style::default().fg(ratatui::style::Color::Yellow),
+                                ));
                             }
                         }
                         Some(DownloadStatus::Downloaded) => {
-                            spans.push(Span::styled(" ↓", Style::default().fg(ratatui::style::Color::Green)));
+                            spans.push(Span::styled(
+                                " ↓",
+                                Style::default().fg(ratatui::style::Color::Green),
+                            ));
                         }
                         Some(DownloadStatus::Failed(_)) => {
-                            spans.push(Span::styled(" ✗", Style::default().fg(ratatui::style::Color::Red)));
+                            spans.push(Span::styled(
+                                " ✗",
+                                Style::default().fg(ratatui::style::Color::Red),
+                            ));
                         }
                         _ => {}
                     }

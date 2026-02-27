@@ -280,7 +280,7 @@ pub fn find_mpv_binary() -> Option<PathBuf> {
 }
 
 /// Find yt-dlp binary for downloading audio.
-/// 
+///
 /// Searches in order:
 /// 1. YT_DLP_PATH environment variable
 /// 2. Beside current executable
@@ -293,12 +293,12 @@ pub fn find_yt_dlp_binary() -> Option<PathBuf> {
             return Some(p);
         }
     }
-    
+
     // 2. Beside executable
     if let Some(p) = find_beside_exe(yt_dlp_binary_names()) {
         return Some(p);
     }
-    
+
     // 3. PATH
     find_on_path(yt_dlp_binary_names())
 }

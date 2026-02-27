@@ -11,7 +11,7 @@ use std::path::Path;
 use crate::nts_download::EpisodeMetadata;
 
 /// Write metadata to audio file
-/// 
+///
 /// Maps NTS episode metadata to standard audio tags:
 /// - Title: "Show Name - DDth Month YYYY"
 /// - Album: "NTS"
@@ -30,12 +30,11 @@ pub async fn write_metadata(
     let path = file_path.to_path_buf();
     let meta = metadata.clone();
     let img = image_data;
-    
-    tokio::task::spawn_blocking(move || {
-        write_metadata_blocking(&path, &meta, img)
-    }).await
-    .context("Metadata writing task failed")??;
-    
+
+    tokio::task::spawn_blocking(move || write_metadata_blocking(&path, &meta, img))
+        .await
+        .context("Metadata writing task failed")??;
+
     Ok(())
 }
 
@@ -48,75 +47,72 @@ fn write_metadata_blocking(
     let tagged_file = Probe::open(file_path)?
         .read()
         .context("Failed to read audio file")?;
-    
+
     // Get primary tag type for this format
     let tag_type = guess_tag_type(file_path)?;
-    
+
     // Create or modify tag
-    let mut tag = tagged_file.primary_tag()
+    let mut tag = tagged_file
+        .primary_tag()
         .map(|t| t.clone())
         .unwrap_or_else(|| Tag::new(tag_type));
-    
+
     // Set title
     tag.insert_text(ItemKey::TrackTitle, metadata.display_title());
-    
+
     // Set album
     tag.insert_text(ItemKey::AlbumTitle, "NTS".to_string());
-    
+
     // Set artist (combined)
     let artists = metadata.all_artists();
     if !artists.is_empty() {
         tag.insert_text(ItemKey::TrackArtist, artists.join("; "));
     }
-    
+
     // Set year/date
     let date_str = metadata.date.to_string();
     tag.insert_text(ItemKey::Year, date_str.clone());
-    
+
     // Set genre
     if !metadata.genres.is_empty() {
         tag.insert_text(ItemKey::Genre, metadata.genres.join("; "));
     }
-    
+
     // Set tracklist as lyrics
     let tracklist = metadata.format_tracklist();
     if !tracklist.is_empty() {
         tag.insert_text(ItemKey::Lyrics, tracklist);
     }
-    
+
     // Set comment
     let comment = format_comment(metadata);
     tag.insert_text(ItemKey::Comment, comment);
-    
+
     // Set compilation flag
     tag.insert_text(ItemKey::FlagCompilation, "1".to_string());
-    
+
     // Add cover art
     if let Some((data, content_type)) = image_data {
         let mime_type = guess_mime_type(&content_type);
-        let picture = Picture::new_unchecked(
-            PictureType::CoverFront,
-            Some(mime_type),
-            None,
-            data,
-        );
+        let picture = Picture::new_unchecked(PictureType::CoverFront, Some(mime_type), None, data);
         tag.push_picture(picture);
     }
-    
+
     // Save tag back to file
     tag.save_to_path(file_path, WriteOptions::default())
         .context("Failed to save metadata to file")?;
-    
+
     Ok(())
 }
 
 /// Guess the appropriate tag type for file extension
 fn guess_tag_type(file_path: &Path) -> Result<TagType> {
-    let ext = file_path.extension()
+    let ext = file_path
+        .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_lowercase();
-    
+
     match ext.as_str() {
         "mp3" => Ok(TagType::Id3v2),
         "m4a" | "mp4" | "aac" => Ok(TagType::Mp4Ilst),
@@ -148,14 +144,14 @@ fn guess_mime_type(content_type: &str) -> MimeType {
 /// Format comment field
 fn format_comment(metadata: &EpisodeMetadata) -> String {
     let mut parts = Vec::new();
-    
+
     if !metadata.description.is_empty() {
         parts.push(metadata.description.clone());
     }
-    
+
     parts.push(format!("Station Location: {}", metadata.station));
     parts.push(metadata.source_url.clone());
-    
+
     parts.join("\n")
 }
 
@@ -164,14 +160,11 @@ pub fn read_metadata(file_path: &Path) -> Result<ReadMetadata> {
     let tagged_file = Probe::open(file_path)?
         .read()
         .context("Failed to read audio file")?;
-    
-    let tag = tagged_file.primary_tag()
-        .context("No metadata tag found")?;
-    
-    let get_text = |key: &ItemKey| -> Option<String> {
-        tag.get_string(key).map(|s| s.to_string())
-    };
-    
+
+    let tag = tagged_file.primary_tag().context("No metadata tag found")?;
+
+    let get_text = |key: &ItemKey| -> Option<String> { tag.get_string(key).map(|s| s.to_string()) };
+
     Ok(ReadMetadata {
         title: get_text(&ItemKey::TrackTitle),
         artist: get_text(&ItemKey::TrackArtist),
@@ -226,7 +219,7 @@ mod tests {
             description: "Test description".to_string(),
             source_url: "https://nts.live/shows/test".to_string(),
         };
-        
+
         let comment = format_comment(&meta);
         assert!(comment.contains("Test description"));
         assert!(comment.contains("Station Location: London"));

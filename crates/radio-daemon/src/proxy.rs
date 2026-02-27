@@ -16,15 +16,14 @@
 /// • ICY metadata is preserved because we forward the raw response headers
 ///   (including Icy-MetaInt) and the body byte-for-byte.
 /// • The proxy re-uses a global `reqwest::Client` so TLS sessions are shared.
-
 use std::sync::Arc;
 
-use axum::Router;
 use axum::body::Body;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
+use axum::Router;
 use futures_util::StreamExt;
 use reqwest::Client;
 use tokio::sync::RwLock;
@@ -51,13 +50,19 @@ impl ProxyState {
             // Send ICY metadata request header — many Icecast servers require this
             .default_headers({
                 let mut h = reqwest::header::HeaderMap::new();
-                h.insert("Icy-MetaData", reqwest::header::HeaderValue::from_static("1"));
+                h.insert(
+                    "Icy-MetaData",
+                    reqwest::header::HeaderValue::from_static("1"),
+                );
                 h
             })
             .build()
             .expect("failed to build reqwest client for proxy");
 
-        Self { daemon_state, client }
+        Self {
+            daemon_state,
+            client,
+        }
     }
 }
 
@@ -73,7 +78,11 @@ async fn stream_station(
         match ds.stations.get(idx) {
             Some(s) => s.url.clone(),
             None => {
-                warn!("proxy: station index {} not found (have {} stations)", idx, ds.stations.len());
+                warn!(
+                    "proxy: station index {} not found (have {} stations)",
+                    idx,
+                    ds.stations.len()
+                );
                 return Response::builder()
                     .status(StatusCode::NOT_FOUND)
                     .body(Body::empty())
@@ -98,7 +107,10 @@ async fn stream_station(
 
     let upstream_status = upstream.status();
     if !upstream_status.is_success() {
-        warn!("proxy: upstream returned {} for idx={}", upstream_status, idx);
+        warn!(
+            "proxy: upstream returned {} for idx={}",
+            upstream_status, idx
+        );
         return Response::builder()
             .status(StatusCode::BAD_GATEWAY)
             .body(Body::empty())
@@ -123,9 +135,8 @@ async fn stream_station(
     // Stream bytes from upstream directly to mpv
     let byte_stream = upstream.bytes_stream();
     let reader = tokio_util::io::StreamReader::new(
-        byte_stream.map(|result| {
-            result.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
-        }),
+        byte_stream
+            .map(|result| result.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))),
     );
     let axum_stream = ReaderStream::new(reader);
     let body = Body::from_stream(axum_stream);
