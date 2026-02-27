@@ -57,7 +57,7 @@ jobs:
         with:
           name: vibra-windows
           path: dist/r4dio-windows-x86_64/
-      - name: Bundle mpv + ffmpeg
+      - name: Bundle mpv + ffmpeg + ffprobe + yt-dlp
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -81,20 +81,23 @@ jobs:
           7z x /tmp/ffmpeg.7z -o/tmp/ffmpeg-win -y
           MPV_EXE="$(find /tmp/mpv-win -type f -name mpv.exe | head -n1)"
           FFMPEG_EXE="$(find /tmp/ffmpeg-win /tmp/mpv-win -type f -name ffmpeg.exe | head -n1)"
-          FFPROBE_EXE="$(find /tmp/ffmpeg-win /tmp/mpv-win -type f -name ffprobe.exe | head -n1)"
           echo "MPV_EXE: $MPV_EXE"
           echo "FFMPEG_EXE: $FFMPEG_EXE"
-          echo "FFPROBE_EXE: $FFPROBE_EXE"
           test -f "$MPV_EXE"
           test -f "$FFMPEG_EXE"
           # All executables go in external/
           cp "$MPV_EXE" "$DIST/external/mpv.exe"
           cp "$FFMPEG_EXE" "$DIST/external/ffmpeg.exe"
-          if [ -f "$FFPROBE_EXE" ]; then
-            cp "$FFPROBE_EXE" "$DIST/external/ffprobe.exe"
-          else
-            echo "ffprobe.exe not found in either archive, skipping"
-          fi
+          # Download ffprobe from ffmpeg-static (fully static, no dependencies)
+          echo "Downloading ffprobe from ffmpeg-static..."
+          curl -fsSL "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffprobe-win32-x64.gz" | gunzip > "$DIST/external/ffprobe.exe"
+          chmod +x "$DIST/external/ffprobe.exe"
+          echo "ffprobe.exe downloaded successfully"
+          # Download yt-dlp
+          echo "Downloading yt-dlp..."
+          curl -fsSL "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe" -o "$DIST/external/yt-dlp.exe"
+          chmod +x "$DIST/external/yt-dlp.exe"
+          echo "yt-dlp.exe downloaded successfully"
           # vibra.exe was downloaded to dist root by actions/download-artifact — move it
           mv "$DIST/vibra.exe" "$DIST/external/vibra.exe"
           # mpv's DLLs must live beside mpv.exe so Windows finds them when mpv.exe runs
@@ -123,13 +126,13 @@ jobs:
           ---------------------
           1) Unzip this folder.
           2) Run r4dio.exe.
-          3) Space pauses, q quits, i identifies the current song.
+          3) Space pauses, q quits, i identifies the current song, d downloads NTS shows.
 
           Folder layout:
             r4dio.exe       — main app
             config.toml     — configuration
             data/           — stations.toml, starred.toml, songs.vds
-            external/       — mpv, ffmpeg, ffprobe, vibra + supporting DLLs
+            external/       — mpv, ffmpeg, ffprobe, yt-dlp, vibra + supporting DLLs
           EOF
           (cd dist && zip -r r4dio-windows-x86_64.zip r4dio-windows-x86_64 >/dev/null)
       - uses: actions/upload-artifact@v4
@@ -177,7 +180,7 @@ jobs:
         with:
           name: vibra-linux
           path: dist/r4dio-linux-x86_64/
-      - name: Bundle mpv + ffmpeg
+      - name: Bundle mpv + ffmpeg + yt-dlp
         run: |
           set -euo pipefail
           mkdir -p /tmp/linux-bundle
@@ -196,6 +199,11 @@ jobs:
           cp "$FFMPEG_EXE" dist/r4dio-linux-x86_64/ffmpeg
           cp "$FFPROBE_EXE" dist/r4dio-linux-x86_64/ffprobe
           chmod +x dist/r4dio-linux-x86_64/ffmpeg dist/r4dio-linux-x86_64/ffprobe
+          # Download yt-dlp
+          echo "Downloading yt-dlp..."
+          curl -fsSL "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp" -o dist/r4dio-linux-x86_64/yt-dlp
+          chmod +x dist/r4dio-linux-x86_64/yt-dlp
+          echo "yt-dlp downloaded successfully"
       - name: Add runtime files
         run: |
           chmod +x dist/r4dio-linux-x86_64/r4dio dist/r4dio-linux-x86_64/vibra
@@ -219,9 +227,9 @@ jobs:
           -------------------
           1) Extract tarball.
           2) Run ./r4dio
-          3) Enter plays, Space pauses, q quits, i runs recognition.
+          3) Enter plays, Space pauses, q quits, i runs recognition, d downloads NTS shows.
 
-          Bundled: mpv, ffmpeg, ffprobe, vibra, stations.toml, songs.vds
+          Bundled: mpv, ffmpeg, ffprobe, yt-dlp, vibra, stations.toml, songs.vds
           EOF
           (cd dist && tar czf r4dio-linux-x86_64.tar.gz r4dio-linux-x86_64)
       - uses: actions/upload-artifact@v4
@@ -320,6 +328,11 @@ jobs:
           exec "$DIR/ffmpeg-dist/bin/ffprobe" "$@"
           EOF
           chmod +x dist/r4dio-macos-x86_64/ffmpeg dist/r4dio-macos-x86_64/ffprobe
+          # Download yt-dlp for macOS x86_64
+          echo "Downloading yt-dlp for macOS x86_64..."
+          curl -fsSL "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos_legacy" -o dist/r4dio-macos-x86_64/yt-dlp
+          chmod +x dist/r4dio-macos-x86_64/yt-dlp
+          echo "yt-dlp downloaded successfully"
       - name: Add runtime files
         run: |
           set -euo pipefail
@@ -381,6 +394,8 @@ jobs:
           exec "$DIR/ffmpeg-dist/bin/ffprobe" "$@"
           EOF
           chmod +x "$BUNDLE/ffmpeg" "$BUNDLE/ffprobe"
+          # Move yt-dlp into bundle
+          mv "$DIST/yt-dlp" "$BUNDLE/yt-dlp" && chmod +x "$BUNDLE/yt-dlp"
           # Remove stale wrapper scripts from dist root (now inside bundle)
           rm -f "$DIST/mpv" "$DIST/ffmpeg" "$DIST/ffprobe"
           # Runtime files inside bundle
@@ -478,6 +493,11 @@ jobs:
           exec "$DIR/ffmpeg-dist/bin/ffprobe" "$@"
           EOF
           chmod +x dist/r4dio-macos-arm64/ffmpeg dist/r4dio-macos-arm64/ffprobe
+          # Download yt-dlp for macOS ARM64
+          echo "Downloading yt-dlp for macOS ARM64..."
+          curl -fsSL "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos" -o dist/r4dio-macos-arm64/yt-dlp
+          chmod +x dist/r4dio-macos-arm64/yt-dlp
+          echo "yt-dlp downloaded successfully"
       - name: Add runtime files
         run: |
           set -euo pipefail
@@ -539,6 +559,8 @@ jobs:
           exec "$DIR/ffmpeg-dist/bin/ffprobe" "$@"
           EOF
           chmod +x "$BUNDLE/ffmpeg" "$BUNDLE/ffprobe"
+          # Move yt-dlp into bundle
+          mv "$DIST/yt-dlp" "$BUNDLE/yt-dlp" && chmod +x "$BUNDLE/yt-dlp"
           # Remove stale wrapper scripts from dist root (now inside bundle)
           rm -f "$DIST/mpv" "$DIST/ffmpeg" "$DIST/ffprobe"
           # Runtime files inside bundle
