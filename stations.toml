@@ -16,7 +16,7 @@ url         = "https://streaming.prositel.cl/8068/stream"
 network     = "Universidad de Valparaiso"
 description = "Cultural radio from the University of Chile — news, arts, academia"
 tags        = ["talk", "culture", "academia", "news", "spanish", "latin america"]
-city        = "Santiago"
+city        = "Valparaiso"
 country     = "Chile"
 
 [[station]]
