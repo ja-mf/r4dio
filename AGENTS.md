@@ -47,33 +47,49 @@ r4dio/
 - `src/mpv.rs` — `MpvDriver` / `MpvHandle`: spawn mpv, JSON IPC socket, property observers
 
 **Key flows:**
-- `play_station(idx)`: aborts lavfi observer, aborts old VU task, loads proxy URL into mpv, spawns `run_vu_ffmpeg` against real station URL
+- `play_station(idx)`: aborts lavfi observer, aborts old VU task, loads proxy URL into mpv, spawns `run_vu_ffmpeg` against real station URL (⚠️ not yet synced via proxy)
 - `play_file(path)`: aborts VU task, loads file into mpv, spawns `spawn_audio_observer` (lavfi) for audio level
 - `stop()`: aborts VU task and lavfi observer, stops mpv stream
 - `ensure_mpv_handle()`: reconnects to existing mpv socket or spawns fresh mpv; single forwarding task per connection (no fan-out)
 
+**⚠️ Code quality**: `core.rs` is a ~900-line god object. `play_station()` and `play_file()` share identical teardown logic. Extract `teardown_playback()` helper. See PROJECT.md for full refactoring priorities.
+
 ### Audio pipeline
 
-**Stations (PCM source of truth):**
+**⚠️ Known issue (v1.0): Dual-connection desync**
+
+The current design opens **two independent TCP connections** to the radio server:
+- **Connection A** (via proxy.rs): feeds mpv the audio
+- **Connection B** (via ffmpeg in core.rs): feeds the VU meter and oscilloscope
+
+These are NOT synchronised — they buffer differently and start at different points in the live stream. **The VU/scope shows what ffmpeg is receiving, not what mpv is playing.**
+
+**Planned fix (v1.1)**: Route ffmpeg's PCM tap through the same proxy as mpv. Change `run_vu_ffmpeg()` to use `proxy_url(idx)` instead of the real station URL. This makes both mpv and ffmpeg read from the same upstream source.
+
+**Stations (PCM source of truth — to be unified):**
 ```
-ffmpeg -i <station_url> -ac 1 -ar 11025 -f s16le pipe:1
-  → 512-sample chunks (~46ms) → PcmChunk broadcast
+ffmpeg -i <station_url> -ac 1 -ar 22050 -f s16le pipe:1
+  → 1024-sample chunks (~46ms at 22050Hz) → PcmChunk broadcast
   → app.rs PcmChunk handler: push to pcm_ring, compute RMS → update_audio_trackers()
 ```
 
-**Local files (lavfi source of truth):**
+**Local files (lavfi path — to be replaced with PCM):**
 ```
 mpv lavfi.astats.Overall.RMS_level property observer
   → AudioLevel broadcast → update_audio_trackers()
 ```
 
+**Planned unification (v1.1)**: Run ffmpeg PCM tap for local files too (currently lavfi only).
+This enables the oscilloscope for files and makes both paths identical.
+
 `update_audio_trackers()` maintains: `audio_level`, `peak_level` (fast attack, 6 dB/s decay), `meter_mean_db` (EMA τ=4s), `meter_spread_db` (EMA τ=8s).
 
 ### Oscilloscope (`src/scope/` + `src/components/scope_panel.rs`)
-- Ring buffer: `AppState.pcm_ring: VecDeque<f32>` — 22050 samples (~2s at 11025 Hz)
+- Ring buffer: `AppState.pcm_ring: VecDeque<f32>` — 88200 samples (~2s at 22050 Hz)
 - Toggle: `o` key → `RightPane::Scope`; scope occupies right half of the 2-row header
 - Keys when focused: `Up`/`Down` scale ±0.01 (×10 Shift), `Left`/`Right` samples ±25, `Esc` reset
-- Redraws at 30fps via `meter_tick` (33ms); `PcmChunk` messages never trigger a redraw
+- Redraws at 30fps via `meter_tick` (40ms); `PcmChunk` messages never trigger a redraw
+- **v1.0 limitation**: Scope only works for stations (lavfi path for files has no PCM). Planned: run ffmpeg for files too (see Audio pipeline notes).
 
 ### Network services (in-process)
 - `src/proxy.rs` — Axum HTTP proxy on port 8990: `GET /stream/:idx` rewrites station URL for mpv, forwards ICY headers
@@ -226,6 +242,38 @@ RUST_LOG=debug cargo run -p radio-tui
 - "vibra not found" — install vibra or set `VIBRA_PATH`
 - No audio — check mpv audio output config (`ao`)
 - Flat VU/scope — check ffmpeg is in PATH; stream must be playing
+
+---
+
+## Known Issues & Improvement Opportunities (post-v1.0)
+
+### Critical panics to fix
+Three `expect()` / `unwrap()` calls that can crash the app:
+- `proxy.rs:44` — `.expect()` on reqwest client builder
+- `proxy.rs:149,178` — `.unwrap()` on Response builder
+- `core.rs:867` — `.expect("ffmpeg stdout")` after spawn
+
+All should convert to proper error propagation.
+
+### High-priority refactoring
+1. Delete `crates/radio-tui/src/connection.rs` — orphaned file, not compiled
+2. Delete unused function `core.rs::pcm_rms_db()` at line 894
+3. Extract `teardown_playback()` helper in `core.rs` to reduce duplication between `play_station()` and `play_file()`
+4. Rename `http::AppState` to `HttpState` to avoid shadowing the TUI's `AppState`
+5. Consolidate duplicated platform logic in `mpv.rs::spawn_audio_observer` (Unix vs Windows property parsing)
+
+See PROJECT.md for the full 5-pass compiler warnings cleanup plan (74 total warnings, all dead code).
+
+### Architecture improvements
+- **DaemonCore god object**: `core.rs` struct has 15+ fields and ~900 lines. Split into `PlaybackEngine` (mpv + audio) and `AppCore` (state + config + broadcast).
+- **VU/scope sync via proxy**: ffmpeg PCM tap should use `proxy_url(idx)` instead of the real station URL (currently causes dual-connection desync — see Audio pipeline notes)
+- **Oscilloscope for files**: Run ffmpeg PCM tap for local files too, replacing the lavfi path (currently files have no scope, only VU meter)
+- **m3u fallback URL**: `config.rs::default_m3u_url()` points to private `ja-mf/radio-curation` repo — either make it public or change to empty string
+- **macOS code signing**: App is unsigned; users need `xattr -d com.apple.quarantine` to bypass Gatekeeper
+- **Windows ffprobe**: Not bundled in shinchiro ffmpeg archive; file browser metadata will fail silently
+
+All issues and detailed solutions are documented in PROJECT.md.
+
 
 ## Platform Notes
 
