@@ -119,7 +119,7 @@ const PEAK_FALL_DB_PER_SEC: f32 = 28.0;
 const MIN_POLL_INTERVAL_SECS: u64 = 10;
 const NTS_POLL_TASK_TIMEOUT_SECS: u64 = 12;
 const NON_NTS_MAX_CONCURRENCY: usize = 5;
-const NON_NTS_MAX_JOBS_PER_CYCLE: usize = 20;
+const NON_NTS_MAX_JOBS_PER_CYCLE: usize = 32;
 const NON_NTS_CYCLE_BUDGET_SECS: u64 = 95;
 const NON_NTS_CONNECT_TIMEOUT_MS: u64 = 4_000;
 const NON_NTS_REQUEST_TIMEOUT_MS: u64 = 20_000;
@@ -3248,7 +3248,13 @@ async fn run_station_poll_cycle(
                 });
             }
             nts_target => {
-                nts_join.spawn(async move { poll_nts_target(nts_target, ord, total).await });
+                let txn = tx.clone();
+                nts_join.spawn(async move {
+                    let outcome = poll_nts_target(nts_target, ord, total).await;
+                    let _ = txn
+                        .send(AppMessage::PassivePollOutcome { cycle_id, outcome })
+                        .await;
+                });
             }
         }
     }
@@ -3355,15 +3361,8 @@ async fn run_station_poll_cycle(
 
     // Drain NTS outcomes as they finish.
     while let Some(joined) = nts_join.join_next().await {
-        match joined {
-            Ok(outcome) => {
-                let _ = tx
-                    .send(AppMessage::PassivePollOutcome { cycle_id, outcome })
-                    .await;
-            }
-            Err(e) => {
-                warn!("[poll] nts task join error: {}", e);
-            }
+        if let Err(e) = joined {
+            warn!("[poll] nts task join error: {}", e);
         }
     }
 }
@@ -3599,11 +3598,16 @@ async fn poll_non_nts_station_icy(
         };
     };
 
+    let icy_blocks = adaptive_icy_blocks(metaint);
+    debug!(
+        "[poll] [{}/{}] {} resolver=icy-probe metaint={} blocks={}",
+        ord, total, station_name, metaint, icy_blocks
+    );
     match read_icy_stream_title(
         &mut resp,
         metaint,
         Duration::from_millis(NON_NTS_METADATA_TIMEOUT_MS),
-        NON_NTS_ICY_BLOCKS,
+        icy_blocks,
     )
     .await
     {
@@ -3814,6 +3818,16 @@ fn is_playlist_url(url: &str) -> bool {
 
 fn looks_hls_url(url: &str) -> bool {
     url.to_ascii_lowercase().contains(".m3u8")
+}
+
+fn adaptive_icy_blocks(metaint: usize) -> usize {
+    if metaint > 96_000 {
+        1
+    } else if metaint > 48_000 {
+        2
+    } else {
+        NON_NTS_ICY_BLOCKS
+    }
 }
 
 fn is_somafm_station(station: &Station) -> bool {
