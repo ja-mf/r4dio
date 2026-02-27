@@ -13,7 +13,6 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use rand::seq::SliceRandom;
-use reqwest::header::HeaderValue;
 use ratatui::crossterm::{
     event::{
         self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
@@ -27,6 +26,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     Terminal,
 };
+use reqwest::header::HeaderValue;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{broadcast, mpsc};
 use tracing::{debug, info, warn};
@@ -91,8 +91,13 @@ enum AppMessage {
         url: String,
         result: Result<PathBuf, String>,
     },
-    PassivePollComplete {
-        outcomes: Vec<StationPollOutcome>,
+    PassivePollOutcome {
+        cycle_id: u64,
+        outcome: StationPollOutcome,
+    },
+    PassivePollCycleDone {
+        cycle_id: u64,
+        total: usize,
         elapsed_ms: u128,
     },
 }
@@ -298,6 +303,12 @@ pub struct App {
     auto_polling_enabled: bool,
     auto_poll_interval: Duration,
     auto_poll_in_flight: bool,
+    auto_poll_cycle_id: u64,
+    auto_poll_cycle_total: usize,
+    auto_poll_cycle_seen: usize,
+    auto_poll_cycle_changed: usize,
+    auto_poll_cycle_unchanged: usize,
+    auto_poll_cycle_errors: usize,
 }
 
 impl App {
@@ -455,6 +466,12 @@ impl App {
             auto_polling_enabled,
             auto_poll_interval: Duration::from_secs(poll_interval_secs.max(MIN_POLL_INTERVAL_SECS)),
             auto_poll_in_flight: false,
+            auto_poll_cycle_id: 0,
+            auto_poll_cycle_total: 0,
+            auto_poll_cycle_seen: 0,
+            auto_poll_cycle_changed: 0,
+            auto_poll_cycle_unchanged: 0,
+            auto_poll_cycle_errors: 0,
         };
 
         // Restore file selection in FileList component
@@ -873,65 +890,111 @@ impl App {
                 }
             }
 
-            AppMessage::PassivePollComplete {
-                outcomes,
-                elapsed_ms,
-            } => {
-                self.auto_poll_in_flight = false;
-                let mut changed = 0usize;
-                let mut unchanged = 0usize;
-                let mut errors = 0usize;
+            AppMessage::PassivePollOutcome { cycle_id, outcome } => {
+                if cycle_id != self.auto_poll_cycle_id {
+                    debug!(
+                        "[poll] ignoring stale outcome cycle={} active={} station={}",
+                        cycle_id, self.auto_poll_cycle_id, outcome.station_name
+                    );
+                    return false;
+                }
 
-                for outcome in outcomes {
-                    if let Some(err) = outcome.error {
-                        errors += 1;
-                        warn!(
-                            "[poll] {} resolver={} error={} ",
-                            outcome.station_name, outcome.resolver, err
-                        );
-                        continue;
-                    }
+                self.auto_poll_cycle_seen += 1;
 
-                    let before = self
-                        .state
-                        .station_poll_titles
-                        .get(&outcome.station_name)
-                        .cloned();
+                if let Some(err) = outcome.error {
+                    self.auto_poll_cycle_errors += 1;
+                    warn!(
+                        "[poll] {} resolver={} error={} ",
+                        outcome.station_name, outcome.resolver, err
+                    );
+                    return false;
+                }
 
-                    match outcome.show.clone() {
-                        Some(show) => {
+                let active_station_name = self
+                    .state
+                    .daemon_state
+                    .current_station
+                    .and_then(|i| self.state.daemon_state.stations.get(i))
+                    .map(|s| s.name.clone());
+                if active_station_name.as_deref() == Some(outcome.station_name.as_str()) {
+                    if let Some(active_icy) = self.state.daemon_state.icy_title.clone() {
+                        let trimmed = active_icy.trim().to_string();
+                        if !trimmed.is_empty() {
                             self.state
                                 .station_poll_titles
-                                .insert(outcome.station_name.clone(), show);
+                                .insert(outcome.station_name.clone(), trimmed);
+                            self.auto_poll_cycle_unchanged += 1;
+                            debug!(
+                                "[poll] {} resolver={} ignored (active station has fresher ICY)",
+                                outcome.station_name, outcome.resolver
+                            );
+                            return false;
                         }
-                        None => {
-                            self.state.station_poll_titles.remove(&outcome.station_name);
-                        }
-                    }
-
-                    let after = self
-                        .state
-                        .station_poll_titles
-                        .get(&outcome.station_name)
-                        .cloned();
-
-                    if before != after {
-                        changed += 1;
-                        info!(
-                            "[poll] {} resolver={} changed: {:?} -> {:?}",
-                            outcome.station_name, outcome.resolver, before, after
-                        );
-                    } else {
-                        unchanged += 1;
                     }
                 }
 
-                info!(
-                    "[poll] cycle complete in {}ms (changed={}, unchanged={}, errors={})",
-                    elapsed_ms, changed, unchanged, errors
-                );
+                let before = self
+                    .state
+                    .station_poll_titles
+                    .get(&outcome.station_name)
+                    .cloned();
 
-                return changed > 0;
+                match outcome.show {
+                    Some(show) => {
+                        self.state
+                            .station_poll_titles
+                            .insert(outcome.station_name.clone(), show);
+                    }
+                    None => {
+                        self.state.station_poll_titles.remove(&outcome.station_name);
+                    }
+                }
+
+                let after = self
+                    .state
+                    .station_poll_titles
+                    .get(&outcome.station_name)
+                    .cloned();
+
+                if before != after {
+                    self.auto_poll_cycle_changed += 1;
+                    info!(
+                        "[poll] {} resolver={} changed: {:?} -> {:?}",
+                        outcome.station_name, outcome.resolver, before, after
+                    );
+                    return true;
+                }
+
+                self.auto_poll_cycle_unchanged += 1;
+                return false;
+            }
+
+            AppMessage::PassivePollCycleDone {
+                cycle_id,
+                total,
+                elapsed_ms,
+            } => {
+                if cycle_id != self.auto_poll_cycle_id {
+                    debug!(
+                        "[poll] ignoring stale cycle done cycle={} active={}",
+                        cycle_id, self.auto_poll_cycle_id
+                    );
+                    return false;
+                }
+
+                self.auto_poll_in_flight = false;
+                info!(
+                    "[poll] cycle #{} complete in {}ms (targets={} expected={} seen={}, changed={}, unchanged={}, errors={})",
+                    cycle_id,
+                    elapsed_ms,
+                    total,
+                    self.auto_poll_cycle_total,
+                    self.auto_poll_cycle_seen,
+                    self.auto_poll_cycle_changed,
+                    self.auto_poll_cycle_unchanged,
+                    self.auto_poll_cycle_errors
+                );
+                return false;
             }
 
             AppMessage::RecognitionStarted(result) => {
@@ -1254,6 +1317,27 @@ impl App {
             .station_poll_titles
             .retain(|name, _| station_names.contains(name));
 
+        // Keep station-list annotation in sync with daemon ICY source for the
+        // currently playing station (polling is not the only source of truth).
+        if let Some(st_name) = self
+            .state
+            .daemon_state
+            .current_station
+            .and_then(|i| self.state.daemon_state.stations.get(i))
+            .map(|s| s.name.clone())
+        {
+            if let Some(icy) = self.state.daemon_state.icy_title.clone() {
+                let trimmed = icy.trim().to_string();
+                if !trimmed.is_empty() {
+                    self.state.station_poll_titles.insert(st_name, trimmed);
+                } else {
+                    self.state.station_poll_titles.remove(&st_name);
+                }
+            } else {
+                self.state.station_poll_titles.remove(&st_name);
+            }
+        }
+
         let source_changed = self.state.daemon_state.current_station != prev_station
             || self.state.daemon_state.current_file != prev_file;
         if source_changed {
@@ -1533,10 +1617,20 @@ impl App {
                     .and_then(|i| self.state.daemon_state.stations.get(i))
                     .map(|s| s.name.clone());
                 if let Some(st) = station {
-                    self.last_known_icy = Some((st, t.clone()));
+                    self.last_known_icy = Some((st.clone(), t.clone()));
+                    self.state.station_poll_titles.insert(st, t.clone());
                 }
             }
             None => {
+                if let Some(st) = self
+                    .state
+                    .daemon_state
+                    .current_station
+                    .and_then(|i| self.state.daemon_state.stations.get(i))
+                    .map(|s| s.name.clone())
+                {
+                    self.state.station_poll_titles.remove(&st);
+                }
                 self.last_known_icy = None;
             }
         }
@@ -2696,22 +2790,54 @@ impl App {
         }
 
         let stations = self.state.daemon_state.stations.clone();
-        let target_count = build_station_poll_targets(&stations).len();
+        let targets = build_station_poll_targets(&stations);
+        let target_count = targets.len();
         if target_count == 0 {
             info!("[poll] skip cycle (no resolvable polling targets)");
             return;
         }
 
+        self.auto_poll_cycle_id = self.auto_poll_cycle_id.saturating_add(1);
+        self.auto_poll_cycle_total = target_count;
+        self.auto_poll_cycle_seen = 0;
+        self.auto_poll_cycle_changed = 0;
+        self.auto_poll_cycle_unchanged = 0;
+        self.auto_poll_cycle_errors = 0;
         self.auto_poll_in_flight = true;
+
+        let cycle_id = self.auto_poll_cycle_id;
+        let target_labels: Vec<String> = targets
+            .iter()
+            .map(|t| match t {
+                StationPollTarget::NtsLive { station_name, .. } => {
+                    format!("nts-live:{}", station_name)
+                }
+                StationPollTarget::NtsMixtape { station_name, .. } => {
+                    format!("nts-mixtape:{}", station_name)
+                }
+                StationPollTarget::NonNtsIcy { station_name, .. } => {
+                    format!("icy-probe:{}", station_name)
+                }
+            })
+            .collect();
+
         let why = reason.to_string();
-        info!("[poll] cycle start reason={} targets={}", why, target_count);
+        info!(
+            "[poll] cycle #{} start reason={} targets={} [{}]",
+            cycle_id,
+            why,
+            target_count,
+            target_labels.join(", ")
+        );
+
         tokio::spawn(async move {
             let started = std::time::Instant::now();
-            let outcomes = run_station_poll_cycle(stations).await;
+            run_station_poll_cycle(targets, tx.clone(), cycle_id).await;
             let elapsed_ms = started.elapsed().as_millis();
             let _ = tx
-                .send(AppMessage::PassivePollComplete {
-                    outcomes,
+                .send(AppMessage::PassivePollCycleDone {
+                    cycle_id,
+                    total: target_count,
                     elapsed_ms,
                 })
                 .await;
@@ -3037,10 +3163,12 @@ fn build_station_poll_targets(stations: &[Station]) -> Vec<StationPollTarget> {
     targets
 }
 
-async fn run_station_poll_cycle(stations: Vec<Station>) -> Vec<StationPollOutcome> {
-    let targets = build_station_poll_targets(&stations);
+async fn run_station_poll_cycle(
+    targets: Vec<StationPollTarget>,
+    tx: mpsc::Sender<AppMessage>,
+    cycle_id: u64,
+) {
     let total = targets.len();
-    let mut outcomes = Vec::with_capacity(total);
     let mut non_nts_jobs = Vec::new();
 
     let non_nts_client = reqwest::Client::builder()
@@ -3116,7 +3244,7 @@ async fn run_station_poll_cycle(stations: Vec<Station>) -> Vec<StationPollOutcom
                     Duration::from_secs(NTS_POLL_TASK_TIMEOUT_SECS),
                     recognize_via_nts_mixtape(&mixtape_url),
                 )
-                    .await
+                .await
                 {
                     Ok(v) => (v.map(|(title, _url)| title), None),
                     Err(_) => {
@@ -3151,7 +3279,12 @@ async fn run_station_poll_cycle(stations: Vec<Station>) -> Vec<StationPollOutcom
                 continue;
             }
         };
-        outcomes.push(result);
+        let _ = tx
+            .send(AppMessage::PassivePollOutcome {
+                cycle_id,
+                outcome: result,
+            })
+            .await;
 
         if idx + 1 < total && non_nts_jobs.is_empty() {
             tokio::time::sleep(Duration::from_millis(120)).await;
@@ -3170,7 +3303,11 @@ async fn run_station_poll_cycle(stations: Vec<Station>) -> Vec<StationPollOutcom
 
             while let Some(joined) = join_set.join_next().await {
                 match joined {
-                    Ok(outcome) => outcomes.push(outcome),
+                    Ok(outcome) => {
+                        let _ = tx
+                            .send(AppMessage::PassivePollOutcome { cycle_id, outcome })
+                            .await;
+                    }
                     Err(e) => {
                         warn!("[poll] icy-probe task join error: {}", e);
                     }
@@ -3181,8 +3318,6 @@ async fn run_station_poll_cycle(stations: Vec<Station>) -> Vec<StationPollOutcom
             warn!("[poll] failed to build icy probe client: {}", e);
         }
     }
-
-    outcomes
 }
 
 async fn poll_non_nts_station_icy(
@@ -3480,7 +3615,10 @@ fn parse_stream_title(meta: &[u8]) -> Option<String> {
     None
 }
 
-async fn fetch_playlist_target(client: &reqwest::Client, url: &str) -> Result<Option<String>, String> {
+async fn fetch_playlist_target(
+    client: &reqwest::Client,
+    url: &str,
+) -> Result<Option<String>, String> {
     let body = client
         .get(url)
         .send()
