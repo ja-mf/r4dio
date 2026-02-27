@@ -12,6 +12,8 @@ use std::io;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use rand::seq::SliceRandom;
+use reqwest::header::HeaderValue;
 use ratatui::crossterm::{
     event::{
         self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
@@ -27,9 +29,9 @@ use ratatui::{
 };
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{broadcast, mpsc};
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, info, warn};
 
-use radio_proto::protocol::{Command, DaemonState, MpvHealth, PlaybackStatus, Station};
+use radio_proto::protocol::{Command, DaemonState, MpvHealth, Station};
 use radio_proto::state::StateManager;
 
 use crate::core::DaemonEvent;
@@ -110,6 +112,12 @@ const PEAK_HOLD_RESET_DB: f32 = 0.35;
 const PEAK_RELEASE_TAU_SECS: f32 = 0.09;
 const PEAK_FALL_DB_PER_SEC: f32 = 28.0;
 const MIN_POLL_INTERVAL_SECS: u64 = 10;
+const NTS_POLL_TASK_TIMEOUT_SECS: u64 = 12;
+const NON_NTS_SAMPLE_PER_CYCLE: usize = 5;
+const NON_NTS_CONNECT_TIMEOUT_MS: u64 = 4_000;
+const NON_NTS_REQUEST_TIMEOUT_MS: u64 = 20_000;
+const NON_NTS_METADATA_TIMEOUT_MS: u64 = 10_000;
+const NON_NTS_ICY_BLOCKS: usize = 4;
 
 #[derive(Debug, Clone)]
 enum StationPollTarget {
@@ -121,6 +129,10 @@ enum StationPollTarget {
         station_name: String,
         mixtape_url: String,
     },
+    NonNtsIcy {
+        station_name: String,
+        stream_url: String,
+    },
 }
 
 impl StationPollTarget {
@@ -128,6 +140,7 @@ impl StationPollTarget {
         match self {
             Self::NtsLive { .. } => "nts-live",
             Self::NtsMixtape { .. } => "nts-mixtape",
+            Self::NonNtsIcy { .. } => "icy-probe",
         }
     }
 }
@@ -2980,6 +2993,7 @@ impl App {
 
 fn build_station_poll_targets(stations: &[Station]) -> Vec<StationPollTarget> {
     let mut targets = Vec::new();
+    let mut non_nts_candidates = Vec::new();
     for station in stations {
         if station.name.eq_ignore_ascii_case("NTS 1") {
             targets.push(StationPollTarget::NtsLive {
@@ -3002,8 +3016,24 @@ fn build_station_poll_targets(stations: &[Station]) -> Vec<StationPollTarget> {
                 station_name: station.name.clone(),
                 mixtape_url: mixtape_url.to_string(),
             });
+            continue;
+        }
+
+        if station.url.starts_with("http://") || station.url.starts_with("https://") {
+            non_nts_candidates.push(StationPollTarget::NonNtsIcy {
+                station_name: station.name.clone(),
+                stream_url: station.url.clone(),
+            });
         }
     }
+
+    if !non_nts_candidates.is_empty() {
+        let mut rng = rand::thread_rng();
+        non_nts_candidates.shuffle(&mut rng);
+        non_nts_candidates.truncate(NON_NTS_SAMPLE_PER_CYCLE);
+        targets.extend(non_nts_candidates);
+    }
+
     targets
 }
 
@@ -3011,6 +3041,13 @@ async fn run_station_poll_cycle(stations: Vec<Station>) -> Vec<StationPollOutcom
     let targets = build_station_poll_targets(&stations);
     let total = targets.len();
     let mut outcomes = Vec::with_capacity(total);
+    let mut non_nts_jobs = Vec::new();
+
+    let non_nts_client = reqwest::Client::builder()
+        .user_agent("r4dio-passive-icy-poller/0.1")
+        .connect_timeout(Duration::from_millis(NON_NTS_CONNECT_TIMEOUT_MS))
+        .timeout(Duration::from_millis(NON_NTS_REQUEST_TIMEOUT_MS))
+        .build();
 
     for (idx, target) in targets.into_iter().enumerate() {
         let resolver = target.resolver_label().to_string();
@@ -3018,8 +3055,13 @@ async fn run_station_poll_cycle(stations: Vec<Station>) -> Vec<StationPollOutcom
             StationPollTarget::NtsLive {
                 station_name,
                 channel_idx,
-            } => match fetch_nts_channel(channel_idx).await {
-                Ok(ch) => {
+            } => match tokio::time::timeout(
+                Duration::from_secs(NTS_POLL_TASK_TIMEOUT_SECS),
+                fetch_nts_channel(channel_idx),
+            )
+            .await
+            {
+                Ok(Ok(ch)) => {
                     let show = ch.now.broadcast_title.trim().to_string();
                     let show = if show.is_empty() { None } else { Some(show) };
                     info!(
@@ -3036,7 +3078,7 @@ async fn run_station_poll_cycle(stations: Vec<Station>) -> Vec<StationPollOutcom
                         error: None,
                     }
                 }
-                Err(e) => {
+                Ok(Err(e)) => {
                     warn!(
                         "[poll] [{}/{}] {} resolver=nts-live error={}",
                         idx + 1,
@@ -3051,14 +3093,42 @@ async fn run_station_poll_cycle(stations: Vec<Station>) -> Vec<StationPollOutcom
                         error: Some(e.to_string()),
                     }
                 }
+                Err(_) => {
+                    warn!(
+                        "[poll] [{}/{}] {} resolver=nts-live timeout",
+                        idx + 1,
+                        total,
+                        station_name
+                    );
+                    StationPollOutcome {
+                        station_name,
+                        resolver,
+                        show: None,
+                        error: Some("timeout".to_string()),
+                    }
+                }
             },
             StationPollTarget::NtsMixtape {
                 station_name,
                 mixtape_url,
             } => {
-                let show = recognize_via_nts_mixtape(&mixtape_url)
+                let (show, timeout_err) = match tokio::time::timeout(
+                    Duration::from_secs(NTS_POLL_TASK_TIMEOUT_SECS),
+                    recognize_via_nts_mixtape(&mixtape_url),
+                )
                     .await
-                    .map(|(title, _url)| title);
+                {
+                    Ok(v) => (v.map(|(title, _url)| title), None),
+                    Err(_) => {
+                        warn!(
+                            "[poll] [{}/{}] {} resolver=nts-mixtape timeout",
+                            idx + 1,
+                            total,
+                            station_name
+                        );
+                        (None, Some("timeout".to_string()))
+                    }
+                };
                 info!(
                     "[poll] [{}/{}] {} resolver=nts-mixtape show={:?}",
                     idx + 1,
@@ -3070,18 +3140,398 @@ async fn run_station_poll_cycle(stations: Vec<Station>) -> Vec<StationPollOutcom
                     station_name,
                     resolver,
                     show,
-                    error: None,
+                    error: timeout_err,
                 }
+            }
+            StationPollTarget::NonNtsIcy {
+                station_name,
+                stream_url,
+            } => {
+                non_nts_jobs.push((idx + 1, station_name, stream_url));
+                continue;
             }
         };
         outcomes.push(result);
 
-        if idx + 1 < total {
+        if idx + 1 < total && non_nts_jobs.is_empty() {
             tokio::time::sleep(Duration::from_millis(120)).await;
         }
     }
 
+    match non_nts_client {
+        Ok(client) => {
+            let mut join_set = tokio::task::JoinSet::new();
+            for (ord, station_name, stream_url) in non_nts_jobs {
+                let c = client.clone();
+                join_set.spawn(async move {
+                    poll_non_nts_station_icy(c, station_name, stream_url, ord, total).await
+                });
+            }
+
+            while let Some(joined) = join_set.join_next().await {
+                match joined {
+                    Ok(outcome) => outcomes.push(outcome),
+                    Err(e) => {
+                        warn!("[poll] icy-probe task join error: {}", e);
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            warn!("[poll] failed to build icy probe client: {}", e);
+        }
+    }
+
     outcomes
+}
+
+async fn poll_non_nts_station_icy(
+    client: reqwest::Client,
+    station_name: String,
+    stream_url: String,
+    ord: usize,
+    total: usize,
+) -> StationPollOutcome {
+    let started = std::time::Instant::now();
+    let mut effective_url = stream_url.clone();
+    let mut detail_prefix = String::new();
+
+    if is_playlist_url(&effective_url) {
+        match fetch_playlist_target(&client, &effective_url).await {
+            Ok(Some(next)) => {
+                detail_prefix = format!("playlist->{}", next);
+                effective_url = next;
+            }
+            Ok(None) => {
+                info!(
+                    "[poll] [{}/{}] {} resolver=icy-probe playlist-no-target",
+                    ord, total, station_name
+                );
+                return StationPollOutcome {
+                    station_name,
+                    resolver: "icy-probe".to_string(),
+                    show: None,
+                    error: None,
+                };
+            }
+            Err(e) => {
+                warn!(
+                    "[poll] [{}/{}] {} resolver=icy-probe playlist-error={} ",
+                    ord, total, station_name, e
+                );
+                return StationPollOutcome {
+                    station_name,
+                    resolver: "icy-probe".to_string(),
+                    show: None,
+                    error: Some(e),
+                };
+            }
+        }
+    }
+
+    if looks_hls_url(&effective_url) {
+        info!(
+            "[poll] [{}/{}] {} resolver=icy-probe hls-skip {:?}",
+            ord, total, station_name, effective_url
+        );
+        return StationPollOutcome {
+            station_name,
+            resolver: "icy-probe".to_string(),
+            show: None,
+            error: None,
+        };
+    }
+
+    let mut req = client
+        .get(&effective_url)
+        .header("Icy-MetaData", HeaderValue::from_static("1"));
+    if looks_hls_url(&effective_url) {
+        req = req.header(
+            "Accept",
+            HeaderValue::from_static("application/vnd.apple.mpegurl,*/*"),
+        );
+    }
+
+    let mut resp = match req.send().await {
+        Ok(r) => match r.error_for_status() {
+            Ok(ok) => ok,
+            Err(e) => {
+                return StationPollOutcome {
+                    station_name,
+                    resolver: "icy-probe".to_string(),
+                    show: None,
+                    error: Some(e.to_string()),
+                };
+            }
+        },
+        Err(e) => {
+            return StationPollOutcome {
+                station_name,
+                resolver: "icy-probe".to_string(),
+                show: None,
+                error: Some(e.to_string()),
+            };
+        }
+    };
+
+    let content_type = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
+    if content_type.contains("mpegurl") || looks_hls_url(&effective_url) {
+        info!(
+            "[poll] [{}/{}] {} resolver=icy-probe non-icy content-type={}",
+            ord, total, station_name, content_type
+        );
+        return StationPollOutcome {
+            station_name,
+            resolver: "icy-probe".to_string(),
+            show: None,
+            error: None,
+        };
+    }
+
+    let metaint = resp
+        .headers()
+        .get("icy-metaint")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<usize>().ok());
+
+    let Some(metaint) = metaint else {
+        info!(
+            "[poll] [{}/{}] {} resolver=icy-probe no icy-metaint{}",
+            ord,
+            total,
+            station_name,
+            if detail_prefix.is_empty() {
+                "".to_string()
+            } else {
+                format!(" ({})", detail_prefix)
+            }
+        );
+        return StationPollOutcome {
+            station_name,
+            resolver: "icy-probe".to_string(),
+            show: None,
+            error: None,
+        };
+    };
+
+    match read_icy_stream_title(
+        &mut resp,
+        metaint,
+        Duration::from_millis(NON_NTS_METADATA_TIMEOUT_MS),
+        NON_NTS_ICY_BLOCKS,
+    )
+    .await
+    {
+        Ok((Some(title), bytes_read)) => {
+            info!(
+                "[poll] [{}/{}] {} resolver=icy-probe show={:?} bytes={} elapsed={}ms",
+                ord,
+                total,
+                station_name,
+                title,
+                bytes_read,
+                started.elapsed().as_millis()
+            );
+            StationPollOutcome {
+                station_name,
+                resolver: "icy-probe".to_string(),
+                show: Some(title),
+                error: None,
+            }
+        }
+        Ok((None, bytes_read)) => {
+            info!(
+                "[poll] [{}/{}] {} resolver=icy-probe no-title bytes={} elapsed={}ms",
+                ord,
+                total,
+                station_name,
+                bytes_read,
+                started.elapsed().as_millis()
+            );
+            StationPollOutcome {
+                station_name,
+                resolver: "icy-probe".to_string(),
+                show: None,
+                error: None,
+            }
+        }
+        Err(e) => {
+            warn!(
+                "[poll] [{}/{}] {} resolver=icy-probe error={}",
+                ord, total, station_name, e
+            );
+            StationPollOutcome {
+                station_name,
+                resolver: "icy-probe".to_string(),
+                show: None,
+                error: Some(e),
+            }
+        }
+    }
+}
+
+async fn read_icy_stream_title(
+    resp: &mut reqwest::Response,
+    metaint: usize,
+    timeout_total: Duration,
+    max_blocks: usize,
+) -> Result<(Option<String>, usize), String> {
+    if !(1..=256_000).contains(&metaint) {
+        return Err(format!("invalid icy-metaint={}", metaint));
+    }
+
+    let deadline = std::time::Instant::now() + timeout_total;
+    let mut buf: Vec<u8> = Vec::with_capacity((metaint + 1024).min(128 * 1024));
+    let mut cursor = 0usize;
+
+    for _ in 0..max_blocks {
+        let required_for_len = cursor + metaint + 1;
+        while buf.len() < required_for_len {
+            let now = std::time::Instant::now();
+            if now >= deadline {
+                return Err("timed out waiting for ICY metadata length byte".to_string());
+            }
+            let remain = deadline.saturating_duration_since(now);
+            let next = tokio::time::timeout(remain, resp.chunk())
+                .await
+                .map_err(|_| "timed out waiting for stream chunk".to_string())?
+                .map_err(|e| e.to_string())?;
+
+            match next {
+                Some(chunk) => buf.extend_from_slice(&chunk),
+                None => return Err("stream ended before ICY metadata block".to_string()),
+            }
+        }
+
+        let len_byte = buf[cursor + metaint] as usize;
+        let meta_len = len_byte * 16;
+        if meta_len > 16 * 255 {
+            return Err(format!("metadata block too large: {}", meta_len));
+        }
+
+        let block_total = metaint + 1 + meta_len;
+        let required_total = cursor + block_total;
+        while buf.len() < required_total {
+            let now = std::time::Instant::now();
+            if now >= deadline {
+                return Err("timed out waiting for ICY metadata payload".to_string());
+            }
+            let remain = deadline.saturating_duration_since(now);
+            let next = tokio::time::timeout(remain, resp.chunk())
+                .await
+                .map_err(|_| "timed out waiting for stream chunk".to_string())?
+                .map_err(|e| e.to_string())?;
+            match next {
+                Some(chunk) => buf.extend_from_slice(&chunk),
+                None => return Err("stream ended before ICY metadata payload".to_string()),
+            }
+        }
+
+        if meta_len > 0 {
+            let meta_start = cursor + metaint + 1;
+            let meta_end = meta_start + meta_len;
+            let meta = &buf[meta_start..meta_end];
+            if let Some(title) = parse_stream_title(meta) {
+                return Ok((Some(title), required_total));
+            }
+        }
+
+        cursor = required_total;
+    }
+
+    Ok((None, cursor))
+}
+
+fn parse_stream_title(meta: &[u8]) -> Option<String> {
+    let text = String::from_utf8_lossy(meta)
+        .trim_matches(char::from(0))
+        .trim()
+        .to_string();
+    if text.is_empty() {
+        return None;
+    }
+
+    if let Some(start) = text.find("StreamTitle='") {
+        let rest = &text[start + "StreamTitle='".len()..];
+        if let Some(end) = rest.find("';") {
+            let title = rest[..end].trim();
+            if !title.is_empty() {
+                return Some(title.to_string());
+            }
+        }
+    }
+
+    if let Some(start) = text.find("StreamTitle=\"") {
+        let rest = &text[start + "StreamTitle=\"".len()..];
+        if let Some(end) = rest.find("\";") {
+            let title = rest[..end].trim();
+            if !title.is_empty() {
+                return Some(title.to_string());
+            }
+        }
+    }
+
+    None
+}
+
+async fn fetch_playlist_target(client: &reqwest::Client, url: &str) -> Result<Option<String>, String> {
+    let body = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .error_for_status()
+        .map_err(|e| e.to_string())?
+        .text()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if url.to_ascii_lowercase().ends_with(".pls") {
+        for line in body.lines() {
+            let l = line.trim();
+            if l.to_ascii_lowercase().starts_with("file") {
+                if let Some((_, v)) = l.split_once('=') {
+                    return resolve_relative_url(url, v.trim()).map(Some);
+                }
+            }
+        }
+        return Ok(None);
+    }
+
+    for line in body.lines() {
+        let l = line.trim();
+        if l.is_empty() || l.starts_with('#') {
+            continue;
+        }
+        return resolve_relative_url(url, l).map(Some);
+    }
+    Ok(None)
+}
+
+fn resolve_relative_url(base: &str, candidate: &str) -> Result<String, String> {
+    if candidate.starts_with("http://") || candidate.starts_with("https://") {
+        return Ok(candidate.to_string());
+    }
+    let base_url = reqwest::Url::parse(base).map_err(|e| e.to_string())?;
+    base_url
+        .join(candidate)
+        .map(|u| u.to_string())
+        .map_err(|e| e.to_string())
+}
+
+fn is_playlist_url(url: &str) -> bool {
+    let l = url.to_ascii_lowercase();
+    l.ends_with(".m3u") || l.ends_with(".m3u8") || l.ends_with(".pls")
+}
+
+fn looks_hls_url(url: &str) -> bool {
+    url.to_ascii_lowercase().contains(".m3u8")
 }
 
 // ── NTS fetch ─────────────────────────────────────────────────────────────────

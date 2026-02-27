@@ -4,6 +4,8 @@ Terminal radio player with:
 - live station playback
 - VU meter + oscilloscope visualization
 - song identification via `vibra` (Shazam-like fingerprinting)
+- NTS Infinite Mixtape show metadata enrichment (browserless)
+- passive background station polling + station-list now-playing annotations
 - NTS show download via `yt-dlp`
 - local file playback with chapter navigation
 - starred stations/files with persistence
@@ -20,6 +22,18 @@ Terminal radio player with:
 | macOS Intel | `r4dio-macos-x86_64.dmg` | mpv.app, ffmpeg, ffprobe, yt-dlp, vibra |
 
 All bundles also include `stations.toml` and `starred.toml` (pre-loaded with curated stations and starred favourites).
+
+## Next release (dev branch, v1.1+ target)
+
+The `dev` branch currently includes unreleased features planned for the next version:
+
+- Passive polling subsystem (`[polling]` config, default every 120s)
+- `p` key toggles passive polling on/off (toast + status bar indicator)
+- Polling resolvers:
+  - NTS 1/2 now-show via `https://www.nts.live/api/v2/live`
+  - NTS Infinite Mixtapes via Firestore `mixtape_titles`
+  - non-NTS lightweight ICY probes (small random sample each cycle)
+- Station list appends last polled show text next to station metadata
 
 ## Quick start
 
@@ -48,7 +62,8 @@ Requires `mpv`, `ffmpeg`, and optionally `vibra` and `yt-dlp` on PATH for full f
 |---|---|
 | `Enter` | play selected station/file |
 | `Space` | pause/resume |
-| `n` / `p` | next / previous |
+| `n` / `P` | next / previous |
+| `p` | toggle passive polling |
 | `r` / `R` | random / random back |
 | `i` | identify song (vibra fingerprint) |
 | `d` | download NTS show (yt-dlp) |

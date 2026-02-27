@@ -43,6 +43,19 @@ r4dio/
 - `src/app.rs` — `App` struct, main event loop, message dispatch, draw calls
 - `src/app_state.rs` — `AppState`: all UI + playback state
 
+### Passive polling subsystem (dev branch, target v1.1+)
+- Config keys live in `config.toml` under `[polling]`:
+  - `auto_polling` (default `true`)
+  - `poll_interval_secs` (default `120`)
+- Runtime behavior (`src/app.rs`):
+  - non-overlapping cycles (`auto_poll_in_flight` guard)
+  - NTS 1/2 resolver via `/api/v2/live`
+  - NTS Infinite Mixtape resolver via `recognize_via_nts_mixtape()`
+  - non-NTS resolver: lightweight ICY probes over a random sample (currently up to 5 stations/cycle)
+- UI behavior:
+  - station list appends last polled title from `AppState.station_poll_titles`
+  - `p` toggles auto polling, with toast feedback and keys-bar indicator (`poll:on` / `poll:off`)
+
 ### Playback engine (`src/core.rs` + `src/mpv.rs`)
 - `src/core.rs` — `DaemonCore`: mpv lifecycle, command handling, VU/PCM ffmpeg task
 - `src/mpv.rs` — `MpvDriver` / `MpvHandle`: spawn mpv, JSON IPC socket, property observers
@@ -140,8 +153,8 @@ This enables the oscilloscope for files and makes both paths identical.
 ## Shared types: `crates/radio-proto/`
 
 - `protocol.rs` — `DaemonState`, `Command`, `Broadcast`, `PlaybackStatus`, `Station`, `Message` (length-prefixed JSON)
-- `config.rs` — `Config`, `DaemonConfig`, `HttpConfig`, `MpvConfig`, `StationsConfig`
-- `songs.rs` — `SongDatabase`, `SongEntry`, `recognize_via_vibra()`, `recognize_via_nts()`
+- `config.rs` — `Config`, `DaemonConfig`, `HttpConfig`, `MpvConfig`, `StationsConfig`, `PollingConfig`
+- `songs.rs` — `SongDatabase`, `SongEntry`, `recognize_via_vibra()`, `recognize_via_nts()`, `recognize_via_nts_mixtape()`
 - `state.rs` — `StateManager` (`Arc<RwLock<DaemonState>>` wrapper)
 - `platform.rs` — `config_dir()`, `data_dir()`, `cache_dir()`
 
@@ -178,7 +191,8 @@ Stored in `songs.vds` (tab-separated): `job_id timestamp station icy_info nts_sh
 
 ```
 Space          Toggle pause/play
-n/p            Next/previous station/file
+n/P            Next/previous station/file
+p              Toggle passive polling on/off
 r              Random
 R              Go back (random history)
 m              Mute
@@ -221,6 +235,11 @@ Scope (when focused):
 1. Add field to appropriate struct in `crates/radio-proto/src/config.rs`
 2. Implement `Default`
 3. Access via `app_state.config.*`
+
+**New station metadata field:**
+1. Add field to `Station` in `crates/radio-proto/src/protocol.rs` with `#[serde(default)]`
+2. Add field to `TomlStation` + mapping in `crates/radio-proto/src/state.rs`
+3. Keep M3U loader compatibility via `..Station::default()`
 
 **New playback command:**
 1. Add variant to `Command` enum in `crates/radio-proto/src/protocol.rs`

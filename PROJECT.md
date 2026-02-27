@@ -207,12 +207,12 @@ const PROXY_BROADCAST_CAPACITY: usize = 4096;  // already named, needs doc comme
 - **Duplicate detection**: When adding to `songs.vds`, check if same song already
   identified within the last X minutes to avoid redundant entries.
 
-### NTS Infinite Mixtape Metadata (planned)
+### NTS Infinite Mixtape Metadata (implemented on `dev`, target v1.1+)
 - **Goal**: Add current-show metadata for `NTS: <Mixtape>` stations in the song-ID path,
-  without Selenium/browser automation.
+  without Selenium/browser automation. ✅
 - **Discovery source**: query Firestore `mixtape_titles` for latest record by
   `mixtape_alias` (`orderBy started_at desc`, `limit 1`).
-- **Mixtape URL source**: add explicit `mixtape_url` in `stations.toml` for each
+- **Mixtape URL source**: explicit `mixtape_url` in `stations.toml` for each
   `NTS: <Mixtape>` station (e.g. `https://www.nts.live/infinite-mixtapes/slow-focus`).
 - **Alias mapping**: parse alias directly from `mixtape_url` path instead of calling
   `/api/v2/mixtapes` at recognition time.
@@ -221,12 +221,22 @@ const PROXY_BROADCAST_CAPACITY: usize = 4096;  // already named, needs doc comme
 - **Graceful fallback**:
   - missing `title` => treat as "not announced" (do not patch VDS NTS fields)
   - title present + no URL fields => patch title only
-- **Non-goals**: keep NTS 1/2 flow unchanged (`/api/v2/live`).
+- **Non-goals**: keep NTS 1/2 flow unchanged (`/api/v2/live`). ✅
+
+### Passive Polling (implemented on `dev`, target v1.1+)
+- **Config**: `[polling] auto_polling=true`, `poll_interval_secs=120` in `config.toml`.
+- **Toggle**: `p` toggles background polling on/off (`P` keeps previous-station behavior).
+- **NTS polling path**: NTS1/2 via `/api/v2/live`, NTS Infinite Mixtapes via Firestore `mixtape_titles`.
+- **Non-NTS polling path**: lightweight ICY probe path samples up to 5 random non-NTS stations per cycle,
+  with bounded timeouts and metadata headroom (multi-block ICY read), and no overlap between cycles.
+- **UI update policy**: station list appends last polled show text; value changes only when poll result changes.
+- **Failure policy**: soft-fail only (log warnings, no user notifications), retry on future cycles.
 
 Validation harnesses (isolated from TUI runtime):
 - Bash: `tests/nts_mixtape_show_test.sh`, `tests/nts_mixtape_scan_all_test.sh`
 - Rust: `crates/radio-proto/tests/nts_mixtape_single.rs`,
-  `crates/radio-proto/tests/nts_mixtape_scan_all.rs`
+  `crates/radio-proto/tests/nts_mixtape_scan_all.rs`,
+  `crates/radio-proto/tests/station_poll_non_nts.rs`
 
 ### Distribution
 - **macOS code signing**: Requires an Apple Developer account. Once signed, Gatekeeper
