@@ -41,13 +41,17 @@ async fn poll_non_nts_stations_for_icy_diagnostics() {
         concurrency: env_usize("STATION_POLL_CONCURRENCY", 5).max(1),
         connect_timeout: Duration::from_millis(env_u64("STATION_POLL_CONNECT_TIMEOUT_MS", 4000)),
         request_timeout: Duration::from_millis(env_u64("STATION_POLL_REQUEST_TIMEOUT_MS", 20000)),
-        metadata_read_timeout: Duration::from_millis(env_u64("STATION_POLL_METADATA_TIMEOUT_MS", 10000)),
+        metadata_read_timeout: Duration::from_millis(env_u64(
+            "STATION_POLL_METADATA_TIMEOUT_MS",
+            10000,
+        )),
         icy_blocks: env_usize("STATION_POLL_ICY_BLOCKS", 4).max(1),
     };
 
     let stations_path = workspace_root().join("stations.toml");
     let content = std::fs::read_to_string(&stations_path).expect("failed to read stations.toml");
-    let mut stations = parse_stations_from_toml_str(&content).expect("failed to parse stations TOML");
+    let mut stations =
+        parse_stations_from_toml_str(&content).expect("failed to parse stations TOML");
     stations.retain(is_non_nts_station);
 
     let only_match = env_csv_tokens("STATION_POLL_ONLY_MATCH");
@@ -168,7 +172,10 @@ async fn poll_non_nts_stations_for_icy_diagnostics() {
     println!("timeout: {}", timeout_count);
     println!("error: {}", error_count);
     println!("elapsed_seconds: {:.2}", elapsed.as_secs_f64());
-    println!("avg_ms_per_station: {:.1}", elapsed.as_millis() as f64 / total as f64);
+    println!(
+        "avg_ms_per_station: {:.1}",
+        elapsed.as_millis() as f64 / total as f64
+    );
     println!("latency_ms p50={} p90={} p99={}", p50, p90, p99);
     println!("total_bytes_read: {}", total_bytes);
     if meta_count > 0 {
@@ -235,7 +242,10 @@ async fn probe_station(client: reqwest::Client, station: Station, cfg: ProbeConf
         .get(&url)
         .header("Icy-MetaData", HeaderValue::from_static("1"));
     if looks_hls_url(&url) {
-        req = req.header("Accept", HeaderValue::from_static("application/vnd.apple.mpegurl,*/*"));
+        req = req.header(
+            "Accept",
+            HeaderValue::from_static("application/vnd.apple.mpegurl,*/*"),
+        );
     }
 
     let mut resp = match req.send().await {
@@ -290,8 +300,13 @@ async fn probe_station(client: reqwest::Client, station: Station, cfg: ProbeConf
             };
         }
 
-        match read_icy_streamtitle(&mut resp, metaint, cfg.metadata_read_timeout, cfg.icy_blocks)
-            .await
+        match read_icy_streamtitle(
+            &mut resp,
+            metaint,
+            cfg.metadata_read_timeout,
+            cfg.icy_blocks,
+        )
+        .await
         {
             Ok((Some(title), bytes_read)) => PollOutcome {
                 station: station.name,
@@ -451,7 +466,10 @@ fn parse_stream_title(meta: &[u8]) -> Option<String> {
     None
 }
 
-async fn fetch_playlist_target(client: &reqwest::Client, url: &str) -> Result<Option<String>, String> {
+async fn fetch_playlist_target(
+    client: &reqwest::Client,
+    url: &str,
+) -> Result<Option<String>, String> {
     let body = client
         .get(url)
         .send()

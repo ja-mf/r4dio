@@ -12,7 +12,7 @@ use std::io;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use rand::seq::SliceRandom;
+
 use ratatui::crossterm::{
     event::{
         self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
@@ -118,12 +118,21 @@ const PEAK_RELEASE_TAU_SECS: f32 = 0.09;
 const PEAK_FALL_DB_PER_SEC: f32 = 28.0;
 const MIN_POLL_INTERVAL_SECS: u64 = 10;
 const NTS_POLL_TASK_TIMEOUT_SECS: u64 = 12;
-const NON_NTS_MAX_CONCURRENCY: usize = 5;
-const NON_NTS_MAX_JOBS_PER_CYCLE: usize = 32;
-const NON_NTS_CYCLE_BUDGET_SECS: u64 = 95;
+// Non-NTS ICY polling tuning:
+//
+//   concurrency=6   moderate; ~6 simultaneous TCP streams, cycle completes in ~12s for 71 stations
+//   max_jobs=64     covers all ~71 non-NTS stations in a single cycle
+//   connect=4s      Cambridge Radio stalls at TCP connect and hits exactly 4s — correct ceiling
+//   request=8s      longest observed header round-trip is ~4s; 8s gives 2× headroom
+//   metadata=5s     longest observed metadata read is ~3.1s (Skid Row Radio); 5s is safe margin
+//   icy_blocks=4    needed by metaint=16000 stations (4×16KB=64KB); adaptive() reduces for large metaint
+//   cycle_budget=30s safety backstop; cycles finish well within this in practice
+const NON_NTS_MAX_CONCURRENCY: usize = 6;
+const NON_NTS_MAX_JOBS_PER_CYCLE: usize = 64;
+const NON_NTS_CYCLE_BUDGET_SECS: u64 = 30;
 const NON_NTS_CONNECT_TIMEOUT_MS: u64 = 4_000;
-const NON_NTS_REQUEST_TIMEOUT_MS: u64 = 20_000;
-const NON_NTS_METADATA_TIMEOUT_MS: u64 = 10_000;
+const NON_NTS_REQUEST_TIMEOUT_MS: u64 = 8_000;
+const NON_NTS_METADATA_TIMEOUT_MS: u64 = 5_000;
 const NON_NTS_ICY_BLOCKS: usize = 4;
 
 #[derive(Debug, Clone)]
@@ -712,6 +721,9 @@ impl App {
 
                 _ = auto_poll_refresh.tick() => {
                     if self.auto_polling_enabled {
+                        if self.auto_poll_in_flight {
+                            debug!("[poll] interval tick — cycle #{} still in flight, skipping", self.auto_poll_cycle_id);
+                        }
                         self.spawn_passive_poll_task(tx.clone(), "interval");
                     }
                 }
@@ -957,7 +969,13 @@ impl App {
                             .insert(outcome.station_name.clone(), show);
                     }
                     None => {
-                        self.state.station_poll_titles.remove(&outcome.station_name);
+                        // Keep last-known non-NTS ICY title when a probe returns
+                        // no metadata for this cycle (common for flaky/mixed
+                        // endpoints). This avoids list entries disappearing and
+                        // reappearing between cycles.
+                        if outcome.resolver != "icy-probe" {
+                            self.state.station_poll_titles.remove(&outcome.station_name);
+                        }
                     }
                 }
 
@@ -994,17 +1012,31 @@ impl App {
                 }
 
                 self.auto_poll_in_flight = false;
-                info!(
-                    "[poll] cycle #{} complete in {}ms (targets={} expected={} seen={}, changed={}, unchanged={}, errors={})",
-                    cycle_id,
-                    elapsed_ms,
-                    total,
-                    self.auto_poll_cycle_total,
-                    self.auto_poll_cycle_seen,
-                    self.auto_poll_cycle_changed,
-                    self.auto_poll_cycle_unchanged,
-                    self.auto_poll_cycle_errors
-                );
+                let missing = (self.auto_poll_cycle_total as isize) - (self.auto_poll_cycle_seen as isize);
+                if missing > 0 {
+                    warn!(
+                        "[poll] cycle #{} complete in {}ms — MISSING {} outcomes (targets={} seen={}, changed={}, unchanged={}, errors={})",
+                        cycle_id,
+                        elapsed_ms,
+                        missing,
+                        self.auto_poll_cycle_total,
+                        self.auto_poll_cycle_seen,
+                        self.auto_poll_cycle_changed,
+                        self.auto_poll_cycle_unchanged,
+                        self.auto_poll_cycle_errors,
+                    );
+                } else {
+                    info!(
+                        "[poll] cycle #{} complete in {}ms (targets={} seen={}, changed={}, unchanged={}, errors={})",
+                        cycle_id,
+                        elapsed_ms,
+                        self.auto_poll_cycle_total,
+                        self.auto_poll_cycle_seen,
+                        self.auto_poll_cycle_changed,
+                        self.auto_poll_cycle_unchanged,
+                        self.auto_poll_cycle_errors,
+                    );
+                }
                 return false;
             }
 
@@ -1341,11 +1373,7 @@ impl App {
                 let trimmed = icy.trim().to_string();
                 if !trimmed.is_empty() {
                     self.state.station_poll_titles.insert(st_name, trimmed);
-                } else {
-                    self.state.station_poll_titles.remove(&st_name);
                 }
-            } else {
-                self.state.station_poll_titles.remove(&st_name);
             }
         }
 
@@ -2851,6 +2879,7 @@ impl App {
 
         tokio::spawn(async move {
             let started = std::time::Instant::now();
+            debug!("[poll] cycle #{} task spawned", cycle_id);
             run_station_poll_cycle(targets, tx.clone(), cycle_id).await;
             let elapsed_ms = started.elapsed().as_millis();
             let _ = tx
@@ -3141,8 +3170,7 @@ fn build_station_poll_targets(
     non_nts_cursor: &mut usize,
 ) -> Vec<StationPollTarget> {
     let mut targets = Vec::new();
-    let mut non_nts_somafm = Vec::new();
-    let mut non_nts_other = Vec::new();
+    let mut non_nts = Vec::new();
     for station in stations {
         if station.name.eq_ignore_ascii_case("NTS 1") {
             targets.push(StationPollTarget::NtsLive {
@@ -3169,35 +3197,18 @@ fn build_station_poll_targets(
         }
 
         if station.url.starts_with("http://") || station.url.starts_with("https://") {
-            let target = StationPollTarget::NonNtsIcy {
+            non_nts.push(StationPollTarget::NonNtsIcy {
                 station_name: station.name.clone(),
                 stream_url: station.url.clone(),
-            };
-            if is_somafm_station(station) {
-                non_nts_somafm.push(target);
-            } else {
-                non_nts_other.push(target);
-            }
+            });
         }
     }
 
-    let mut selected_non_nts = Vec::new();
-    if !non_nts_somafm.is_empty() {
-        let mut rng = rand::thread_rng();
-        non_nts_somafm.shuffle(&mut rng);
-        selected_non_nts.extend(non_nts_somafm.into_iter().take(2));
-    }
-
-    let remaining_budget = NON_NTS_MAX_JOBS_PER_CYCLE.saturating_sub(selected_non_nts.len());
-    if remaining_budget > 0 {
-        selected_non_nts.extend(select_round_robin_non_nts(
-            non_nts_other,
-            non_nts_cursor,
-            remaining_budget,
-        ));
-    }
-
-    targets.extend(selected_non_nts);
+    targets.extend(select_round_robin_non_nts(
+        non_nts,
+        non_nts_cursor,
+        NON_NTS_MAX_JOBS_PER_CYCLE,
+    ));
 
     targets
 }
@@ -3262,8 +3273,11 @@ async fn run_station_poll_cycle(
     let non_nts_total = non_nts_queue.len();
     let nts_total = total.saturating_sub(non_nts_total);
     debug!(
-        "[poll] cycle #{} scheduling: nts_targets={} non_nts_targets={} non_nts_concurrency={}",
-        cycle_id, nts_total, non_nts_total, NON_NTS_MAX_CONCURRENCY
+        "[poll] cycle #{} scheduling: nts={} non-nts={} workers={}",
+        cycle_id,
+        nts_total,
+        non_nts_total,
+        NON_NTS_MAX_CONCURRENCY.min(non_nts_total).max(1),
     );
 
     // Launch non-NTS worker pool immediately so it runs concurrently with NTS polling.
@@ -3277,20 +3291,33 @@ async fn run_station_poll_cycle(
         {
             Ok(client) => {
                 let queue = std::sync::Arc::new(TokioMutex::new(non_nts_queue));
-                let deadline =
-                    std::time::Instant::now() + Duration::from_secs(NON_NTS_CYCLE_BUDGET_SECS);
+                let cycle_start = std::time::Instant::now();
+                let deadline = cycle_start + Duration::from_secs(NON_NTS_CYCLE_BUDGET_SECS);
                 let worker_count = NON_NTS_MAX_CONCURRENCY.min(non_nts_total).max(1);
+                debug!(
+                    "[poll] cycle #{} launching {} workers for {} non-nts jobs (budget={}s connect={}ms req={}ms meta={}ms)",
+                    cycle_id,
+                    worker_count,
+                    non_nts_total,
+                    NON_NTS_CYCLE_BUDGET_SECS,
+                    NON_NTS_CONNECT_TIMEOUT_MS,
+                    NON_NTS_REQUEST_TIMEOUT_MS,
+                    NON_NTS_METADATA_TIMEOUT_MS,
+                );
                 for worker_idx in 0..worker_count {
                     let queue = queue.clone();
                     let txw = tx.clone();
                     let cw = client.clone();
-                    let deadline = deadline;
                     non_nts_workers.spawn(async move {
+                        let mut jobs_done = 0usize;
                         loop {
+                            let budget_remaining_ms = deadline
+                                .saturating_duration_since(std::time::Instant::now())
+                                .as_millis();
                             if std::time::Instant::now() >= deadline {
                                 debug!(
-                                    "[poll] worker={} reached non-nts cycle budget, stopping",
-                                    worker_idx
+                                    "[poll] worker={} budget exhausted after {} jobs, stopping",
+                                    worker_idx, jobs_done
                                 );
                                 break;
                             }
@@ -3300,30 +3327,53 @@ async fn run_station_poll_cycle(
                                 q.pop_front()
                             };
                             let Some(job) = job else {
+                                debug!(
+                                    "[poll] worker={} queue empty after {} jobs",
+                                    worker_idx, jobs_done
+                                );
                                 break;
                             };
 
                             debug!(
-                                "[poll] worker={} picked non-nts job {}/{} {}",
-                                worker_idx, job.ord, total, job.station_name
+                                "[poll] worker={} start job {}/{} '{}' (budget_remaining={}ms)",
+                                worker_idx, job.ord, total, job.station_name, budget_remaining_ms
                             );
+                            let job_start = std::time::Instant::now();
                             let outcome = poll_non_nts_station_icy(
                                 cw.clone(),
-                                job.station_name,
+                                job.station_name.clone(),
                                 job.stream_url,
                                 job.ord,
                                 total,
                             )
                             .await;
+                            let job_ms = job_start.elapsed().as_millis();
+                            let result_tag = if outcome.error.is_some() {
+                                "error"
+                            } else if outcome.show.is_some() {
+                                "title"
+                            } else {
+                                "no-title"
+                            };
+                            debug!(
+                                "[poll] worker={} done job {}/{} '{}' result={} elapsed={}ms",
+                                worker_idx, job.ord, total, job.station_name, result_tag, job_ms
+                            );
+                            jobs_done += 1;
                             let _ = txw
                                 .send(AppMessage::PassivePollOutcome { cycle_id, outcome })
                                 .await;
                         }
-                        debug!("[poll] worker={} finished non-nts queue", worker_idx);
+                        debug!(
+                            "[poll] worker={} exited after {} jobs, total_elapsed={}ms",
+                            worker_idx,
+                            jobs_done,
+                            cycle_start.elapsed().as_millis(),
+                        );
                     });
                 }
 
-                // Wait for workers and log whether any jobs were deferred to next cycle.
+                // Wait for all workers and log final queue state.
                 while let Some(joined) = non_nts_workers.join_next().await {
                     if let Err(e) = joined {
                         warn!("[poll] icy worker join error: {}", e);
@@ -3335,8 +3385,15 @@ async fn run_station_poll_cycle(
                 };
                 if deferred > 0 {
                     info!(
-                        "[poll] deferred {} non-nts jobs to next cycle due to budget/concurrency",
-                        deferred
+                        "[poll] cycle #{} non-nts done: {} jobs deferred to next cycle (budget/concurrency)",
+                        cycle_id, deferred
+                    );
+                } else {
+                    debug!(
+                        "[poll] cycle #{} non-nts done: all {} jobs completed in {}ms",
+                        cycle_id,
+                        non_nts_total,
+                        cycle_start.elapsed().as_millis(),
                     );
                 }
             }
@@ -3359,12 +3416,17 @@ async fn run_station_poll_cycle(
         }
     }
 
-    // Drain NTS outcomes as they finish.
+    // Drain any remaining NTS tasks (they run concurrently with non-NTS workers above).
+    let nts_pending = nts_join.len();
+    if nts_pending > 0 {
+        debug!("[poll] cycle #{} waiting on {} remaining nts tasks", cycle_id, nts_pending);
+    }
     while let Some(joined) = nts_join.join_next().await {
         if let Err(e) = joined {
             warn!("[poll] nts task join error: {}", e);
         }
     }
+    debug!("[poll] cycle #{} all tasks finished", cycle_id);
 }
 
 async fn poll_nts_target(
@@ -3830,10 +3892,6 @@ fn adaptive_icy_blocks(metaint: usize) -> usize {
     }
 }
 
-fn is_somafm_station(station: &Station) -> bool {
-    station.name.to_ascii_lowercase().contains("somafm")
-        || station.url.to_ascii_lowercase().contains("somafm")
-}
 
 // ── NTS fetch ─────────────────────────────────────────────────────────────────
 
