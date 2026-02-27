@@ -59,7 +59,10 @@ async fn main() -> anyhow::Result<()> {
     if !stars_path.exists() {
         if let Ok(exe) = std::env::current_exe() {
             if let Some(dir) = exe.parent() {
-                let candidates = [dir.join("starred.toml"), dir.join("data").join("starred.toml")];
+                let candidates = [
+                    dir.join("starred.toml"),
+                    dir.join("data").join("starred.toml"),
+                ];
                 for seed in &candidates {
                     if seed.exists() {
                         let _ = std::fs::copy(seed, &stars_path);
@@ -104,7 +107,8 @@ async fn main() -> anyhow::Result<()> {
     let (event_tx, event_rx) = mpsc::channel::<core::DaemonEvent>(1024);
 
     // ── Build DaemonCore ─────────────────────────────────────────────────────
-    let daemon_core = core::DaemonCore::new(config.clone(), broadcast_tx.clone(), event_tx.clone()).await?;
+    let daemon_core =
+        core::DaemonCore::new(config.clone(), broadcast_tx.clone(), event_tx.clone()).await?;
     let state_manager = daemon_core.state_manager();
 
     // ── Stream proxy for station playback + visual tap ───────────────────────
@@ -150,6 +154,8 @@ async fn main() -> anyhow::Result<()> {
         downloads_dir,
         event_tx,
         state_manager,
+        config.polling.auto_polling,
+        config.polling.poll_interval_secs,
     );
     app.run(broadcast_rx).await?;
 

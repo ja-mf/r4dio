@@ -29,7 +29,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::{broadcast, mpsc};
 use tracing::{debug, error, info, trace, warn};
 
-use radio_proto::protocol::{Command, DaemonState, MpvHealth, PlaybackStatus};
+use radio_proto::protocol::{Command, DaemonState, MpvHealth, PlaybackStatus, Station};
 use radio_proto::state::StateManager;
 
 use crate::core::DaemonEvent;
@@ -89,6 +89,10 @@ enum AppMessage {
         url: String,
         result: Result<PathBuf, String>,
     },
+    PassivePollComplete {
+        outcomes: Vec<StationPollOutcome>,
+        elapsed_ms: u128,
+    },
 }
 
 const STREAM_PCM_RATE_HZ: usize = 44_100;
@@ -105,6 +109,36 @@ const PEAK_MAJOR_HOLD_MS: u64 = 120;
 const PEAK_HOLD_RESET_DB: f32 = 0.35;
 const PEAK_RELEASE_TAU_SECS: f32 = 0.09;
 const PEAK_FALL_DB_PER_SEC: f32 = 28.0;
+const MIN_POLL_INTERVAL_SECS: u64 = 10;
+
+#[derive(Debug, Clone)]
+enum StationPollTarget {
+    NtsLive {
+        station_name: String,
+        channel_idx: usize,
+    },
+    NtsMixtape {
+        station_name: String,
+        mixtape_url: String,
+    },
+}
+
+impl StationPollTarget {
+    fn resolver_label(&self) -> &'static str {
+        match self {
+            Self::NtsLive { .. } => "nts-live",
+            Self::NtsMixtape { .. } => "nts-mixtape",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct StationPollOutcome {
+    station_name: String,
+    resolver: String,
+    show: Option<String>,
+    error: Option<String>,
+}
 
 // ── Persistence serde structs ─────────────────────────────────────────────────
 
@@ -246,6 +280,11 @@ pub struct App {
     intent_volume: crate::intent::IntentState<f32>,
     /// Intent tracker for current station index.
     intent_station: crate::intent::IntentState<Option<usize>>,
+
+    // ── Passive background polling ───────────────────────────────────────────
+    auto_polling_enabled: bool,
+    auto_poll_interval: Duration,
+    auto_poll_in_flight: bool,
 }
 
 impl App {
@@ -262,6 +301,8 @@ impl App {
         downloads_dir: PathBuf,
         cmd_tx: mpsc::Sender<DaemonEvent>,
         state_manager: std::sync::Arc<StateManager>,
+        auto_polling_enabled: bool,
+        poll_interval_secs: u64,
     ) -> Self {
         let icy_history = load_icy_log(&icy_log_path);
         let songs_history = load_vds(&songs_vds_path, 200);
@@ -294,6 +335,7 @@ impl App {
             nts_ch2: None,
             nts_ch1_error: None,
             nts_ch2_error: None,
+            station_poll_titles: HashMap::new(),
             workspace: Workspace::Radio,
             input_mode: InputMode::Normal,
             last_nonzero_volume: 0.7,
@@ -397,6 +439,9 @@ impl App {
             intent_pause: crate::intent::IntentState::new(false),
             intent_volume: crate::intent::IntentState::new(0.7),
             intent_station: crate::intent::IntentState::new(None),
+            auto_polling_enabled,
+            auto_poll_interval: Duration::from_secs(poll_interval_secs.max(MIN_POLL_INTERVAL_SECS)),
+            auto_poll_in_flight: false,
         };
 
         // Restore file selection in FileList component
@@ -499,6 +544,9 @@ impl App {
         let mut nts_refresh = tokio::time::interval(Duration::from_secs(60));
         nts_refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
+        let mut auto_poll_refresh = tokio::time::interval(self.auto_poll_interval);
+        auto_poll_refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
         // Toast expiry check + spinner animation: 100ms for smooth braille animation
         let mut toast_tick = tokio::time::interval(Duration::from_millis(100));
         toast_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -518,6 +566,17 @@ impl App {
 
         // ── Main loop ─────────────────────────────────────────────────────────
         let mut needs_redraw = true;
+
+        if self.auto_polling_enabled {
+            info!(
+                "[poll] auto polling enabled (interval={}s)",
+                self.auto_poll_interval.as_secs()
+            );
+            self.spawn_passive_poll_task(tx.clone(), "startup");
+        } else {
+            info!("[poll] auto polling disabled at startup");
+        }
+
         loop {
             // Draw only when something changed (PCM accumulation doesn't need a redraw)
             if needs_redraw {
@@ -608,6 +667,12 @@ impl App {
                             }
                         }
                     });
+                }
+
+                _ = auto_poll_refresh.tick() => {
+                    if self.auto_polling_enabled {
+                        self.spawn_passive_poll_task(tx.clone(), "interval");
+                    }
                 }
 
                 _ = toast_tick.tick() => {
@@ -793,6 +858,67 @@ impl App {
                 } else {
                     self.state.nts_ch2_error = Some(msg);
                 }
+            }
+
+            AppMessage::PassivePollComplete {
+                outcomes,
+                elapsed_ms,
+            } => {
+                self.auto_poll_in_flight = false;
+                let mut changed = 0usize;
+                let mut unchanged = 0usize;
+                let mut errors = 0usize;
+
+                for outcome in outcomes {
+                    if let Some(err) = outcome.error {
+                        errors += 1;
+                        warn!(
+                            "[poll] {} resolver={} error={} ",
+                            outcome.station_name, outcome.resolver, err
+                        );
+                        continue;
+                    }
+
+                    let before = self
+                        .state
+                        .station_poll_titles
+                        .get(&outcome.station_name)
+                        .cloned();
+
+                    match outcome.show.clone() {
+                        Some(show) => {
+                            self.state
+                                .station_poll_titles
+                                .insert(outcome.station_name.clone(), show);
+                        }
+                        None => {
+                            self.state.station_poll_titles.remove(&outcome.station_name);
+                        }
+                    }
+
+                    let after = self
+                        .state
+                        .station_poll_titles
+                        .get(&outcome.station_name)
+                        .cloned();
+
+                    if before != after {
+                        changed += 1;
+                        info!(
+                            "[poll] {} resolver={} changed: {:?} -> {:?}",
+                            outcome.station_name, outcome.resolver, before, after
+                        );
+                    } else {
+                        unchanged += 1;
+                    }
+                }
+
+                info!(
+                    "[poll] cycle complete in {}ms (changed={}, unchanged={}, errors={})",
+                    elapsed_ms, changed, unchanged, errors
+                );
+
+                return changed > 0;
             }
 
             AppMessage::RecognitionStarted(result) => {
@@ -1103,6 +1229,18 @@ impl App {
 
         self.state.daemon_state = new_state;
 
+        // Drop stale passive-poll labels for stations no longer present.
+        let station_names: std::collections::HashSet<String> = self
+            .state
+            .daemon_state
+            .stations
+            .iter()
+            .map(|s| s.name.clone())
+            .collect();
+        self.state
+            .station_poll_titles
+            .retain(|name, _| station_names.contains(name));
+
         let source_changed = self.state.daemon_state.current_station != prev_station
             || self.state.daemon_state.current_file != prev_file;
         if source_changed {
@@ -1209,6 +1347,12 @@ impl App {
         // Feed stations into the station_list component's ScrollableList.
         // This must happen whenever daemon_state changes.
         self.station_list.sync_stations(&self.state);
+
+        if self.auto_polling_enabled && was_empty && !self.state.daemon_state.stations.is_empty() {
+            if let Some(tx) = self.recognition_tx.clone() {
+                self.spawn_passive_poll_task(tx, "stations-loaded");
+            }
+        }
 
         if !self.state.daemon_state.stations.is_empty() {
             // Restore selected station from session
@@ -1439,7 +1583,8 @@ impl App {
             match key.code {
                 KeyCode::Char(' ') => return vec![Action::TogglePause],
                 KeyCode::Char('n') => return vec![Action::Next],
-                KeyCode::Char('p') => return vec![Action::Prev],
+                KeyCode::Char('p') => return vec![Action::ToggleAutoPolling],
+                KeyCode::Char('P') => return vec![Action::Prev],
                 KeyCode::Char('r') => return vec![Action::Random],
                 KeyCode::Char('R') => return vec![Action::RandomBack],
                 KeyCode::Char('m') => return vec![Action::Mute],
@@ -2004,6 +2149,26 @@ impl App {
             Action::ToggleKeys => {
                 self.wm.show_keys_bar = !self.wm.show_keys_bar;
             }
+            Action::ToggleAutoPolling => {
+                self.auto_polling_enabled = !self.auto_polling_enabled;
+                if self.auto_polling_enabled {
+                    info!(
+                        "[poll] auto polling enabled (interval={}s)",
+                        self.auto_poll_interval.as_secs()
+                    );
+                    self.toast.info(format!(
+                        "auto polling: on ({}s)",
+                        self.auto_poll_interval.as_secs()
+                    ));
+                    if let Some(tx) = self.recognition_tx.clone() {
+                        self.spawn_passive_poll_task(tx, "manual-toggle");
+                    }
+                } else {
+                    info!("[poll] auto polling disabled");
+                    self.toast
+                        .info("auto polling: off (press p to re-enable)".to_string());
+                }
+            }
 
             // ── Collapse ──────────────────────────────────────────────────────
             Action::ToggleCollapse => {
@@ -2145,6 +2310,7 @@ impl App {
                 self.state.input_mode,
                 self.wm.workspace,
                 self.state.mpv_audio_level,
+                self.auto_polling_enabled,
             );
         }
 
@@ -2510,6 +2676,35 @@ impl App {
         }
     }
 
+    fn spawn_passive_poll_task(&mut self, tx: mpsc::Sender<AppMessage>, reason: &str) {
+        if self.auto_poll_in_flight {
+            info!("[poll] skip cycle (already in flight)");
+            return;
+        }
+
+        let stations = self.state.daemon_state.stations.clone();
+        let target_count = build_station_poll_targets(&stations).len();
+        if target_count == 0 {
+            info!("[poll] skip cycle (no resolvable polling targets)");
+            return;
+        }
+
+        self.auto_poll_in_flight = true;
+        let why = reason.to_string();
+        info!("[poll] cycle start reason={} targets={}", why, target_count);
+        tokio::spawn(async move {
+            let started = std::time::Instant::now();
+            let outcomes = run_station_poll_cycle(stations).await;
+            let elapsed_ms = started.elapsed().as_millis();
+            let _ = tx
+                .send(AppMessage::PassivePollComplete {
+                    outcomes,
+                    elapsed_ms,
+                })
+                .await;
+        });
+    }
+
     /// Maximum file metadata cache entries to prevent unbounded growth
     const MAX_METADATA_CACHE_SIZE: usize = 1000;
 
@@ -2782,6 +2977,112 @@ impl App {
 }
 
 // ── Daemon connection handler ─────────────────────────────────────────────────
+
+fn build_station_poll_targets(stations: &[Station]) -> Vec<StationPollTarget> {
+    let mut targets = Vec::new();
+    for station in stations {
+        if station.name.eq_ignore_ascii_case("NTS 1") {
+            targets.push(StationPollTarget::NtsLive {
+                station_name: station.name.clone(),
+                channel_idx: 0,
+            });
+            continue;
+        }
+        if station.name.eq_ignore_ascii_case("NTS 2") {
+            targets.push(StationPollTarget::NtsLive {
+                station_name: station.name.clone(),
+                channel_idx: 1,
+            });
+            continue;
+        }
+
+        let mixtape_url = station.mixtape_url.trim();
+        if !mixtape_url.is_empty() {
+            targets.push(StationPollTarget::NtsMixtape {
+                station_name: station.name.clone(),
+                mixtape_url: mixtape_url.to_string(),
+            });
+        }
+    }
+    targets
+}
+
+async fn run_station_poll_cycle(stations: Vec<Station>) -> Vec<StationPollOutcome> {
+    let targets = build_station_poll_targets(&stations);
+    let total = targets.len();
+    let mut outcomes = Vec::with_capacity(total);
+
+    for (idx, target) in targets.into_iter().enumerate() {
+        let resolver = target.resolver_label().to_string();
+        let result = match target {
+            StationPollTarget::NtsLive {
+                station_name,
+                channel_idx,
+            } => match fetch_nts_channel(channel_idx).await {
+                Ok(ch) => {
+                    let show = ch.now.broadcast_title.trim().to_string();
+                    let show = if show.is_empty() { None } else { Some(show) };
+                    info!(
+                        "[poll] [{}/{}] {} resolver=nts-live show={:?}",
+                        idx + 1,
+                        total,
+                        station_name,
+                        show
+                    );
+                    StationPollOutcome {
+                        station_name,
+                        resolver,
+                        show,
+                        error: None,
+                    }
+                }
+                Err(e) => {
+                    warn!(
+                        "[poll] [{}/{}] {} resolver=nts-live error={}",
+                        idx + 1,
+                        total,
+                        station_name,
+                        e
+                    );
+                    StationPollOutcome {
+                        station_name,
+                        resolver,
+                        show: None,
+                        error: Some(e.to_string()),
+                    }
+                }
+            },
+            StationPollTarget::NtsMixtape {
+                station_name,
+                mixtape_url,
+            } => {
+                let show = recognize_via_nts_mixtape(&mixtape_url)
+                    .await
+                    .map(|(title, _url)| title);
+                info!(
+                    "[poll] [{}/{}] {} resolver=nts-mixtape show={:?}",
+                    idx + 1,
+                    total,
+                    station_name,
+                    show
+                );
+                StationPollOutcome {
+                    station_name,
+                    resolver,
+                    show,
+                    error: None,
+                }
+            }
+        };
+        outcomes.push(result);
+
+        if idx + 1 < total {
+            tokio::time::sleep(Duration::from_millis(120)).await;
+        }
+    }
+
+    outcomes
+}
 
 // ── NTS fetch ─────────────────────────────────────────────────────────────────
 

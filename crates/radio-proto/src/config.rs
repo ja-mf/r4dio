@@ -15,6 +15,8 @@ pub struct Config {
     pub stations: StationsConfig,
     #[serde(default)]
     pub paths: PathsConfig,
+    #[serde(default)]
+    pub polling: PollingConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,10 +52,27 @@ pub struct PathsConfig {
     pub downloads_dir: PathBuf,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PollingConfig {
+    #[serde(default = "default_auto_polling")]
+    pub auto_polling: bool,
+    #[serde(default = "default_poll_interval_secs")]
+    pub poll_interval_secs: u64,
+}
+
 impl Default for PathsConfig {
     fn default() -> Self {
         Self {
             downloads_dir: default_downloads_dir(),
+        }
+    }
+}
+
+impl Default for PollingConfig {
+    fn default() -> Self {
+        Self {
+            auto_polling: default_auto_polling(),
+            poll_interval_secs: default_poll_interval_secs(),
         }
     }
 }
@@ -149,6 +168,14 @@ fn default_volume() -> f32 {
     0.5
 }
 
+fn default_auto_polling() -> bool {
+    true
+}
+
+fn default_poll_interval_secs() -> u64 {
+    120
+}
+
 fn default_m3u_url() -> String {
     "https://raw.githubusercontent.com/ja-mf/radio-curation/refs/heads/main/jamf_radios.m3u"
         .to_string()
@@ -209,6 +236,7 @@ impl Default for Config {
             mpv: MpvConfig::default(),
             stations: StationsConfig::default(),
             paths: PathsConfig::default(),
+            polling: PollingConfig::default(),
         }
     }
 }
@@ -224,6 +252,8 @@ mod tests {
         assert_eq!(config.http.port, 8989);
         assert_eq!(config.http.bind_address, "127.0.0.1");
         assert!(config.stations.m3u_url.starts_with("https://"));
+        assert!(config.polling.auto_polling);
+        assert_eq!(config.polling.poll_interval_secs, 120);
         assert!(config
             .stations
             .stations_toml
