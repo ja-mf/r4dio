@@ -76,17 +76,20 @@ jobs:
           7z x /tmp/mpv.7z -o/tmp/mpv-win -y
           7z x /tmp/ffmpeg.7z -o/tmp/ffmpeg-win -y
           MPV_EXE="$(find /tmp/mpv-win -type f -name mpv.exe | head -n1)"
-          FFMPEG_EXE="$(find /tmp/ffmpeg-win -type f -name ffmpeg.exe | head -n1)"
-          FFPROBE_EXE="$(find /tmp/ffmpeg-win -type f -name ffprobe.exe | head -n1)"
+          FFMPEG_EXE="$(find /tmp/ffmpeg-win /tmp/mpv-win -type f -name ffmpeg.exe | head -n1)"
+          FFPROBE_EXE="$(find /tmp/ffmpeg-win /tmp/mpv-win -type f -name ffprobe.exe | head -n1)"
           echo "MPV_EXE: $MPV_EXE"
           echo "FFMPEG_EXE: $FFMPEG_EXE"
           echo "FFPROBE_EXE: $FFPROBE_EXE"
           test -f "$MPV_EXE"
           test -f "$FFMPEG_EXE"
-          test -f "$FFPROBE_EXE"
           cp "$MPV_EXE" dist/r4dio-windows-x86_64/mpv.exe
           cp "$FFMPEG_EXE" dist/r4dio-windows-x86_64/ffmpeg.exe
-          cp "$FFPROBE_EXE" dist/r4dio-windows-x86_64/ffprobe.exe
+          if [ -f "$FFPROBE_EXE" ]; then
+            cp "$FFPROBE_EXE" dist/r4dio-windows-x86_64/ffprobe.exe
+          else
+            echo "ffprobe.exe not found in either archive, skipping"
+          fi
           MPV_DIR="$(dirname "$MPV_EXE")"
           find "$MPV_DIR" -maxdepth 1 -type f -name '*.dll' -exec cp {} dist/r4dio-windows-x86_64/ \;
       - name: Add runtime files
