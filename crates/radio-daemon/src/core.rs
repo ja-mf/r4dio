@@ -17,11 +17,16 @@ use std::sync::Arc;
 
 use radio_proto::config::Config;
 use radio_proto::protocol::{Command, MpvHealth, PlaybackStatus, Station};
-use radio_proto::state::{StateManager, load_stations_from_m3u, load_stations_from_toml, parse_m3u_from_str};
+use radio_proto::state::{
+    load_stations_from_m3u, load_stations_from_toml, parse_m3u_from_str, StateManager,
+};
 use tokio::sync::{broadcast, mpsc};
 use tracing::{debug, error, info, warn};
 
-use crate::mpv::{MpvDriver, MpvEvent, MpvHandle, OBS_AUDIO_LEVEL, OBS_CORE_IDLE, OBS_DURATION, OBS_ICY_TITLE, OBS_PAUSE, OBS_TIME_POS};
+use crate::mpv::{
+    MpvDriver, MpvEvent, MpvHandle, OBS_AUDIO_LEVEL, OBS_CORE_IDLE, OBS_DURATION, OBS_ICY_TITLE,
+    OBS_PAUSE, OBS_TIME_POS,
+};
 use crate::proxy;
 use crate::BroadcastMessage;
 
@@ -169,7 +174,9 @@ impl DaemonCore {
                     let prev = self.client_count;
                     self.client_count = n;
                     if n == 0 && prev > 0 {
-                        info!("DaemonCore: last client disconnected, starting shutdown grace period");
+                        info!(
+                            "DaemonCore: last client disconnected, starting shutdown grace period"
+                        );
                         self.empty_since = Some(tokio::time::Instant::now());
                     } else if n > 0 {
                         self.empty_since = None;
@@ -237,7 +244,9 @@ impl DaemonCore {
                         self.obs_core_idle = val;
                         self.maybe_update_status().await;
                         // push timeline immediately too
-                        self.state_manager.set_timeline(self.obs_time_pos, self.obs_duration).await;
+                        self.state_manager
+                            .set_timeline(self.obs_time_pos, self.obs_duration)
+                            .await;
                         let _ = self.broadcast_tx.send(BroadcastMessage::StateUpdated);
                     }
                 }
@@ -259,7 +268,11 @@ impl DaemonCore {
                     // Filter trivial values
                     let val = raw_val.and_then(|t| {
                         let trimmed = t.trim().trim_matches('-').trim().to_string();
-                        if trimmed.is_empty() { None } else { Some(t) }
+                        if trimmed.is_empty() {
+                            None
+                        } else {
+                            Some(t)
+                        }
                     });
                     if val != self.obs_icy_title {
                         info!("mpv: icy-title {:?} → {:?}", self.obs_icy_title, val);
@@ -274,14 +287,18 @@ impl DaemonCore {
                 OBS_TIME_POS => {
                     let val = if data.is_null() { None } else { data.as_f64() };
                     self.obs_time_pos = val;
-                    self.state_manager.set_timeline(self.obs_time_pos, self.obs_duration).await;
+                    self.state_manager
+                        .set_timeline(self.obs_time_pos, self.obs_duration)
+                        .await;
                     let _ = self.broadcast_tx.send(BroadcastMessage::StateUpdated);
                 }
                 OBS_DURATION => {
                     let val = if data.is_null() { None } else { data.as_f64() };
                     if val != self.obs_duration {
                         self.obs_duration = val;
-                        self.state_manager.set_timeline(self.obs_time_pos, self.obs_duration).await;
+                        self.state_manager
+                            .set_timeline(self.obs_time_pos, self.obs_duration)
+                            .await;
                         let _ = self.broadcast_tx.send(BroadcastMessage::StateUpdated);
                     }
                 }
@@ -306,13 +323,19 @@ impl DaemonCore {
         // Handle named events (non-property-change)
         match evt.event_name() {
             Some("end-file") => {
-                let reason = evt.raw.get("reason").and_then(|v| v.as_str()).unwrap_or("unknown");
+                let reason = evt
+                    .raw
+                    .get("reason")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
                 info!("mpv: end-file reason={}", reason);
                 if reason == "error" || reason == "network" || reason == "quit" {
                     // If we intended to play, mark error
                     if self.intend_playing && !self.obs_pause {
                         warn!("mpv: stream ended with error/network reason, marking Error");
-                        self.state_manager.set_playback_status(PlaybackStatus::Error).await;
+                        self.state_manager
+                            .set_playback_status(PlaybackStatus::Error)
+                            .await;
                         let _ = self.broadcast_tx.send(BroadcastMessage::StateUpdated);
                         self.last_status = PlaybackStatus::Error;
                         self.connecting_since = None;
@@ -370,9 +393,14 @@ impl DaemonCore {
                     PlaybackStatus::Playing
                 }
                 other => {
-                    let since = self.connecting_since.get_or_insert_with(tokio::time::Instant::now);
+                    let since = self
+                        .connecting_since
+                        .get_or_insert_with(tokio::time::Instant::now);
                     let elapsed = since.elapsed().as_secs();
-                    debug!("mpv: waiting for playback core_idle={:?} elapsed={}s", other, elapsed);
+                    debug!(
+                        "mpv: waiting for playback core_idle={:?} elapsed={}s",
+                        other, elapsed
+                    );
                     if elapsed >= 15 {
                         warn!("mpv: no audio after {}s, marking Error", elapsed);
                         PlaybackStatus::Error
@@ -405,7 +433,10 @@ impl DaemonCore {
     /// Update tracked mpv health and broadcast state if it changed.
     async fn set_mpv_health(&mut self, health: MpvHealth) {
         if self.mpv_health != health {
-            info!("DaemonCore: mpv health {:?} → {:?}", self.mpv_health, health);
+            info!(
+                "DaemonCore: mpv health {:?} → {:?}",
+                self.mpv_health, health
+            );
             self.mpv_health = health.clone();
             self.state_manager.set_mpv_health(health).await;
             let _ = self.broadcast_tx.send(BroadcastMessage::StateUpdated);
@@ -591,11 +622,8 @@ impl DaemonCore {
             match self.ensure_mpv_handle().await {
                 Some(handle) => {
                     // Direct mpv to the local proxy so we can intercept the stream.
-                    let stream_url = proxy::proxy_url(
-                        &self.config.http.bind_address,
-                        proxy::PROXY_PORT,
-                        idx,
-                    );
+                    let stream_url =
+                        proxy::proxy_url(&self.config.http.bind_address, proxy::PROXY_PORT, idx);
                     if let Err(e) = handle.load_stream(&stream_url, volume).await {
                         warn!("Failed to load stream '{}': {}", station.name, e);
                         self.intend_playing = false;
@@ -794,7 +822,11 @@ pub async fn load_stations(config: &Config) -> anyhow::Result<Vec<Station>> {
     if toml_path.exists() {
         match load_stations_from_toml(toml_path) {
             Ok(s) => {
-                info!("Loaded {} stations from TOML: {}", s.len(), toml_path.display());
+                info!(
+                    "Loaded {} stations from TOML: {}",
+                    s.len(),
+                    toml_path.display()
+                );
                 return Ok(s);
             }
             Err(e) => warn!("Failed to parse TOML stations: {}", e),
@@ -843,7 +875,11 @@ pub async fn load_stations(config: &Config) -> anyhow::Result<Vec<Station>> {
         let path = PathBuf::from(filename);
         if path.exists() {
             if let Ok(s) = load_stations_from_m3u(&path) {
-                info!("Loaded {} stations from local fallback {}", s.len(), filename);
+                info!(
+                    "Loaded {} stations from local fallback {}",
+                    s.len(),
+                    filename
+                );
                 return Ok(s);
             }
         }
@@ -891,17 +927,22 @@ async fn run_vu_ffmpeg(
     let mut child = Command::new("ffmpeg")
         .args([
             "-hide_banner",
-            "-loglevel", "error",
-            "-i", url,
-            "-vn",                 // no video
-            "-ac", "1",            // mono
-            "-ar", &rate,          // sample rate
-            "-f", "s16le",         // raw signed 16-bit LE PCM
-            "pipe:1",              // write to stdout
+            "-loglevel",
+            "error",
+            "-i",
+            url,
+            "-vn", // no video
+            "-ac",
+            "1", // mono
+            "-ar",
+            &rate, // sample rate
+            "-f",
+            "s16le",  // raw signed 16-bit LE PCM
+            "pipe:1", // write to stdout
         ])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
-        .kill_on_drop(true)        // abort when JoinHandle is dropped/aborted
+        .kill_on_drop(true) // abort when JoinHandle is dropped/aborted
         .spawn()?;
 
     let mut stdout = child.stdout.take().expect("ffmpeg stdout not captured");
@@ -931,12 +972,8 @@ async fn run_vu_ffmpeg(
                 let _ = broadcast_tx.send(BroadcastMessage::AudioLevel(rms_db));
 
                 // Normalise to f32 [-1, 1] and broadcast for scope display.
-                let pcm: Vec<f32> = sample_buf.iter()
-                    .map(|&s| s as f32 / 32768.0)
-                    .collect();
-                let _ = broadcast_tx.send(BroadcastMessage::PcmChunk(
-                    std::sync::Arc::new(pcm)
-                ));
+                let pcm: Vec<f32> = sample_buf.iter().map(|&s| s as f32 / 32768.0).collect();
+                let _ = broadcast_tx.send(BroadcastMessage::PcmChunk(std::sync::Arc::new(pcm)));
 
                 sample_buf.clear();
             }

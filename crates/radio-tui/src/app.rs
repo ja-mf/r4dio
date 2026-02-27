@@ -7,10 +7,11 @@
 //! - Components return `Vec<Action>`; App dispatches each Action.
 //! - Commands to the daemon flow out through a separate `cmd_tx` channel.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io;
 use std::path::PathBuf;
 use std::time::Duration;
+
 
 use ratatui::crossterm::{
     event::{
@@ -25,42 +26,37 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     Terminal,
 };
+use reqwest::header::HeaderValue;
 use tokio::io::AsyncWriteExt;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, Mutex as TokioMutex};
 use tracing::{debug, info, warn};
 
-use radio_proto::protocol::{Command, DaemonState, MpvHealth};
+use radio_proto::protocol::{Command, DaemonState, MpvHealth, Station};
 use radio_proto::state::StateManager;
 
 use crate::core::DaemonEvent;
-use crate::latency::record_vu_first_display;
 use crate::BroadcastMessage;
 
 use radio_proto::songs::{
-    RecognitionResult, VdsPatch,
-    append_to_vds, load_vds, make_job_id,
-    recognize_via_vibra, recognize_via_nts, vibra_rec_string,
+    append_to_vds, load_vds, make_job_id, recognize_via_nts, recognize_via_nts_mixtape,
+    recognize_via_vibra, vibra_rec_string, RecognitionResult, VdsPatch,
 };
 
 use crate::{
     action::{Action, ComponentId, StarContext, Workspace},
-    app_state::{AppState, FileChapter, FileMetadata, LocalFileEntry, NtsChannel, NtsShow, RandomHistoryEntry, TickerEntry},
+    app_state::{
+        AppState, DownloadStatus, FileChapter, FileMetadata, LocalFileEntry, NtsChannel, NtsShow,
+        RandomHistoryEntry, TickerEntry,
+    },
     component::Component,
     components::{
-        file_list::FileList,
-        file_meta::FileMeta,
-        header::Header,
-        help_overlay::HelpOverlay,
-        icy_ticker::IcyTicker,
-        log_panel::LogPanel,
-        nts_panel::NtsPanel,
-        scope_panel::ScopePanel,
-        songs_ticker::SongsTicker,
-        station_list::StationList,
+        file_list::FileList, file_meta::FileMeta, header::Header, help_overlay::HelpOverlay,
+        icy_ticker::IcyTicker, log_panel::LogPanel, nts_panel::NtsPanel, scope_panel::ScopePanel,
+        songs_ticker::SongsTicker, station_list::StationList,
     },
     widgets::{
         status_bar::{self, InputMode},
-        toast::ToastManager,
+        toast::{Severity, ToastManager},
     },
     workspace::{RightPane, WorkspaceManager},
 };
@@ -82,12 +78,28 @@ enum AppMessage {
     RecognitionComplete(String, String), // job_id, display string
     /// Vibra recognition produced no match (or stream_url was absent).
     RecognitionNoMatch,
+    /// Fires after a 1-second delay to start the next queued recognition job.
+    RecognitionQueueNext,
     /// Real-time audio RMS level from daemon (dBFS).
     AudioLevel(f32),
     /// Raw PCM chunk (mono f32 normalised -1..1, 44100 Hz) for scope display.
     PcmChunk(std::sync::Arc<Vec<f32>>),
     /// Independent render tick — drives VU-meter animation / peak decay.
     MeterTick,
+    /// Download completed (success or failure).
+    DownloadComplete {
+        url: String,
+        result: Result<PathBuf, String>,
+    },
+    PassivePollOutcome {
+        cycle_id: u64,
+        outcome: StationPollOutcome,
+    },
+    PassivePollCycleDone {
+        cycle_id: u64,
+        total: usize,
+        elapsed_ms: u128,
+    },
 }
 
 const STREAM_PCM_RATE_HZ: usize = 44_100;
@@ -104,6 +116,65 @@ const PEAK_MAJOR_HOLD_MS: u64 = 120;
 const PEAK_HOLD_RESET_DB: f32 = 0.35;
 const PEAK_RELEASE_TAU_SECS: f32 = 0.09;
 const PEAK_FALL_DB_PER_SEC: f32 = 28.0;
+const MIN_POLL_INTERVAL_SECS: u64 = 10;
+const NTS_POLL_TASK_TIMEOUT_SECS: u64 = 12;
+// Non-NTS ICY polling tuning:
+//
+//   concurrency=6   moderate; ~6 simultaneous TCP streams, cycle completes in ~12s for 71 stations
+//   max_jobs=64     covers all ~71 non-NTS stations in a single cycle
+//   connect=4s      Cambridge Radio stalls at TCP connect and hits exactly 4s — correct ceiling
+//   request=8s      longest observed header round-trip is ~4s; 8s gives 2× headroom
+//   metadata=5s     longest observed metadata read is ~3.1s (Skid Row Radio); 5s is safe margin
+//   icy_blocks=4    needed by metaint=16000 stations (4×16KB=64KB); adaptive() reduces for large metaint
+//   cycle_budget=30s safety backstop; cycles finish well within this in practice
+const NON_NTS_MAX_CONCURRENCY: usize = 6;
+const NON_NTS_MAX_JOBS_PER_CYCLE: usize = 64;
+const NON_NTS_CYCLE_BUDGET_SECS: u64 = 30;
+const NON_NTS_CONNECT_TIMEOUT_MS: u64 = 4_000;
+const NON_NTS_REQUEST_TIMEOUT_MS: u64 = 8_000;
+const NON_NTS_METADATA_TIMEOUT_MS: u64 = 5_000;
+const NON_NTS_ICY_BLOCKS: usize = 4;
+
+#[derive(Debug, Clone)]
+enum StationPollTarget {
+    NtsLive {
+        station_name: String,
+        channel_idx: usize,
+    },
+    NtsMixtape {
+        station_name: String,
+        mixtape_url: String,
+    },
+    NonNtsIcy {
+        station_name: String,
+        stream_url: String,
+    },
+}
+
+impl StationPollTarget {
+    fn resolver_label(&self) -> &'static str {
+        match self {
+            Self::NtsLive { .. } => "nts-live",
+            Self::NtsMixtape { .. } => "nts-mixtape",
+            Self::NonNtsIcy { .. } => "icy-probe",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct StationPollOutcome {
+    station_name: String,
+    resolver: String,
+    show: Option<String>,
+    error: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct NonNtsPollJob {
+    ord: usize,
+    station_name: String,
+    stream_url: String,
+}
 
 // ── Persistence serde structs ─────────────────────────────────────────────────
 
@@ -147,7 +218,7 @@ struct PaneAreas {
     nts_overlay: Rect, // hover overlay on top of station list (may be default/zero when hidden)
     file_meta: Rect,
     log_panel: Rect,
-    scope: Rect,       // scope panel in header (may be default/zero when hidden)
+    scope: Rect, // scope panel in header (may be default/zero when hidden)
 }
 
 // ── App ───────────────────────────────────────────────────────────────────────
@@ -205,9 +276,6 @@ pub struct App {
 
     /// Previous mpv health — used to detect transitions for toast notifications.
     prev_mpv_health: MpvHealth,
-    
-    /// Telemetry: whether we've recorded the first VU display.
-    vu_first_display_recorded: bool,
 
     /// Last ICY title received for the currently-playing station, keyed by
     /// station name.  Updated only by `IcyUpdated` messages; cleared when the
@@ -219,6 +287,28 @@ pub struct App {
     /// Sender used by recognition background tasks to report results.
     recognition_tx: Option<mpsc::Sender<AppMessage>>,
 
+    // ── Recognition safety queue ──────────────────────────────────────────────
+    /// Pending recognition jobs
+    /// (station_name, stream_url, icy_title, nts_ch, nts_mixtape_url). Max 3.
+    /// Cleared automatically when the station changes.
+    recognize_queue: std::collections::VecDeque<(
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<usize>,
+        Option<String>,
+    )>,
+    /// True while a recognition job is in flight (vibra running).
+    recognize_in_flight: bool,
+    /// Station name that the current queue belongs to; used to detect station changes.
+    recognize_active_station: Option<String>,
+
+    // ── Download safety queue ─────────────────────────────────────────────────
+    /// Pending downloads (url, display_name). Executed one at a time.
+    download_queue: std::collections::VecDeque<(String, String)>,
+    /// True while a download is in progress.
+    download_in_flight: bool,
+
     // ── Pending-intent trackers ───────────────────────────────────────────────
     /// Intent tracker for play/pause state (true = playing).
     intent_pause: crate::intent::IntentState<bool>,
@@ -226,6 +316,18 @@ pub struct App {
     intent_volume: crate::intent::IntentState<f32>,
     /// Intent tracker for current station index.
     intent_station: crate::intent::IntentState<Option<usize>>,
+
+    // ── Passive background polling ───────────────────────────────────────────
+    auto_polling_enabled: bool,
+    auto_poll_interval: Duration,
+    auto_poll_in_flight: bool,
+    auto_poll_cycle_id: u64,
+    auto_poll_cycle_total: usize,
+    auto_poll_cycle_seen: usize,
+    auto_poll_cycle_changed: usize,
+    auto_poll_cycle_unchanged: usize,
+    auto_poll_cycle_errors: usize,
+    non_nts_poll_cursor: usize,
 }
 
 impl App {
@@ -242,6 +344,8 @@ impl App {
         downloads_dir: PathBuf,
         cmd_tx: mpsc::Sender<DaemonEvent>,
         state_manager: std::sync::Arc<StateManager>,
+        auto_polling_enabled: bool,
+        poll_interval_secs: u64,
     ) -> Self {
         let icy_history = load_icy_log(&icy_log_path);
         let songs_history = load_vds(&songs_vds_path, 200);
@@ -252,7 +356,7 @@ impl App {
         let file_positions = load_file_positions(&file_positions_path);
         let ui_state = load_ui_session_state(&ui_state_path);
 
-        let file_metadata_cache: HashMap<String, FileMetadata> = HashMap::new();
+        let mut file_metadata_cache: HashMap<String, FileMetadata> = HashMap::new();
         // Pre-probe files that are already in cache (will be picked up in refresh)
         let _ = &files; // make borrow checker happy
 
@@ -274,6 +378,7 @@ impl App {
             nts_ch2: None,
             nts_ch1_error: None,
             nts_ch2_error: None,
+            station_poll_titles: HashMap::new(),
             workspace: Workspace::Radio,
             input_mode: InputMode::Normal,
             last_nonzero_volume: 0.7,
@@ -300,6 +405,7 @@ impl App {
             pcm_ring: std::collections::VecDeque::new(),
             pcm_pending: std::collections::VecDeque::new(),
             pcm_pending_started: false,
+            download_statuses: HashMap::new(),
         };
 
         // Restore workspace/focus from session
@@ -366,12 +472,26 @@ impl App {
             pane_areas: PaneAreas::default(),
             toast: ToastManager::new(),
             prev_mpv_health: MpvHealth::Absent,
-            vu_first_display_recorded: false,
             last_known_icy: None,
             recognition_tx: None, // set in run()
+            recognize_queue: std::collections::VecDeque::new(),
+            recognize_in_flight: false,
+            recognize_active_station: None,
+            download_queue: std::collections::VecDeque::new(),
+            download_in_flight: false,
             intent_pause: crate::intent::IntentState::new(false),
             intent_volume: crate::intent::IntentState::new(0.7),
             intent_station: crate::intent::IntentState::new(None),
+            auto_polling_enabled,
+            auto_poll_interval: Duration::from_secs(poll_interval_secs.max(MIN_POLL_INTERVAL_SECS)),
+            auto_poll_in_flight: false,
+            auto_poll_cycle_id: 0,
+            auto_poll_cycle_total: 0,
+            auto_poll_cycle_seen: 0,
+            auto_poll_cycle_changed: 0,
+            auto_poll_cycle_unchanged: 0,
+            auto_poll_cycle_errors: 0,
+            non_nts_poll_cursor: 0,
         };
 
         // Restore file selection in FileList component
@@ -389,7 +509,8 @@ impl App {
         }
 
         // Restore sort orders
-        app.station_list.set_sort_from_label(&ui_state.station_sort_order);
+        app.station_list
+            .set_sort_from_label(&ui_state.station_sort_order);
         app.file_list.set_sort_from_label(&ui_state.file_sort_order);
 
         // Initial file list sync (stations arrive later via daemon state update).
@@ -400,7 +521,10 @@ impl App {
 
     // ── Main run loop ─────────────────────────────────────────────────────────
 
-    pub async fn run(mut self, mut broadcast_rx: broadcast::Receiver<BroadcastMessage>) -> anyhow::Result<()> {
+    pub async fn run(
+        mut self,
+        mut broadcast_rx: broadcast::Receiver<BroadcastMessage>,
+    ) -> anyhow::Result<()> {
         debug!("run(): enabling raw mode");
         enable_raw_mode()?;
         debug!("run(): raw mode enabled, entering alternate screen");
@@ -470,6 +594,9 @@ impl App {
         let mut nts_refresh = tokio::time::interval(Duration::from_secs(60));
         nts_refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
+        let mut auto_poll_refresh = tokio::time::interval(self.auto_poll_interval);
+        auto_poll_refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
         // Toast expiry check + spinner animation: 100ms for smooth braille animation
         let mut toast_tick = tokio::time::interval(Duration::from_millis(100));
         toast_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -483,11 +610,23 @@ impl App {
         log_refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
         // VU-meter/scope render tick: 25 Hz for stability over max smoothness.
-        let mut meter_tick = tokio::time::interval(Duration::from_millis((1000 / METER_FPS) as u64));
+        let mut meter_tick =
+            tokio::time::interval(Duration::from_millis((1000 / METER_FPS) as u64));
         meter_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
         // ── Main loop ─────────────────────────────────────────────────────────
         let mut needs_redraw = true;
+
+        if self.auto_polling_enabled {
+            info!(
+                "[poll] auto polling enabled (interval={}s)",
+                self.auto_poll_interval.as_secs()
+            );
+            self.spawn_passive_poll_task(tx.clone(), "startup");
+        } else {
+            info!("[poll] auto polling disabled at startup");
+        }
+
         loop {
             // Draw only when something changed (PCM accumulation doesn't need a redraw)
             if needs_redraw {
@@ -580,6 +719,15 @@ impl App {
                     });
                 }
 
+                _ = auto_poll_refresh.tick() => {
+                    if self.auto_polling_enabled {
+                        if self.auto_poll_in_flight {
+                            debug!("[poll] interval tick — cycle #{} still in flight, skipping", self.auto_poll_cycle_id);
+                        }
+                        self.spawn_passive_poll_task(tx.clone(), "interval");
+                    }
+                }
+
                 _ = toast_tick.tick() => {
                     self.toast.tick();
                     // Tick intents (checks for timeouts) and propagate hints
@@ -628,13 +776,6 @@ impl App {
     /// fresh RMS dBFS measurement. Called from MeterTick (streams via jitter
     /// buffer) and AudioLevel (local files via lavfi).
     fn update_audio_trackers(&mut self, rms_db: f32) {
-        // Telemetry: record first VU display (non-silence audio)
-        if !self.vu_first_display_recorded && rms_db > -80.0 {
-            self.vu_first_display_recorded = true;
-            record_vu_first_display();
-            debug!("VU meter: first audio displayed ({} dB)", rms_db);
-        }
-        
         let now = std::time::Instant::now();
         let elapsed = now
             .duration_since(self.state.peak_last_update)
@@ -722,9 +863,15 @@ impl App {
             AppMessage::NtsUpdated(ch, data) => {
                 // Log only when the current show title changes (one line per channel).
                 let prev_title = if ch == 0 {
-                    self.state.nts_ch1.as_ref().map(|c| c.now.broadcast_title.as_str())
+                    self.state
+                        .nts_ch1
+                        .as_ref()
+                        .map(|c| c.now.broadcast_title.as_str())
                 } else {
-                    self.state.nts_ch2.as_ref().map(|c| c.now.broadcast_title.as_str())
+                    self.state
+                        .nts_ch2
+                        .as_ref()
+                        .map(|c| c.now.broadcast_title.as_str())
                 };
                 if prev_title != Some(data.now.broadcast_title.as_str()) {
                     debug!("[nts] ch{}: {:?}", ch + 1, data.now.broadcast_title);
@@ -757,12 +904,140 @@ impl App {
 
             AppMessage::NtsError(ch, msg) => {
                 let ch_label = if ch == 0 { "NTS 1" } else { "NTS 2" };
-                self.toast.warning(format!("{} fetch error: {}", ch_label, msg));
+                self.toast
+                    .warning(format!("{} fetch error: {}", ch_label, msg));
                 if ch == 0 {
                     self.state.nts_ch1_error = Some(msg);
                 } else {
                     self.state.nts_ch2_error = Some(msg);
                 }
+            }
+
+            AppMessage::PassivePollOutcome { cycle_id, outcome } => {
+                if cycle_id != self.auto_poll_cycle_id {
+                    debug!(
+                        "[poll] ignoring stale outcome cycle={} active={} station={}",
+                        cycle_id, self.auto_poll_cycle_id, outcome.station_name
+                    );
+                    return false;
+                }
+
+                self.auto_poll_cycle_seen += 1;
+
+                if let Some(err) = outcome.error {
+                    self.auto_poll_cycle_errors += 1;
+                    warn!(
+                        "[poll] {} resolver={} error={} ",
+                        outcome.station_name, outcome.resolver, err
+                    );
+                    return false;
+                }
+
+                let active_station_name = self
+                    .state
+                    .daemon_state
+                    .current_station
+                    .and_then(|i| self.state.daemon_state.stations.get(i))
+                    .map(|s| s.name.clone());
+                if active_station_name.as_deref() == Some(outcome.station_name.as_str()) {
+                    if let Some(active_icy) = self.state.daemon_state.icy_title.clone() {
+                        let trimmed = active_icy.trim().to_string();
+                        if !trimmed.is_empty() {
+                            self.state
+                                .station_poll_titles
+                                .insert(outcome.station_name.clone(), trimmed);
+                            self.auto_poll_cycle_unchanged += 1;
+                            debug!(
+                                "[poll] {} resolver={} ignored (active station has fresher ICY)",
+                                outcome.station_name, outcome.resolver
+                            );
+                            return false;
+                        }
+                    }
+                }
+
+                let before = self
+                    .state
+                    .station_poll_titles
+                    .get(&outcome.station_name)
+                    .cloned();
+
+                match outcome.show {
+                    Some(show) => {
+                        self.state
+                            .station_poll_titles
+                            .insert(outcome.station_name.clone(), show);
+                    }
+                    None => {
+                        // Keep last-known non-NTS ICY title when a probe returns
+                        // no metadata for this cycle (common for flaky/mixed
+                        // endpoints). This avoids list entries disappearing and
+                        // reappearing between cycles.
+                        if outcome.resolver != "icy-probe" {
+                            self.state.station_poll_titles.remove(&outcome.station_name);
+                        }
+                    }
+                }
+
+                let after = self
+                    .state
+                    .station_poll_titles
+                    .get(&outcome.station_name)
+                    .cloned();
+
+                if before != after {
+                    self.auto_poll_cycle_changed += 1;
+                    info!(
+                        "[poll] {} resolver={} changed: {:?} -> {:?}",
+                        outcome.station_name, outcome.resolver, before, after
+                    );
+                    return true;
+                }
+
+                self.auto_poll_cycle_unchanged += 1;
+                return false;
+            }
+
+            AppMessage::PassivePollCycleDone {
+                cycle_id,
+                total,
+                elapsed_ms,
+            } => {
+                if cycle_id != self.auto_poll_cycle_id {
+                    debug!(
+                        "[poll] ignoring stale cycle done cycle={} active={}",
+                        cycle_id, self.auto_poll_cycle_id
+                    );
+                    return false;
+                }
+
+                self.auto_poll_in_flight = false;
+                let missing = (self.auto_poll_cycle_total as isize) - (self.auto_poll_cycle_seen as isize);
+                if missing > 0 {
+                    warn!(
+                        "[poll] cycle #{} complete in {}ms — MISSING {} outcomes (targets={} seen={}, changed={}, unchanged={}, errors={})",
+                        cycle_id,
+                        elapsed_ms,
+                        missing,
+                        self.auto_poll_cycle_total,
+                        self.auto_poll_cycle_seen,
+                        self.auto_poll_cycle_changed,
+                        self.auto_poll_cycle_unchanged,
+                        self.auto_poll_cycle_errors,
+                    );
+                } else {
+                    info!(
+                        "[poll] cycle #{} complete in {}ms (targets={} seen={}, changed={}, unchanged={}, errors={})",
+                        cycle_id,
+                        elapsed_ms,
+                        self.auto_poll_cycle_total,
+                        self.auto_poll_cycle_seen,
+                        self.auto_poll_cycle_changed,
+                        self.auto_poll_cycle_unchanged,
+                        self.auto_poll_cycle_errors,
+                    );
+                }
+                return false;
             }
 
             AppMessage::RecognitionStarted(result) => {
@@ -787,41 +1062,101 @@ impl App {
             AppMessage::RecognitionPatch(job_id, patch) => {
                 info!("[app] Recognition patch job_id={}", job_id);
                 // Update in-memory history
-                if let Some(entry) = self.state.songs_history.iter_mut().rev()
+                if let Some(entry) = self
+                    .state
+                    .songs_history
+                    .iter_mut()
+                    .rev()
                     .find(|e| e.job_id == job_id)
                 {
-                    if let Some(v) = &patch.icy_info  { entry.icy_info  = Some(v.clone()); }
-                    if let Some(v) = &patch.nts_show   { entry.nts_show  = Some(v.clone()); }
-                    if let Some(v) = &patch.nts_tag    { entry.nts_tag   = Some(v.clone()); }
-                    if let Some(v) = &patch.nts_url    { entry.nts_url   = Some(v.clone()); }
-                    if let Some(v) = &patch.vibra_rec  { entry.vibra_rec = Some(v.clone()); }
+                    if let Some(v) = &patch.icy_info {
+                        entry.icy_info = Some(v.clone());
+                    }
+                    if let Some(v) = &patch.nts_show {
+                        entry.nts_show = Some(v.clone());
+                    }
+                    if let Some(v) = &patch.nts_tag {
+                        entry.nts_tag = Some(v.clone());
+                    }
+                    if let Some(v) = &patch.nts_url {
+                        entry.nts_url = Some(v.clone());
+                    }
+                    if let Some(v) = &patch.vibra_rec {
+                        entry.vibra_rec = Some(v.clone());
+                    }
                 }
                 // Patch VDS file on disk
                 let vds_path = self.songs_vds_path.clone();
                 let job_id_owned = job_id.clone();
                 tokio::spawn(async move {
-                    if let Err(e) = radio_proto::songs::patch_vds_by_job_id(&vds_path, &job_id_owned, patch).await {
+                    if let Err(e) =
+                        radio_proto::songs::patch_vds_by_job_id(&vds_path, &job_id_owned, patch)
+                            .await
+                    {
                         warn!("[vds] Patch error: {}", e);
                     }
                 });
             }
 
             AppMessage::RecognitionComplete(job_id, rec_display) => {
-                info!("[app] Recognition complete job_id={} display={:?}", job_id, rec_display);
+                info!(
+                    "[app] Recognition complete job_id={} display={:?}",
+                    job_id, rec_display
+                );
+                self.recognize_in_flight = false;
                 self.toast.resolve_spinner(
                     crate::widgets::toast::Severity::Success,
                     format!("identified: {}", rec_display),
                     std::time::Duration::from_secs(5),
                 );
+                // Schedule next queued job after a 1-second safety gap.
+                if !self.recognize_queue.is_empty() {
+                    if let Some(tx) = self.recognition_tx.clone() {
+                        tokio::spawn(async move {
+                            tokio::time::sleep(Duration::from_secs(1)).await;
+                            let _ = tx.send(AppMessage::RecognitionQueueNext).await;
+                        });
+                    }
+                }
             }
 
             AppMessage::RecognitionNoMatch => {
                 info!("[app] Recognition: no match from vibra");
+                self.recognize_in_flight = false;
                 self.toast.resolve_spinner(
                     crate::widgets::toast::Severity::Warning,
                     "no match",
                     std::time::Duration::from_secs(3),
                 );
+                // Schedule next queued job after a 1-second safety gap.
+                if !self.recognize_queue.is_empty() {
+                    if let Some(tx) = self.recognition_tx.clone() {
+                        tokio::spawn(async move {
+                            tokio::time::sleep(Duration::from_secs(1)).await;
+                            let _ = tx.send(AppMessage::RecognitionQueueNext).await;
+                        });
+                    }
+                }
+            }
+            AppMessage::RecognitionQueueNext => {
+                // Pop the next queued recognition job and start it.
+                if let Some((station_name, stream_url, icy_title, nts_ch, nts_mixtape_url)) =
+                    self.recognize_queue.pop_front()
+                {
+                    info!(
+                        "[app] Starting next queued recognition ({} remaining)",
+                        self.recognize_queue.len()
+                    );
+                    self.recognize_in_flight = true;
+                    self.spawn_recognition_job(
+                        station_name,
+                        stream_url,
+                        icy_title,
+                        nts_ch,
+                        nts_mixtape_url,
+                    );
+                    self.toast.spinner("identifying…");
+                }
             }
             AppMessage::AudioLevel(rms_db) => {
                 // Keep mpv-lavfi RMS for debug bulbs on all sources.
@@ -857,9 +1192,13 @@ impl App {
                 if self.state.daemon_state.current_station.is_some()
                     && self.state.daemon_state.current_file.is_none()
                 {
-                    if !self.state.pcm_pending_started && self.state.pcm_pending.len() >= PCM_JITTER_TARGET {
+                    if !self.state.pcm_pending_started
+                        && self.state.pcm_pending.len() >= PCM_JITTER_TARGET
+                    {
                         self.state.pcm_pending_started = true;
-                    } else if self.state.pcm_pending_started && self.state.pcm_pending.len() < PCM_JITTER_STOP {
+                    } else if self.state.pcm_pending_started
+                        && self.state.pcm_pending.len() < PCM_JITTER_STOP
+                    {
                         self.state.pcm_pending_started = false;
                     }
 
@@ -899,7 +1238,11 @@ impl App {
                         let rms_n = STREAM_FRAME_SAMPLES.max(consumed) as f64;
                         if rms_n > 0.0 {
                             let rms = (sum_sq / rms_n).sqrt();
-                            let rms_db = if rms < 1e-10 { -90.0_f32 } else { (20.0 * rms.log10()) as f32 };
+                            let rms_db = if rms < 1e-10 {
+                                -90.0_f32
+                            } else {
+                                (20.0 * rms.log10()) as f32
+                            };
                             self.update_audio_trackers(rms_db);
                         }
                     }
@@ -931,12 +1274,10 @@ impl App {
                     .duration_since(self.state.last_audio_update)
                     .as_secs_f32();
                 if audio_age > 0.2 && self.state.audio_level > -90.0 {
-                    self.state.audio_level =
-                        (self.state.audio_level - elapsed * 20.0).max(-90.0);
+                    self.state.audio_level = (self.state.audio_level - elapsed * 20.0).max(-90.0);
                 }
                 if audio_age > 0.2 && self.state.vu_level > -90.0 {
-                    self.state.vu_level =
-                        (self.state.vu_level - elapsed * 20.0).max(-90.0);
+                    self.state.vu_level = (self.state.vu_level - elapsed * 20.0).max(-90.0);
                 }
                 if audio_age > 2.0 {
                     // Relax spread toward 4 dB (typical measured steady-state for
@@ -947,6 +1288,36 @@ impl App {
                 }
 
                 self.state.peak_last_update = now;
+            }
+
+            AppMessage::DownloadComplete { url, result } => {
+                self.download_in_flight = false;
+                match result {
+                    Ok(_) => {
+                        self.state
+                            .download_statuses
+                            .insert(url, DownloadStatus::Downloaded);
+                        self.toast.resolve_spinner(
+                            Severity::Success,
+                            "download complete".to_string(),
+                            std::time::Duration::from_secs(5),
+                        );
+                    }
+                    Err(e) => {
+                        self.state
+                            .download_statuses
+                            .insert(url, DownloadStatus::Failed(e.clone()));
+                        self.toast.resolve_spinner(
+                            Severity::Error,
+                            format!("download failed: {}", e),
+                            std::time::Duration::from_secs(5),
+                        );
+                    }
+                }
+                // Start next queued download immediately.
+                if let Some((next_url, next_display)) = self.download_queue.pop_front() {
+                    self.start_download(next_url, next_display);
+                }
             }
         }
         true
@@ -960,12 +1331,51 @@ impl App {
         let prev_file = self.state.daemon_state.current_file.clone();
 
         // Preserve NTS city overrides
-        let nts1_city = self.state.daemon_state.stations.iter()
-            .find(|s| s.name == "NTS 1").map(|s| s.city.clone());
-        let nts2_city = self.state.daemon_state.stations.iter()
-            .find(|s| s.name == "NTS 2").map(|s| s.city.clone());
+        let nts1_city = self
+            .state
+            .daemon_state
+            .stations
+            .iter()
+            .find(|s| s.name == "NTS 1")
+            .map(|s| s.city.clone());
+        let nts2_city = self
+            .state
+            .daemon_state
+            .stations
+            .iter()
+            .find(|s| s.name == "NTS 2")
+            .map(|s| s.city.clone());
 
         self.state.daemon_state = new_state;
+
+        // Drop stale passive-poll labels for stations no longer present.
+        let station_names: std::collections::HashSet<String> = self
+            .state
+            .daemon_state
+            .stations
+            .iter()
+            .map(|s| s.name.clone())
+            .collect();
+        self.state
+            .station_poll_titles
+            .retain(|name, _| station_names.contains(name));
+
+        // Keep station-list annotation in sync with daemon ICY source for the
+        // currently playing station (polling is not the only source of truth).
+        if let Some(st_name) = self
+            .state
+            .daemon_state
+            .current_station
+            .and_then(|i| self.state.daemon_state.stations.get(i))
+            .map(|s| s.name.clone())
+        {
+            if let Some(icy) = self.state.daemon_state.icy_title.clone() {
+                let trimmed = icy.trim().to_string();
+                if !trimmed.is_empty() {
+                    self.state.station_poll_titles.insert(st_name, trimmed);
+                }
+            }
+        }
 
         let source_changed = self.state.daemon_state.current_station != prev_station
             || self.state.daemon_state.current_file != prev_file;
@@ -973,8 +1383,6 @@ impl App {
             self.state.pcm_ring.clear();
             self.state.pcm_pending.clear();
             self.state.pcm_pending_started = false;
-            // Reset telemetry flag for new playback session
-            self.vu_first_display_recorded = false;
         }
 
         // Clear last_known_icy when the station changes — the new station's
@@ -1008,13 +1416,17 @@ impl App {
         }
 
         // ── Intent confirmation ───────────────────────────────────────────────
-        self.intent_pause.on_confirmed(self.state.daemon_state.is_playing);
-        self.intent_volume.on_confirmed(self.state.daemon_state.volume);
+        self.intent_pause
+            .on_confirmed(self.state.daemon_state.is_playing);
+        self.intent_volume
+            .on_confirmed(self.state.daemon_state.volume);
         // For station: any station change (including Next/Prev/Random) confirms
         if self.intent_station.is_pending() || self.intent_station.is_timed_out() {
-            self.intent_station.on_confirmed(self.state.daemon_state.current_station);
+            self.intent_station
+                .on_confirmed(self.state.daemon_state.current_station);
         } else {
-            self.intent_station.on_confirmed(self.state.daemon_state.current_station);
+            self.intent_station
+                .on_confirmed(self.state.daemon_state.current_station);
         }
         // Propagate render hints into AppState so components can read them
         self.state.pause_hint = self.intent_pause.render_state();
@@ -1022,12 +1434,24 @@ impl App {
         self.state.station_hint = self.intent_station.render_state();
 
         if let Some(city) = nts1_city {
-            if let Some(s) = self.state.daemon_state.stations.iter_mut().find(|s| s.name == "NTS 1") {
+            if let Some(s) = self
+                .state
+                .daemon_state
+                .stations
+                .iter_mut()
+                .find(|s| s.name == "NTS 1")
+            {
                 s.city = city;
             }
         }
         if let Some(city) = nts2_city {
-            if let Some(s) = self.state.daemon_state.stations.iter_mut().find(|s| s.name == "NTS 2") {
+            if let Some(s) = self
+                .state
+                .daemon_state
+                .stations
+                .iter_mut()
+                .find(|s| s.name == "NTS 2")
+            {
                 s.city = city;
             }
         }
@@ -1059,6 +1483,12 @@ impl App {
         // Feed stations into the station_list component's ScrollableList.
         // This must happen whenever daemon_state changes.
         self.station_list.sync_stations(&self.state);
+
+        if self.auto_polling_enabled && was_empty && !self.state.daemon_state.stations.is_empty() {
+            if let Some(tx) = self.recognition_tx.clone() {
+                self.spawn_passive_poll_task(tx, "stations-loaded");
+            }
+        }
 
         if !self.state.daemon_state.stations.is_empty() {
             // Restore selected station from session
@@ -1104,7 +1534,10 @@ impl App {
 
             // Auto-show NTS panel when switching to/from NTS 1/2
             if self.state.daemon_state.current_station != prev_station {
-                let name = self.state.daemon_state.current_station
+                let name = self
+                    .state
+                    .daemon_state
+                    .current_station
                     .and_then(|i| self.state.daemon_state.stations.get(i))
                     .map(|s| s.name.as_str());
                 // If we were showing an NTS right-pane and switched away, revert to tickers
@@ -1216,14 +1649,27 @@ impl App {
         // transient None states from the daemon.
         match title {
             Some(ref t) => {
-                let station = self.state.daemon_state.current_station
+                let station = self
+                    .state
+                    .daemon_state
+                    .current_station
                     .and_then(|i| self.state.daemon_state.stations.get(i))
                     .map(|s| s.name.clone());
                 if let Some(st) = station {
-                    self.last_known_icy = Some((st, t.clone()));
+                    self.last_known_icy = Some((st.clone(), t.clone()));
+                    self.state.station_poll_titles.insert(st, t.clone());
                 }
             }
             None => {
+                if let Some(st) = self
+                    .state
+                    .daemon_state
+                    .current_station
+                    .and_then(|i| self.state.daemon_state.stations.get(i))
+                    .map(|s| s.name.clone())
+                {
+                    self.state.station_poll_titles.remove(&st);
+                }
                 self.last_known_icy = None;
             }
         }
@@ -1283,7 +1729,8 @@ impl App {
             match key.code {
                 KeyCode::Char(' ') => return vec![Action::TogglePause],
                 KeyCode::Char('n') => return vec![Action::Next],
-                KeyCode::Char('p') => return vec![Action::Prev],
+                KeyCode::Char('p') => return vec![Action::ToggleAutoPolling],
+                KeyCode::Char('P') => return vec![Action::Prev],
                 KeyCode::Char('r') => return vec![Action::Random],
                 KeyCode::Char('R') => return vec![Action::RandomBack],
                 KeyCode::Char('m') => return vec![Action::Mute],
@@ -1298,11 +1745,19 @@ impl App {
                 }
                 // Seek: comma/period = 30s, shift+comma/shift+period = 5min
                 KeyCode::Char(',') => {
-                    let seek_secs = if key.modifiers.contains(KeyModifiers::SHIFT) { -300.0 } else { -30.0 };
+                    let seek_secs = if key.modifiers.contains(KeyModifiers::SHIFT) {
+                        -300.0
+                    } else {
+                        -30.0
+                    };
                     return vec![Action::SeekRelative(seek_secs)];
                 }
                 KeyCode::Char('.') => {
-                    let seek_secs = if key.modifiers.contains(KeyModifiers::SHIFT) { 300.0 } else { 30.0 };
+                    let seek_secs = if key.modifiers.contains(KeyModifiers::SHIFT) {
+                        300.0
+                    } else {
+                        30.0
+                    };
                     return vec![Action::SeekRelative(seek_secs)];
                 }
                 KeyCode::Char('f') => {
@@ -1426,7 +1881,11 @@ impl App {
             return actions;
         }
         if hit(areas.station_list, col, row) {
-            click_pane!(ComponentId::StationList, self.station_list, areas.station_list);
+            click_pane!(
+                ComponentId::StationList,
+                self.station_list,
+                areas.station_list
+            );
         }
         if hit(areas.file_list, col, row) {
             click_pane!(ComponentId::FileList, self.file_list, areas.file_list);
@@ -1452,7 +1911,11 @@ impl App {
             click_pane!(ComponentId::IcyTicker, self.icy_ticker, areas.icy_ticker);
         }
         if hit(areas.songs_ticker, col, row) {
-            click_pane!(ComponentId::SongsTicker, self.songs_ticker, areas.songs_ticker);
+            click_pane!(
+                ComponentId::SongsTicker,
+                self.songs_ticker,
+                areas.songs_ticker
+            );
         }
         if hit(areas.file_meta, col, row) {
             click_pane!(ComponentId::FileMeta, self.file_meta, areas.file_meta);
@@ -1555,7 +2018,8 @@ impl App {
             }
             Action::RandomBack => {
                 if let Some(entry) = self.state.random_history.pop() {
-                    let _ = save_random_history(&self.random_history_path, &self.state.random_history);
+                    let _ =
+                        save_random_history(&self.random_history_path, &self.state.random_history);
                     self.send_cmd(Command::PlayFileAt {
                         path: entry.path,
                         start_secs: entry.start_secs,
@@ -1571,7 +2035,8 @@ impl App {
                 self.send_cmd(Command::Volume { value: v }).await;
             }
             Action::SeekRelative(delta) => {
-                self.send_cmd(Command::SeekRelative { seconds: delta }).await;
+                self.send_cmd(Command::SeekRelative { seconds: delta })
+                    .await;
             }
             Action::SeekTo(pos) => {
                 self.send_cmd(Command::SeekTo { seconds: pos }).await;
@@ -1631,7 +2096,8 @@ impl App {
             }
             Action::HoverNts(ch) => {
                 self.state.nts_hover_channel = ch;
-                self.wm.rebuild_focus_ring_with(self.state.nts_hover_channel);
+                self.wm
+                    .rebuild_focus_ring_with(self.state.nts_hover_channel);
             }
 
             // ── Scope ─────────────────────────────────────────────────────────
@@ -1640,48 +2106,48 @@ impl App {
             }
 
             // ── Stars ─────────────────────────────────────────────────────────
-            Action::SetStar(n, ctx) => {
-                match ctx {
-                    StarContext::Station(name) => {
-                        if n == 0 {
-                            self.state.station_stars.remove(&name);
-                        } else {
-                            self.state.station_stars.insert(name.clone(), n);
-                        }
-                        let _ = save_stars(
-                            &self.stars_path,
-                            &self.state.station_stars,
-                            &self.state.file_stars,
-                        );
-                        if n == 0 {
-                            self.toast.info(format!("unstarred {}", name));
-                        } else {
-                            self.toast.success(format!("{} {}", "✹".repeat(n as usize), name));
-                        }
+            Action::SetStar(n, ctx) => match ctx {
+                StarContext::Station(name) => {
+                    if n == 0 {
+                        self.state.station_stars.remove(&name);
+                    } else {
+                        self.state.station_stars.insert(name.clone(), n);
                     }
-                    StarContext::File(path) => {
-                        let label = std::path::Path::new(&path)
-                            .file_stem()
-                            .map(|s| s.to_string_lossy().to_string())
-                            .unwrap_or_else(|| path.clone());
-                        if n == 0 {
-                            self.state.file_stars.remove(&path);
-                        } else {
-                            self.state.file_stars.insert(path, n);
-                        }
-                        let _ = save_stars(
-                            &self.stars_path,
-                            &self.state.station_stars,
-                            &self.state.file_stars,
-                        );
-                        if n == 0 {
-                            self.toast.info(format!("unstarred {}", label));
-                        } else {
-                            self.toast.success(format!("{} {}", "★".repeat(n as usize), label));
-                        }
+                    let _ = save_stars(
+                        &self.stars_path,
+                        &self.state.station_stars,
+                        &self.state.file_stars,
+                    );
+                    if n == 0 {
+                        self.toast.info(format!("unstarred {}", name));
+                    } else {
+                        self.toast
+                            .success(format!("{} {}", "✹".repeat(n as usize), name));
                     }
                 }
-            }
+                StarContext::File(path) => {
+                    let label = std::path::Path::new(&path)
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_else(|| path.clone());
+                    if n == 0 {
+                        self.state.file_stars.remove(&path);
+                    } else {
+                        self.state.file_stars.insert(path, n);
+                    }
+                    let _ = save_stars(
+                        &self.stars_path,
+                        &self.state.station_stars,
+                        &self.state.file_stars,
+                    );
+                    if n == 0 {
+                        self.toast.info(format!("unstarred {}", label));
+                    } else {
+                        self.toast
+                            .success(format!("{} {}", "★".repeat(n as usize), label));
+                    }
+                }
+            },
             Action::ToggleStar => {
                 // Handled by the component
             }
@@ -1690,11 +2156,14 @@ impl App {
             Action::RecognizeSong => {
                 info!("[app] RecognizeSong action triggered");
 
-                let station = self.state.daemon_state.current_station
+                let station = self
+                    .state
+                    .daemon_state
+                    .current_station
                     .and_then(|i| self.state.daemon_state.stations.get(i))
                     .cloned();
                 let station_name = station.as_ref().map(|s| s.name.clone());
-                let stream_url   = station.as_ref().map(|s| s.url.clone());
+                let stream_url = station.as_ref().map(|s| s.url.clone());
 
                 // Best-effort ICY resolution — three tiers, in order of freshness:
                 //
@@ -1710,18 +2179,26 @@ impl App {
                 //    recorded during this session (has station tag, unlike log-loaded
                 //    entries).  Covers the case where daemon dedup prevented a
                 //    re-broadcast but the title is in recent history.
-                let icy_title = self.state.daemon_state.icy_title.clone()
+                let icy_title = self
+                    .state
+                    .daemon_state
+                    .icy_title
+                    .clone()
                     .or_else(|| {
                         // Tier 2: last_known_icy for the current station
                         let name = station_name.as_deref()?;
-                        self.last_known_icy.as_ref()
+                        self.last_known_icy
+                            .as_ref()
                             .filter(|(st, _)| st.as_str() == name)
                             .map(|(_, t)| t.clone())
                     })
                     .or_else(|| {
                         // Tier 3: most recent icy_history entry for this station
                         let name = station_name.as_deref()?;
-                        self.state.icy_history.iter().rev()
+                        self.state
+                            .icy_history
+                            .iter()
+                            .rev()
                             .find(|e| e.station.as_deref() == Some(name))
                             .map(|e| e.raw.clone())
                     });
@@ -1732,17 +2209,67 @@ impl App {
                 );
 
                 let nts_ch = station_name.as_deref().and_then(|n| {
-                    if n.eq_ignore_ascii_case("nts 1") { Some(0) }
-                    else if n.eq_ignore_ascii_case("nts 2") { Some(1) }
-                    else { None }
+                    if n.eq_ignore_ascii_case("nts 1") {
+                        Some(0)
+                    } else if n.eq_ignore_ascii_case("nts 2") {
+                        Some(1)
+                    } else {
+                        None
+                    }
+                });
+
+                let nts_mixtape_url = station.as_ref().and_then(|s| {
+                    if !s.name.starts_with("NTS:") {
+                        return None;
+                    }
+                    let u = s.mixtape_url.trim();
+                    if u.is_empty() {
+                        None
+                    } else {
+                        Some(u.to_string())
+                    }
                 });
 
                 if station_name.is_none() && icy_title.is_none() {
                     warn!("[app] Cannot start recognition: nothing playing");
                     self.toast.warning("nothing playing — can't identify");
                 } else {
-                    self.spawn_recognition_job(station_name, stream_url, icy_title, nts_ch);
-                    self.toast.spinner("identifying…");
+                    // If the station changed, discard the old queue entirely.
+                    if self.recognize_active_station.as_deref() != station_name.as_deref() {
+                        self.recognize_queue.clear();
+                        self.recognize_active_station = station_name.clone();
+                    }
+
+                    if self.recognize_in_flight {
+                        // Deduplicate & cap at 3 queued jobs.
+                        if self.recognize_queue.len() < 3 {
+                            self.recognize_queue.push_back((
+                                station_name,
+                                stream_url,
+                                icy_title,
+                                nts_ch,
+                                nts_mixtape_url,
+                            ));
+                            info!(
+                                "[app] Recognition queued ({} in queue)",
+                                self.recognize_queue.len()
+                            );
+                        } else {
+                            info!("[app] Recognition queue full (3), ignoring duplicate press");
+                        }
+                    } else {
+                        // Start immediately.
+                        self.recognize_in_flight = true;
+                        self.recognize_active_station = station_name.clone();
+                        self.spawn_recognition_job(
+                            station_name,
+                            stream_url,
+                            icy_title,
+                            nts_ch,
+                            nts_mixtape_url,
+                        );
+                        self.toast.spinner("identifying…");
+                    }
                 }
             }
 
@@ -1767,6 +2294,26 @@ impl App {
             }
             Action::ToggleKeys => {
                 self.wm.show_keys_bar = !self.wm.show_keys_bar;
+            }
+            Action::ToggleAutoPolling => {
+                self.auto_polling_enabled = !self.auto_polling_enabled;
+                if self.auto_polling_enabled {
+                    info!(
+                        "[poll] auto polling enabled (interval={}s)",
+                        self.auto_poll_interval.as_secs()
+                    );
+                    self.toast.info(format!(
+                        "auto polling: on ({}s)",
+                        self.auto_poll_interval.as_secs()
+                    ));
+                    if let Some(tx) = self.recognition_tx.clone() {
+                        self.spawn_passive_poll_task(tx, "manual-toggle");
+                    }
+                } else {
+                    info!("[poll] auto polling disabled");
+                    self.toast
+                        .info("auto polling: off (press p to re-enable)".to_string());
+                }
             }
 
             // ── Collapse ──────────────────────────────────────────────────────
@@ -1796,11 +2343,35 @@ impl App {
             | Action::ScrollDown(_)
             | Action::FilterChanged(_)
             | Action::ClearFilter
-            | Action::Download
             | Action::Tick
             | Action::Render
             | Action::Resize(_, _)
             | Action::Noop => {}
+
+            Action::Download => {
+                // Get selected song entry and download if it has an NTS URL
+                if let Some(entry) = self.get_selected_song_entry() {
+                    if let Some(url) = entry.nts_url.clone() {
+                        let display = entry.display().to_string();
+                        if self.download_in_flight {
+                            // Queue only if this URL isn't already pending.
+                            if !self.download_queue.iter().any(|(u, _)| u == &url) {
+                                self.download_queue.push_back((url, display));
+                                info!(
+                                    "[app] Download queued ({} in queue)",
+                                    self.download_queue.len()
+                                );
+                            } else {
+                                info!("[app] Download already queued, ignoring duplicate press");
+                            }
+                        } else {
+                            self.start_download(url, display);
+                        }
+                    } else {
+                        self.toast.error("No NTS URL available for download");
+                    }
+                }
+            }
 
             Action::CopyToClipboard(text) => {
                 match arboard::Clipboard::new().and_then(|mut cb| cb.set_text(text.clone())) {
@@ -1825,8 +2396,8 @@ impl App {
     // ── Drawing ───────────────────────────────────────────────────────────────
 
     fn draw(&mut self, frame: &mut ratatui::Frame) {
-        use ratatui::widgets::Block;
         use crate::theme::C_BG;
+        use ratatui::widgets::Block;
         let area = frame.area();
 
         // Fill the entire terminal with the base background colour so that
@@ -1885,6 +2456,7 @@ impl App {
                 self.state.input_mode,
                 self.wm.workspace,
                 self.state.mpv_audio_level,
+                self.auto_polling_enabled,
             );
         }
 
@@ -1894,7 +2466,8 @@ impl App {
             use ratatui::widgets::Borders;
             // Expanded: omit top border (body above has its own bottom)
             self.log_panel.borders = Borders::LEFT | Borders::BOTTOM | Borders::RIGHT;
-            self.log_panel.draw(frame, log_area, log_focused, &self.state);
+            self.log_panel
+                .draw(frame, log_area, log_focused, &self.state);
             self.pane_areas.log_panel = log_area;
         } else {
             self.pane_areas.log_panel = Rect::default();
@@ -1919,7 +2492,7 @@ impl App {
         use ratatui::widgets::Borders;
 
         let right_maximized = self.wm.radio_right_maximized;
-        let _has_overlay = self.state.nts_hover_channel.is_some()
+        let has_overlay = self.state.nts_hover_channel.is_some()
             && matches!(self.wm.radio_right_pane, RightPane::Tickers);
 
         // Assign fixed pane number keys: StationList=1, Icy=2, Songs=3, NtsPanel=4
@@ -1932,7 +2505,8 @@ impl App {
         if self.wm.radio_right_pane == RightPane::Scope {
             let station_focused = self.wm.focused() == Some(ComponentId::StationList);
             self.station_list.borders = Borders::empty();
-            self.station_list.draw(frame, area, station_focused, &self.state);
+            self.station_list
+                .draw(frame, area, station_focused, &self.state);
             self.pane_areas.station_list = area;
             self.pane_areas.nts_panel = Rect::default();
             return;
@@ -1960,12 +2534,19 @@ impl App {
         if station_collapsed {
             use crate::widgets::pane_chrome::draw_collapsed_pane;
             let summary = self.station_list.collapse_summary(&self.state);
-            draw_collapsed_pane(frame, left_area, "stations", summary.as_deref(), station_focused);
+            draw_collapsed_pane(
+                frame,
+                left_area,
+                "stations",
+                summary.as_deref(),
+                station_focused,
+            );
             self.pane_areas.station_list = left_area;
         } else {
             // Left pane: omit right border — right pane's left border is the shared divider
             self.station_list.borders = Borders::TOP | Borders::LEFT | Borders::BOTTOM;
-            self.station_list.draw(frame, left_area, station_focused, &self.state);
+            self.station_list
+                .draw(frame, left_area, station_focused, &self.state);
             self.pane_areas.station_list = left_area;
         }
 
@@ -1979,22 +2560,12 @@ impl App {
                 let rows = Layout::default()
                     .direction(Direction::Vertical)
                     .constraints(match (icy_collapsed, songs_collapsed) {
-                        (true, true) => vec![
-                            Constraint::Length(1),
-                            Constraint::Length(1),
-                        ],
-                        (true, false) => vec![
-                            Constraint::Length(1),
-                            Constraint::Min(0),
-                        ],
-                        (false, true) => vec![
-                            Constraint::Min(0),
-                            Constraint::Length(1),
-                        ],
-                        (false, false) => vec![
-                            Constraint::Percentage(50),
-                            Constraint::Percentage(50),
-                        ],
+                        (true, true) => vec![Constraint::Length(1), Constraint::Length(1)],
+                        (true, false) => vec![Constraint::Length(1), Constraint::Min(0)],
+                        (false, true) => vec![Constraint::Min(0), Constraint::Length(1)],
+                        (false, false) => {
+                            vec![Constraint::Percentage(50), Constraint::Percentage(50)]
+                        }
                     })
                     .split(right_area);
 
@@ -2007,7 +2578,8 @@ impl App {
                     draw_collapsed_pane(frame, rows[0], "icy", summary.as_deref(), icy_focused);
                 } else {
                     self.icy_ticker.borders = Borders::ALL;
-                    self.icy_ticker.draw(frame, rows[0], icy_focused, &self.state);
+                    self.icy_ticker
+                        .draw(frame, rows[0], icy_focused, &self.state);
                 }
 
                 if songs_collapsed {
@@ -2021,7 +2593,8 @@ impl App {
                     } else {
                         Borders::LEFT | Borders::BOTTOM | Borders::RIGHT
                     };
-                    self.songs_ticker.draw(frame, rows[1], songs_focused, &self.state);
+                    self.songs_ticker
+                        .draw(frame, rows[1], songs_focused, &self.state);
                 }
 
                 self.pane_areas.icy_ticker = rows[0];
@@ -2034,10 +2607,17 @@ impl App {
                 if nts_collapsed {
                     use crate::widgets::pane_chrome::draw_collapsed_pane;
                     let summary = self.nts_panel_ch1.collapse_summary(&self.state);
-                    draw_collapsed_pane(frame, right_area, "nts 1", summary.as_deref(), nts_focused);
+                    draw_collapsed_pane(
+                        frame,
+                        right_area,
+                        "nts 1",
+                        summary.as_deref(),
+                        nts_focused,
+                    );
                 } else {
                     self.nts_panel_ch1.borders = Borders::ALL;
-                    self.nts_panel_ch1.draw(frame, right_area, nts_focused, &self.state);
+                    self.nts_panel_ch1
+                        .draw(frame, right_area, nts_focused, &self.state);
                 }
                 self.pane_areas.nts_panel = right_area;
             }
@@ -2047,10 +2627,17 @@ impl App {
                 if nts_collapsed {
                     use crate::widgets::pane_chrome::draw_collapsed_pane;
                     let summary = self.nts_panel_ch2.collapse_summary(&self.state);
-                    draw_collapsed_pane(frame, right_area, "nts 2", summary.as_deref(), nts_focused);
+                    draw_collapsed_pane(
+                        frame,
+                        right_area,
+                        "nts 2",
+                        summary.as_deref(),
+                        nts_focused,
+                    );
                 } else {
                     self.nts_panel_ch2.borders = Borders::ALL;
-                    self.nts_panel_ch2.draw(frame, right_area, nts_focused, &self.state);
+                    self.nts_panel_ch2
+                        .draw(frame, right_area, nts_focused, &self.state);
                 }
                 self.pane_areas.nts_panel = right_area;
             }
@@ -2077,7 +2664,8 @@ impl App {
 
                     // Compute content height: border(2) + inner rows needed
                     let overlay_width = base.width;
-                    let content_rows = panel.compact_content_height_for_state(&self.state, overlay_width);
+                    let content_rows =
+                        panel.compact_content_height_for_state(&self.state, overlay_width);
                     // +2 for top/bottom borders, capped to available space
                     let overlay_height = (content_rows + 2).min(base.height.saturating_sub(1));
                     let overlay_y = base.y + base.height - overlay_height;
@@ -2131,7 +2719,8 @@ impl App {
             draw_collapsed_pane(frame, left_area, "files", summary.as_deref(), file_focused);
         } else {
             self.file_list.borders = Borders::TOP | Borders::LEFT | Borders::BOTTOM;
-            self.file_list.draw(frame, left_area, file_focused, &self.state);
+            self.file_list
+                .draw(frame, left_area, file_focused, &self.state);
         }
         self.pane_areas.file_list = left_area;
 
@@ -2147,9 +2736,21 @@ impl App {
         let rows = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                if meta_collapsed { Constraint::Length(1) } else { Constraint::Percentage(50) },
-                if icy_collapsed { Constraint::Length(1) } else { Constraint::Percentage(25) },
-                if songs_collapsed { Constraint::Length(1) } else { Constraint::Percentage(25) },
+                if meta_collapsed {
+                    Constraint::Length(1)
+                } else {
+                    Constraint::Percentage(50)
+                },
+                if icy_collapsed {
+                    Constraint::Length(1)
+                } else {
+                    Constraint::Percentage(25)
+                },
+                if songs_collapsed {
+                    Constraint::Length(1)
+                } else {
+                    Constraint::Percentage(25)
+                },
             ])
             .split(right_area);
 
@@ -2159,7 +2760,8 @@ impl App {
             draw_collapsed_pane(frame, rows[0], "meta", summary.as_deref(), meta_focused);
         } else {
             self.file_meta.borders = Borders::ALL;
-            self.file_meta.draw(frame, rows[0], meta_focused, &self.state);
+            self.file_meta
+                .draw(frame, rows[0], meta_focused, &self.state);
         }
 
         if icy_collapsed {
@@ -2173,7 +2775,8 @@ impl App {
             } else {
                 Borders::LEFT | Borders::BOTTOM | Borders::RIGHT
             };
-            self.icy_ticker.draw(frame, rows[1], icy_focused, &self.state);
+            self.icy_ticker
+                .draw(frame, rows[1], icy_focused, &self.state);
         }
 
         if songs_collapsed {
@@ -2187,7 +2790,8 @@ impl App {
             } else {
                 Borders::LEFT | Borders::BOTTOM | Borders::RIGHT
             };
-            self.songs_ticker.draw(frame, rows[2], songs_focused, &self.state);
+            self.songs_ticker
+                .draw(frame, rows[2], songs_focused, &self.state);
         }
 
         self.pane_areas.file_meta = rows[0];
@@ -2218,6 +2822,76 @@ impl App {
         }
     }
 
+    fn spawn_passive_poll_task(&mut self, tx: mpsc::Sender<AppMessage>, reason: &str) {
+        if self.auto_poll_in_flight {
+            info!("[poll] skip cycle (already in flight)");
+            return;
+        }
+
+        let stations = self.state.daemon_state.stations.clone();
+        let targets = build_station_poll_targets(&stations, &mut self.non_nts_poll_cursor);
+        let target_count = targets.len();
+        if target_count == 0 {
+            info!("[poll] skip cycle (no resolvable polling targets)");
+            return;
+        }
+
+        self.auto_poll_cycle_id = self.auto_poll_cycle_id.saturating_add(1);
+        self.auto_poll_cycle_total = target_count;
+        self.auto_poll_cycle_seen = 0;
+        self.auto_poll_cycle_changed = 0;
+        self.auto_poll_cycle_unchanged = 0;
+        self.auto_poll_cycle_errors = 0;
+        self.auto_poll_in_flight = true;
+
+        let cycle_id = self.auto_poll_cycle_id;
+        let mut nts_live_count = 0usize;
+        let mut nts_mixtape_count = 0usize;
+        let mut non_nts_count = 0usize;
+        let target_labels: Vec<String> = targets
+            .iter()
+            .map(|t| match t {
+                StationPollTarget::NtsLive { station_name, .. } => {
+                    nts_live_count += 1;
+                    format!("nts-live:{}", station_name)
+                }
+                StationPollTarget::NtsMixtape { station_name, .. } => {
+                    nts_mixtape_count += 1;
+                    format!("nts-mixtape:{}", station_name)
+                }
+                StationPollTarget::NonNtsIcy { station_name, .. } => {
+                    non_nts_count += 1;
+                    format!("icy-probe:{}", station_name)
+                }
+            })
+            .collect();
+
+        let why = reason.to_string();
+        info!(
+            "[poll] cycle #{} start reason={} targets={} (nts-live={}, nts-mixtape={}, non-nts={})",
+            cycle_id, why, target_count, nts_live_count, nts_mixtape_count, non_nts_count,
+        );
+        debug!(
+            "[poll] cycle #{} target order: {}",
+            cycle_id,
+            target_labels.join(", ")
+        );
+
+        tokio::spawn(async move {
+            let started = std::time::Instant::now();
+            debug!("[poll] cycle #{} task spawned", cycle_id);
+            run_station_poll_cycle(targets, tx.clone(), cycle_id).await;
+            let elapsed_ms = started.elapsed().as_millis();
+            let _ = tx
+                .send(AppMessage::PassivePollCycleDone {
+                    cycle_id,
+                    total: target_count,
+                    elapsed_ms,
+                })
+                .await;
+        });
+    }
+
     /// Maximum file metadata cache entries to prevent unbounded growth
     const MAX_METADATA_CACHE_SIZE: usize = 1000;
 
@@ -2226,7 +2900,7 @@ impl App {
     /// 1. Immediately sends `RecognitionStarted` with initial row (job_id + station + icy).
     /// 2. Spawns three concurrent tasks:
     ///    a. ICY patch — immediate if icy_title is Some.
-    ///    b. NTS patch — async API call (NTS 1/2 only).
+    ///    b. NTS patch — async API call (NTS 1/2 or NTS Infinite Mixtape).
     ///    c. vibra patch — silent mpv 10s capture + vibra fingerprint.
     fn spawn_recognition_job(
         &mut self,
@@ -2234,6 +2908,7 @@ impl App {
         stream_url: Option<String>,
         icy_title: Option<String>,
         nts_ch: Option<usize>,
+        nts_mixtape_url: Option<String>,
     ) {
         let Some(tx) = self.recognition_tx.clone() else {
             warn!("[app] Cannot spawn recognition job: recognition_tx not initialized");
@@ -2243,8 +2918,8 @@ impl App {
         let now = chrono::Local::now();
         let job_id = make_job_id(&now, station_name.as_deref());
         info!(
-            "[app] Spawning recognition job_id={} station={:?} icy={:?} nts_ch={:?} url={:?}",
-            job_id, station_name, icy_title, nts_ch, stream_url
+            "[app] Spawning recognition job_id={} station={:?} icy={:?} nts_ch={:?} nts_mixtape_url={:?} url={:?}",
+            job_id, station_name, icy_title, nts_ch, nts_mixtape_url, stream_url
         );
 
         // Initial row — sent immediately so the UI shows something right away
@@ -2270,7 +2945,10 @@ impl App {
 
         // ── Task A: ICY patch (immediate) ─────────────────────────────────────
         if let Some(icy) = icy_title {
-            let patch = VdsPatch { icy_info: Some(icy.clone()), ..Default::default() };
+            let patch = VdsPatch {
+                icy_info: Some(icy.clone()),
+                ..Default::default()
+            };
             tokio::spawn(async move {
                 let _ = tx2.send(AppMessage::RecognitionPatch(job_id2, patch)).await;
             });
@@ -2283,13 +2961,27 @@ impl App {
                     info!("[recognition] nts ch{}: show={:?}", ch + 1, show);
                     let patch = VdsPatch {
                         nts_show: Some(show.clone()),
-                        nts_tag:  tag,
-                        nts_url:  url,
+                        nts_tag: tag,
+                        nts_url: url,
                         ..Default::default()
                     };
                     let _ = tx3.send(AppMessage::RecognitionPatch(job_id3, patch)).await;
                 } else {
                     warn!("[recognition] nts ch{}: no result", ch + 1);
+                }
+            });
+        } else if let Some(mixtape_url) = nts_mixtape_url {
+            tokio::spawn(async move {
+                if let Some((show, url)) = recognize_via_nts_mixtape(&mixtape_url).await {
+                    info!("[recognition] nts mixtape: show={:?}", show);
+                    let patch = VdsPatch {
+                        nts_show: Some(show),
+                        nts_url: url,
+                        ..Default::default()
+                    };
+                    let _ = tx3.send(AppMessage::RecognitionPatch(job_id3, patch)).await;
+                } else {
+                    info!("[recognition] nts mixtape: no announced show");
                 }
             });
         }
@@ -2307,8 +2999,12 @@ impl App {
                         vibra_rec: rec_str,
                         ..Default::default()
                     };
-                    let _ = tx4.send(AppMessage::RecognitionPatch(job_id4.clone(), patch)).await;
-                    let _ = tx4.send(AppMessage::RecognitionComplete(job_id4, display)).await;
+                    let _ = tx4
+                        .send(AppMessage::RecognitionPatch(job_id4.clone(), patch))
+                        .await;
+                    let _ = tx4
+                        .send(AppMessage::RecognitionComplete(job_id4, display))
+                        .await;
                 } else {
                     warn!("[recognition] vibra returned nothing");
                     let _ = tx4.send(AppMessage::RecognitionNoMatch).await;
@@ -2422,9 +3118,780 @@ impl App {
             }
         }
     }
+
+    /// Get the currently selected song entry from songs ticker
+    fn get_selected_song_entry(&self) -> Option<radio_proto::songs::RecognitionResult> {
+        // Get the selected index from songs_ticker
+        let selected = self.songs_ticker.selected;
+        if selected < self.state.songs_history.len() {
+            Some(self.state.songs_history[selected].clone())
+        } else {
+            None
+        }
+    }
+
+    /// Start an NTS download immediately (no queue check — caller is responsible).
+    fn start_download(&mut self, url: String, display: String) {
+        info!("[app] Starting download for: {}", url);
+        self.download_in_flight = true;
+        self.toast.spinner(format!("downloading {}…", display));
+        self.state
+            .download_statuses
+            .insert(url.clone(), DownloadStatus::Downloading(0.0));
+        let download_dir = self.state.downloads_dir.clone();
+        let tx = self.recognition_tx.clone();
+        tokio::spawn(async move {
+            let result = Self::download_nts_show(&url, &download_dir).await;
+            if let Some(tx) = tx {
+                let _ = tx.send(AppMessage::DownloadComplete { url, result }).await;
+            }
+        });
+    }
+
+    /// Download an NTS show
+    async fn download_nts_show(
+        url: &str,
+        download_dir: &std::path::Path,
+    ) -> Result<std::path::PathBuf, String> {
+        // Find yt-dlp
+        let yt_dlp_path = radio_proto::platform::find_yt_dlp_binary().ok_or("yt-dlp not found")?;
+
+        // Use nts_download module
+        crate::nts_download::download_episode(url, download_dir, &yt_dlp_path)
+            .await
+            .map_err(|e| e.to_string())
+    }
 }
 
 // ── Daemon connection handler ─────────────────────────────────────────────────
+
+fn build_station_poll_targets(
+    stations: &[Station],
+    non_nts_cursor: &mut usize,
+) -> Vec<StationPollTarget> {
+    let mut targets = Vec::new();
+    let mut non_nts = Vec::new();
+    for station in stations {
+        if station.name.eq_ignore_ascii_case("NTS 1") {
+            targets.push(StationPollTarget::NtsLive {
+                station_name: station.name.clone(),
+                channel_idx: 0,
+            });
+            continue;
+        }
+        if station.name.eq_ignore_ascii_case("NTS 2") {
+            targets.push(StationPollTarget::NtsLive {
+                station_name: station.name.clone(),
+                channel_idx: 1,
+            });
+            continue;
+        }
+
+        let mixtape_url = station.mixtape_url.trim();
+        if !mixtape_url.is_empty() {
+            targets.push(StationPollTarget::NtsMixtape {
+                station_name: station.name.clone(),
+                mixtape_url: mixtape_url.to_string(),
+            });
+            continue;
+        }
+
+        if station.url.starts_with("http://") || station.url.starts_with("https://") {
+            non_nts.push(StationPollTarget::NonNtsIcy {
+                station_name: station.name.clone(),
+                stream_url: station.url.clone(),
+            });
+        }
+    }
+
+    targets.extend(select_round_robin_non_nts(
+        non_nts,
+        non_nts_cursor,
+        NON_NTS_MAX_JOBS_PER_CYCLE,
+    ));
+
+    targets
+}
+
+fn select_round_robin_non_nts(
+    pool: Vec<StationPollTarget>,
+    cursor: &mut usize,
+    max_take: usize,
+) -> Vec<StationPollTarget> {
+    if pool.is_empty() || max_take == 0 {
+        return Vec::new();
+    }
+
+    let len = pool.len();
+    let start = *cursor % len;
+    let take = max_take.min(len);
+
+    let mut out = Vec::with_capacity(take);
+    for i in 0..take {
+        let idx = (start + i) % len;
+        out.push(pool[idx].clone());
+    }
+
+    *cursor = (start + take) % len;
+    out
+}
+
+async fn run_station_poll_cycle(
+    targets: Vec<StationPollTarget>,
+    tx: mpsc::Sender<AppMessage>,
+    cycle_id: u64,
+) {
+    let total = targets.len();
+    let mut nts_join = tokio::task::JoinSet::new();
+    let mut non_nts_queue: VecDeque<NonNtsPollJob> = VecDeque::new();
+
+    for (idx, target) in targets.into_iter().enumerate() {
+        let ord = idx + 1;
+        match target {
+            StationPollTarget::NonNtsIcy {
+                station_name,
+                stream_url,
+            } => {
+                non_nts_queue.push_back(NonNtsPollJob {
+                    ord,
+                    station_name,
+                    stream_url,
+                });
+            }
+            nts_target => {
+                let txn = tx.clone();
+                nts_join.spawn(async move {
+                    let outcome = poll_nts_target(nts_target, ord, total).await;
+                    let _ = txn
+                        .send(AppMessage::PassivePollOutcome { cycle_id, outcome })
+                        .await;
+                });
+            }
+        }
+    }
+
+    let non_nts_total = non_nts_queue.len();
+    let nts_total = total.saturating_sub(non_nts_total);
+    debug!(
+        "[poll] cycle #{} scheduling: nts={} non-nts={} workers={}",
+        cycle_id,
+        nts_total,
+        non_nts_total,
+        NON_NTS_MAX_CONCURRENCY.min(non_nts_total).max(1),
+    );
+
+    // Launch non-NTS worker pool immediately so it runs concurrently with NTS polling.
+    let mut non_nts_workers = tokio::task::JoinSet::new();
+    if non_nts_total > 0 {
+        match reqwest::Client::builder()
+            .user_agent("r4dio-passive-icy-poller/0.1")
+            .connect_timeout(Duration::from_millis(NON_NTS_CONNECT_TIMEOUT_MS))
+            .timeout(Duration::from_millis(NON_NTS_REQUEST_TIMEOUT_MS))
+            .build()
+        {
+            Ok(client) => {
+                let queue = std::sync::Arc::new(TokioMutex::new(non_nts_queue));
+                let cycle_start = std::time::Instant::now();
+                let deadline = cycle_start + Duration::from_secs(NON_NTS_CYCLE_BUDGET_SECS);
+                let worker_count = NON_NTS_MAX_CONCURRENCY.min(non_nts_total).max(1);
+                debug!(
+                    "[poll] cycle #{} launching {} workers for {} non-nts jobs (budget={}s connect={}ms req={}ms meta={}ms)",
+                    cycle_id,
+                    worker_count,
+                    non_nts_total,
+                    NON_NTS_CYCLE_BUDGET_SECS,
+                    NON_NTS_CONNECT_TIMEOUT_MS,
+                    NON_NTS_REQUEST_TIMEOUT_MS,
+                    NON_NTS_METADATA_TIMEOUT_MS,
+                );
+                for worker_idx in 0..worker_count {
+                    let queue = queue.clone();
+                    let txw = tx.clone();
+                    let cw = client.clone();
+                    non_nts_workers.spawn(async move {
+                        let mut jobs_done = 0usize;
+                        loop {
+                            let budget_remaining_ms = deadline
+                                .saturating_duration_since(std::time::Instant::now())
+                                .as_millis();
+                            if std::time::Instant::now() >= deadline {
+                                debug!(
+                                    "[poll] worker={} budget exhausted after {} jobs, stopping",
+                                    worker_idx, jobs_done
+                                );
+                                break;
+                            }
+
+                            let job = {
+                                let mut q = queue.lock().await;
+                                q.pop_front()
+                            };
+                            let Some(job) = job else {
+                                debug!(
+                                    "[poll] worker={} queue empty after {} jobs",
+                                    worker_idx, jobs_done
+                                );
+                                break;
+                            };
+
+                            debug!(
+                                "[poll] worker={} start job {}/{} '{}' (budget_remaining={}ms)",
+                                worker_idx, job.ord, total, job.station_name, budget_remaining_ms
+                            );
+                            let job_start = std::time::Instant::now();
+                            let outcome = poll_non_nts_station_icy(
+                                cw.clone(),
+                                job.station_name.clone(),
+                                job.stream_url,
+                                job.ord,
+                                total,
+                            )
+                            .await;
+                            let job_ms = job_start.elapsed().as_millis();
+                            let result_tag = if outcome.error.is_some() {
+                                "error"
+                            } else if outcome.show.is_some() {
+                                "title"
+                            } else {
+                                "no-title"
+                            };
+                            debug!(
+                                "[poll] worker={} done job {}/{} '{}' result={} elapsed={}ms",
+                                worker_idx, job.ord, total, job.station_name, result_tag, job_ms
+                            );
+                            jobs_done += 1;
+                            let _ = txw
+                                .send(AppMessage::PassivePollOutcome { cycle_id, outcome })
+                                .await;
+                        }
+                        debug!(
+                            "[poll] worker={} exited after {} jobs, total_elapsed={}ms",
+                            worker_idx,
+                            jobs_done,
+                            cycle_start.elapsed().as_millis(),
+                        );
+                    });
+                }
+
+                // Wait for all workers and log final queue state.
+                while let Some(joined) = non_nts_workers.join_next().await {
+                    if let Err(e) = joined {
+                        warn!("[poll] icy worker join error: {}", e);
+                    }
+                }
+                let deferred = {
+                    let q = queue.lock().await;
+                    q.len()
+                };
+                if deferred > 0 {
+                    info!(
+                        "[poll] cycle #{} non-nts done: {} jobs deferred to next cycle (budget/concurrency)",
+                        cycle_id, deferred
+                    );
+                } else {
+                    debug!(
+                        "[poll] cycle #{} non-nts done: all {} jobs completed in {}ms",
+                        cycle_id,
+                        non_nts_total,
+                        cycle_start.elapsed().as_millis(),
+                    );
+                }
+            }
+            Err(e) => {
+                warn!("[poll] failed to build icy probe client: {}", e);
+                for job in non_nts_queue {
+                    let _ = tx
+                        .send(AppMessage::PassivePollOutcome {
+                            cycle_id,
+                            outcome: StationPollOutcome {
+                                station_name: job.station_name,
+                                resolver: "icy-probe".to_string(),
+                                show: None,
+                                error: Some("icy-probe-client-error".to_string()),
+                            },
+                        })
+                        .await;
+                }
+            }
+        }
+    }
+
+    // Drain any remaining NTS tasks (they run concurrently with non-NTS workers above).
+    let nts_pending = nts_join.len();
+    if nts_pending > 0 {
+        debug!("[poll] cycle #{} waiting on {} remaining nts tasks", cycle_id, nts_pending);
+    }
+    while let Some(joined) = nts_join.join_next().await {
+        if let Err(e) = joined {
+            warn!("[poll] nts task join error: {}", e);
+        }
+    }
+    debug!("[poll] cycle #{} all tasks finished", cycle_id);
+}
+
+async fn poll_nts_target(
+    target: StationPollTarget,
+    ord: usize,
+    total: usize,
+) -> StationPollOutcome {
+    let resolver = target.resolver_label().to_string();
+    match target {
+        StationPollTarget::NtsLive {
+            station_name,
+            channel_idx,
+        } => match tokio::time::timeout(
+            Duration::from_secs(NTS_POLL_TASK_TIMEOUT_SECS),
+            fetch_nts_channel(channel_idx),
+        )
+        .await
+        {
+            Ok(Ok(ch)) => {
+                let show = ch.now.broadcast_title.trim().to_string();
+                let show = if show.is_empty() { None } else { Some(show) };
+                info!(
+                    "[poll] [{}/{}] {} resolver=nts-live show={:?}",
+                    ord, total, station_name, show
+                );
+                StationPollOutcome {
+                    station_name,
+                    resolver,
+                    show,
+                    error: None,
+                }
+            }
+            Ok(Err(e)) => {
+                warn!(
+                    "[poll] [{}/{}] {} resolver=nts-live error={}",
+                    ord, total, station_name, e
+                );
+                StationPollOutcome {
+                    station_name,
+                    resolver,
+                    show: None,
+                    error: Some(e.to_string()),
+                }
+            }
+            Err(_) => {
+                warn!(
+                    "[poll] [{}/{}] {} resolver=nts-live timeout",
+                    ord, total, station_name
+                );
+                StationPollOutcome {
+                    station_name,
+                    resolver,
+                    show: None,
+                    error: Some("timeout".to_string()),
+                }
+            }
+        },
+
+        StationPollTarget::NtsMixtape {
+            station_name,
+            mixtape_url,
+        } => {
+            let (show, timeout_err) = match tokio::time::timeout(
+                Duration::from_secs(NTS_POLL_TASK_TIMEOUT_SECS),
+                recognize_via_nts_mixtape(&mixtape_url),
+            )
+            .await
+            {
+                Ok(v) => (v.map(|(title, _url)| title), None),
+                Err(_) => {
+                    warn!(
+                        "[poll] [{}/{}] {} resolver=nts-mixtape timeout",
+                        ord, total, station_name
+                    );
+                    (None, Some("timeout".to_string()))
+                }
+            };
+            info!(
+                "[poll] [{}/{}] {} resolver=nts-mixtape show={:?}",
+                ord, total, station_name, show
+            );
+            StationPollOutcome {
+                station_name,
+                resolver,
+                show,
+                error: timeout_err,
+            }
+        }
+
+        StationPollTarget::NonNtsIcy { station_name, .. } => StationPollOutcome {
+            station_name,
+            resolver,
+            show: None,
+            error: Some("invalid-nts-target".to_string()),
+        },
+    }
+}
+
+async fn poll_non_nts_station_icy(
+    client: reqwest::Client,
+    station_name: String,
+    stream_url: String,
+    ord: usize,
+    total: usize,
+) -> StationPollOutcome {
+    let started = std::time::Instant::now();
+    let mut effective_url = stream_url.clone();
+    let mut detail_prefix = String::new();
+
+    if is_playlist_url(&effective_url) {
+        match fetch_playlist_target(&client, &effective_url).await {
+            Ok(Some(next)) => {
+                detail_prefix = format!("playlist->{}", next);
+                effective_url = next;
+            }
+            Ok(None) => {
+                info!(
+                    "[poll] [{}/{}] {} resolver=icy-probe playlist-no-target",
+                    ord, total, station_name
+                );
+                return StationPollOutcome {
+                    station_name,
+                    resolver: "icy-probe".to_string(),
+                    show: None,
+                    error: None,
+                };
+            }
+            Err(e) => {
+                warn!(
+                    "[poll] [{}/{}] {} resolver=icy-probe playlist-error={} ",
+                    ord, total, station_name, e
+                );
+                return StationPollOutcome {
+                    station_name,
+                    resolver: "icy-probe".to_string(),
+                    show: None,
+                    error: Some(e),
+                };
+            }
+        }
+    }
+
+    if looks_hls_url(&effective_url) {
+        info!(
+            "[poll] [{}/{}] {} resolver=icy-probe hls-skip {:?}",
+            ord, total, station_name, effective_url
+        );
+        return StationPollOutcome {
+            station_name,
+            resolver: "icy-probe".to_string(),
+            show: None,
+            error: None,
+        };
+    }
+
+    let mut req = client
+        .get(&effective_url)
+        .header("Icy-MetaData", HeaderValue::from_static("1"));
+    if looks_hls_url(&effective_url) {
+        req = req.header(
+            "Accept",
+            HeaderValue::from_static("application/vnd.apple.mpegurl,*/*"),
+        );
+    }
+
+    let mut resp = match req.send().await {
+        Ok(r) => match r.error_for_status() {
+            Ok(ok) => ok,
+            Err(e) => {
+                return StationPollOutcome {
+                    station_name,
+                    resolver: "icy-probe".to_string(),
+                    show: None,
+                    error: Some(e.to_string()),
+                };
+            }
+        },
+        Err(e) => {
+            return StationPollOutcome {
+                station_name,
+                resolver: "icy-probe".to_string(),
+                show: None,
+                error: Some(e.to_string()),
+            };
+        }
+    };
+
+    let content_type = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
+    if content_type.contains("mpegurl") || looks_hls_url(&effective_url) {
+        info!(
+            "[poll] [{}/{}] {} resolver=icy-probe non-icy content-type={}",
+            ord, total, station_name, content_type
+        );
+        return StationPollOutcome {
+            station_name,
+            resolver: "icy-probe".to_string(),
+            show: None,
+            error: None,
+        };
+    }
+
+    let metaint = resp
+        .headers()
+        .get("icy-metaint")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<usize>().ok());
+
+    let Some(metaint) = metaint else {
+        info!(
+            "[poll] [{}/{}] {} resolver=icy-probe no icy-metaint{}",
+            ord,
+            total,
+            station_name,
+            if detail_prefix.is_empty() {
+                "".to_string()
+            } else {
+                format!(" ({})", detail_prefix)
+            }
+        );
+        return StationPollOutcome {
+            station_name,
+            resolver: "icy-probe".to_string(),
+            show: None,
+            error: None,
+        };
+    };
+
+    let icy_blocks = adaptive_icy_blocks(metaint);
+    debug!(
+        "[poll] [{}/{}] {} resolver=icy-probe metaint={} blocks={}",
+        ord, total, station_name, metaint, icy_blocks
+    );
+    match read_icy_stream_title(
+        &mut resp,
+        metaint,
+        Duration::from_millis(NON_NTS_METADATA_TIMEOUT_MS),
+        icy_blocks,
+    )
+    .await
+    {
+        Ok((Some(title), bytes_read)) => {
+            info!(
+                "[poll] [{}/{}] {} resolver=icy-probe show={:?} bytes={} elapsed={}ms",
+                ord,
+                total,
+                station_name,
+                title,
+                bytes_read,
+                started.elapsed().as_millis()
+            );
+            StationPollOutcome {
+                station_name,
+                resolver: "icy-probe".to_string(),
+                show: Some(title),
+                error: None,
+            }
+        }
+        Ok((None, bytes_read)) => {
+            info!(
+                "[poll] [{}/{}] {} resolver=icy-probe no-title bytes={} elapsed={}ms",
+                ord,
+                total,
+                station_name,
+                bytes_read,
+                started.elapsed().as_millis()
+            );
+            StationPollOutcome {
+                station_name,
+                resolver: "icy-probe".to_string(),
+                show: None,
+                error: None,
+            }
+        }
+        Err(e) => {
+            warn!(
+                "[poll] [{}/{}] {} resolver=icy-probe error={}",
+                ord, total, station_name, e
+            );
+            StationPollOutcome {
+                station_name,
+                resolver: "icy-probe".to_string(),
+                show: None,
+                error: Some(e),
+            }
+        }
+    }
+}
+
+async fn read_icy_stream_title(
+    resp: &mut reqwest::Response,
+    metaint: usize,
+    timeout_total: Duration,
+    max_blocks: usize,
+) -> Result<(Option<String>, usize), String> {
+    if !(1..=256_000).contains(&metaint) {
+        return Err(format!("invalid icy-metaint={}", metaint));
+    }
+
+    let deadline = std::time::Instant::now() + timeout_total;
+    let mut buf: Vec<u8> = Vec::with_capacity((metaint + 1024).min(128 * 1024));
+    let mut cursor = 0usize;
+
+    for _ in 0..max_blocks {
+        let required_for_len = cursor + metaint + 1;
+        while buf.len() < required_for_len {
+            let now = std::time::Instant::now();
+            if now >= deadline {
+                return Err("timed out waiting for ICY metadata length byte".to_string());
+            }
+            let remain = deadline.saturating_duration_since(now);
+            let next = tokio::time::timeout(remain, resp.chunk())
+                .await
+                .map_err(|_| "timed out waiting for stream chunk".to_string())?
+                .map_err(|e| e.to_string())?;
+
+            match next {
+                Some(chunk) => buf.extend_from_slice(&chunk),
+                None => return Err("stream ended before ICY metadata block".to_string()),
+            }
+        }
+
+        let len_byte = buf[cursor + metaint] as usize;
+        let meta_len = len_byte * 16;
+        if meta_len > 16 * 255 {
+            return Err(format!("metadata block too large: {}", meta_len));
+        }
+
+        let block_total = metaint + 1 + meta_len;
+        let required_total = cursor + block_total;
+        while buf.len() < required_total {
+            let now = std::time::Instant::now();
+            if now >= deadline {
+                return Err("timed out waiting for ICY metadata payload".to_string());
+            }
+            let remain = deadline.saturating_duration_since(now);
+            let next = tokio::time::timeout(remain, resp.chunk())
+                .await
+                .map_err(|_| "timed out waiting for stream chunk".to_string())?
+                .map_err(|e| e.to_string())?;
+            match next {
+                Some(chunk) => buf.extend_from_slice(&chunk),
+                None => return Err("stream ended before ICY metadata payload".to_string()),
+            }
+        }
+
+        if meta_len > 0 {
+            let meta_start = cursor + metaint + 1;
+            let meta_end = meta_start + meta_len;
+            let meta = &buf[meta_start..meta_end];
+            if let Some(title) = parse_stream_title(meta) {
+                return Ok((Some(title), required_total));
+            }
+        }
+
+        cursor = required_total;
+    }
+
+    Ok((None, cursor))
+}
+
+fn parse_stream_title(meta: &[u8]) -> Option<String> {
+    let text = String::from_utf8_lossy(meta)
+        .trim_matches(char::from(0))
+        .trim()
+        .to_string();
+    if text.is_empty() {
+        return None;
+    }
+
+    if let Some(start) = text.find("StreamTitle='") {
+        let rest = &text[start + "StreamTitle='".len()..];
+        if let Some(end) = rest.find("';") {
+            let title = rest[..end].trim();
+            if !title.is_empty() {
+                return Some(title.to_string());
+            }
+        }
+    }
+
+    if let Some(start) = text.find("StreamTitle=\"") {
+        let rest = &text[start + "StreamTitle=\"".len()..];
+        if let Some(end) = rest.find("\";") {
+            let title = rest[..end].trim();
+            if !title.is_empty() {
+                return Some(title.to_string());
+            }
+        }
+    }
+
+    None
+}
+
+async fn fetch_playlist_target(
+    client: &reqwest::Client,
+    url: &str,
+) -> Result<Option<String>, String> {
+    let body = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .error_for_status()
+        .map_err(|e| e.to_string())?
+        .text()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if url.to_ascii_lowercase().ends_with(".pls") {
+        for line in body.lines() {
+            let l = line.trim();
+            if l.to_ascii_lowercase().starts_with("file") {
+                if let Some((_, v)) = l.split_once('=') {
+                    return resolve_relative_url(url, v.trim()).map(Some);
+                }
+            }
+        }
+        return Ok(None);
+    }
+
+    for line in body.lines() {
+        let l = line.trim();
+        if l.is_empty() || l.starts_with('#') {
+            continue;
+        }
+        return resolve_relative_url(url, l).map(Some);
+    }
+    Ok(None)
+}
+
+fn resolve_relative_url(base: &str, candidate: &str) -> Result<String, String> {
+    if candidate.starts_with("http://") || candidate.starts_with("https://") {
+        return Ok(candidate.to_string());
+    }
+    let base_url = reqwest::Url::parse(base).map_err(|e| e.to_string())?;
+    base_url
+        .join(candidate)
+        .map(|u| u.to_string())
+        .map_err(|e| e.to_string())
+}
+
+fn is_playlist_url(url: &str) -> bool {
+    let l = url.to_ascii_lowercase();
+    l.ends_with(".m3u") || l.ends_with(".m3u8") || l.ends_with(".pls")
+}
+
+fn looks_hls_url(url: &str) -> bool {
+    url.to_ascii_lowercase().contains(".m3u8")
+}
+
+fn adaptive_icy_blocks(metaint: usize) -> usize {
+    if metaint > 96_000 {
+        1
+    } else if metaint > 48_000 {
+        2
+    } else {
+        NON_NTS_ICY_BLOCKS
+    }
+}
+
 
 // ── NTS fetch ─────────────────────────────────────────────────────────────────
 
@@ -2545,8 +4012,6 @@ fn load_icy_log(path: &PathBuf) -> Vec<TickerEntry> {
         .collect()
 }
 
-
-
 fn load_stars(path: &PathBuf) -> (HashMap<String, u8>, HashMap<String, u8>) {
     let Ok(content) = std::fs::read_to_string(path) else {
         return (HashMap::new(), HashMap::new());
@@ -2578,10 +4043,7 @@ fn load_random_history(path: &PathBuf) -> Vec<RandomHistoryEntry> {
     serde_json::from_str(&content).unwrap_or_default()
 }
 
-fn save_random_history(
-    path: &PathBuf,
-    history: &[RandomHistoryEntry],
-) -> anyhow::Result<()> {
+fn save_random_history(path: &PathBuf, history: &[RandomHistoryEntry]) -> anyhow::Result<()> {
     std::fs::write(path, serde_json::to_string(history)?)?;
     Ok(())
 }
@@ -2685,8 +4147,21 @@ fn is_playable_audio_path(path: &std::path::Path) -> bool {
     matches!(
         ext.as_deref(),
         Some(
-            "mp3" | "flac" | "ogg" | "opus" | "m4a" | "aac" | "wav" | "aiff" | "wv" | "ape"
-                | "mka" | "webm" | "mkv" | "mp4" | "m4b"
+            "mp3"
+                | "flac"
+                | "ogg"
+                | "opus"
+                | "m4a"
+                | "aac"
+                | "wav"
+                | "aiff"
+                | "wv"
+                | "ape"
+                | "mka"
+                | "webm"
+                | "mkv"
+                | "mp4"
+                | "m4b"
         )
     )
 }
@@ -2698,8 +4173,10 @@ fn probe_file_metadata(path: &std::path::Path) -> Option<FileMetadata> {
         .unwrap_or_else(|| std::path::PathBuf::from("ffprobe"));
     let output = std::process::Command::new(ffprobe_bin)
         .args([
-            "-v", "quiet",
-            "-print_format", "json",
+            "-v",
+            "quiet",
+            "-print_format",
+            "json",
             "-show_format",
             "-show_chapters",
             path.to_str()?,
@@ -2717,7 +4194,10 @@ fn probe_file_metadata(path: &std::path::Path) -> Option<FileMetadata> {
 
     fn tag(tags: &serde_json::Value, keys: &[&str]) -> Option<String> {
         for k in keys {
-            if let Some(v) = tags[k].as_str().or_else(|| tags[&k.to_uppercase()].as_str()) {
+            if let Some(v) = tags[k]
+                .as_str()
+                .or_else(|| tags[&k.to_uppercase()].as_str())
+            {
                 let s = v.trim().to_string();
                 if !s.is_empty() {
                     return Some(s);
@@ -2741,8 +4221,12 @@ fn probe_file_metadata(path: &std::path::Path) -> Option<FileMetadata> {
         .map(|arr| {
             arr.iter()
                 .filter_map(|ch| {
-                    let start = ch["start_time"].as_str().and_then(|s| s.parse::<f64>().ok())?;
-                    let end = ch["end_time"].as_str().and_then(|s| s.parse::<f64>().ok())?;
+                    let start = ch["start_time"]
+                        .as_str()
+                        .and_then(|s| s.parse::<f64>().ok())?;
+                    let end = ch["end_time"]
+                        .as_str()
+                        .and_then(|s| s.parse::<f64>().ok())?;
                     let title = ch["tags"]["title"]
                         .as_str()
                         .unwrap_or("")
@@ -2751,7 +4235,11 @@ fn probe_file_metadata(path: &std::path::Path) -> Option<FileMetadata> {
                     if title.is_empty() {
                         return None;
                     }
-                    Some(FileChapter { title, start_secs: start, end_secs: end })
+                    Some(FileChapter {
+                        title,
+                        start_secs: start,
+                        end_secs: end,
+                    })
                 })
                 .collect()
         })
@@ -2793,9 +4281,7 @@ fn extract_tracklist_lines(text: &str) -> Vec<String> {
         // Accept lines starting with HH:MM or MM:SS timestamp or a number+dot
         let looks_like_track = trimmed.len() > 3 && {
             let first = trimmed.split_whitespace().next().unwrap_or("");
-            first.contains(':')
-                || first.ends_with('.')
-                || first.chars().all(|c| c.is_ascii_digit())
+            first.contains(':') || first.ends_with('.') || first.chars().all(|c| c.is_ascii_digit())
         };
         if looks_like_track {
             lines.push(trimmed.to_string());

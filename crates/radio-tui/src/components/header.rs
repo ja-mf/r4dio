@@ -641,11 +641,7 @@ fn lerp_color(a: Color, b: Color, t: f32) -> Color {
         Color::Rgb(r, g, b) => (r, g, b),
         _ => (0, 0, 0),
     };
-    Color::Rgb(
-        lerp_u8(ar, br, t),
-        lerp_u8(ag, bg, t),
-        lerp_u8(ab, bb, t),
-    )
+    Color::Rgb(lerp_u8(ar, br, t), lerp_u8(ag, bg, t), lerp_u8(ab, bb, t))
 }
 
 fn lerp_u8(a: u8, b: u8, t: f32) -> u8 {

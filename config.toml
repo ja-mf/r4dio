@@ -39,3 +39,10 @@ m3u_url = "https://raw.githubusercontent.com/ja-mf/radio-curation/refs/heads/mai
 # Directory for NTS show downloads
 # On Windows portable, this can be a relative path like "downloads"
 downloads_dir = "~/nts-downloads"
+
+[polling]
+# Enable passive background polling for station now-playing annotations
+auto_polling = true
+
+# Poll interval in seconds (default 120 = 2 minutes)
+poll_interval_secs = 120

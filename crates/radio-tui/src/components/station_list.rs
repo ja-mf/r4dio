@@ -304,7 +304,8 @@ impl StationList {
 
         let stars = state.station_stars_for(&station.name).min(3);
         let star_prefix = if stars > 0 {
-            format!("{} ", "✹".repeat(stars as usize))        } else {
+            format!("{} ", "✹".repeat(stars as usize))
+        } else {
             "  ".to_string()
         };
 
@@ -327,6 +328,14 @@ impl StationList {
         if !location.is_empty() {
             spans.push(Span::styled("  ", Style::default()));
             spans.push(Span::styled(location, Style::default().fg(C_LOCATION)));
+        }
+
+        if let Some(show) = state.station_poll_titles.get(&station.name) {
+            let s = show.trim();
+            if !s.is_empty() {
+                spans.push(Span::styled("  ", Style::default()));
+                spans.push(Span::styled(s.to_string(), Style::default().fg(C_MUTED)));
+            }
         }
 
         // Tags — shown only on selected row while filtering
@@ -482,7 +491,7 @@ impl Component for StationList {
                 self.jump_from_station = Some(state.daemon_state.current_station);
                 return vec![Action::Next];
             }
-            KeyCode::Char('p') => {
+            KeyCode::Char('P') => {
                 self.jump_from_station = Some(state.daemon_state.current_station);
                 return vec![Action::Prev];
             }

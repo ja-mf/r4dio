@@ -1,1 +1,2 @@
-timestamp|title|artist|album|genre|year|radio_station|show_name|url|icy_raw|fingerprint|recognized|extra
+job_id	timestamp	station	icy_info	nts_show	nts_tag	nts_url	vibra_rec
+test-eddie-fiction-2024-01-29	2024-01-29T19:00:00+00:00	NTS Radio	EDDIE FICTION - 29th January 2024	EDDIE FICTION	Jazz Rock; Jazz Fusion	https://www.nts.live/shows/its-nation-time/episodes/its-nation-time-29th-january-2024	EDDIE FICTION

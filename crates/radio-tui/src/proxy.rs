@@ -2,15 +2,15 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use axum::Router;
 use axum::body::{Body, Bytes};
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
+use axum::Router;
 use futures_util::StreamExt;
 use reqwest::Client;
-use tokio::sync::{Mutex, broadcast};
+use tokio::sync::{broadcast, Mutex};
 use tracing::{debug, info, warn};
 
 use radio_proto::state::StateManager;
@@ -45,7 +45,10 @@ impl ProxyState {
             .redirect(reqwest::redirect::Policy::limited(10))
             .default_headers({
                 let mut h = reqwest::header::HeaderMap::new();
-                h.insert("Icy-MetaData", reqwest::header::HeaderValue::from_static("1"));
+                h.insert(
+                    "Icy-MetaData",
+                    reqwest::header::HeaderValue::from_static("1"),
+                );
                 h
             })
             .build()
@@ -80,17 +83,15 @@ impl ProxyState {
         }
 
         let url = self.station_url(idx).await.ok_or(StatusCode::NOT_FOUND)?;
-        info!("proxy: opening shared upstream for station {} → {}", idx, url);
+        info!(
+            "proxy: opening shared upstream for station {} → {}",
+            idx, url
+        );
 
-        let upstream = self
-            .client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| {
-                warn!("proxy: upstream connect failed for idx={}: {}", idx, e);
-                StatusCode::BAD_GATEWAY
-            })?;
+        let upstream = self.client.get(&url).send().await.map_err(|e| {
+            warn!("proxy: upstream connect failed for idx={}: {}", idx, e);
+            StatusCode::BAD_GATEWAY
+        })?;
 
         if !upstream.status().is_success() {
             warn!(
@@ -210,8 +211,6 @@ async fn stream_station(
 }
 
 pub fn start_server(
-    bind_address: String,
-    port: u16,
     state_manager: Arc<StateManager>,
 ) -> tokio::task::JoinHandle<()> {
     let proxy_state = ProxyState::new(state_manager);
@@ -220,7 +219,7 @@ pub fn start_server(
         .with_state(proxy_state);
 
     tokio::spawn(async move {
-        let addr = format!("{}:{}", bind_address, port);
+        let addr = format!("{}:{}", PROXY_HOST, PROXY_PORT);
         info!("Stream proxy listening on http://{}", addr);
         let listener = match tokio::net::TcpListener::bind(&addr).await {
             Ok(l) => l,

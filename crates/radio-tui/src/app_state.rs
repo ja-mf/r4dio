@@ -131,6 +131,10 @@ pub struct AppState {
     pub nts_ch1_error: Option<String>,
     pub nts_ch2_error: Option<String>,
 
+    // ── Passive station annotations ─────────────────────────────────────────
+    /// Last polled "now playing" label per station name.
+    pub station_poll_titles: HashMap<String, String>,
+
     // ── UI mode ─────────────────────────────────────────────────────────────
     pub workspace: Workspace,
     pub input_mode: InputMode,
@@ -190,6 +194,23 @@ pub struct AppState {
     pub songs_vds_path: PathBuf,
     pub tui_log_path: PathBuf,
     pub random_history: Vec<RandomHistoryEntry>,
+
+    // ── Downloads ────────────────────────────────────────────────────────────
+    /// Download status for NTS shows (URL -> status)
+    pub download_statuses: HashMap<String, DownloadStatus>,
+}
+
+/// Download status for a show
+#[derive(Debug, Clone, PartialEq)]
+pub enum DownloadStatus {
+    /// Not downloaded
+    NotDownloaded,
+    /// Currently downloading with progress (0.0 - 1.0)
+    Downloading(f32),
+    /// Downloaded and available
+    Downloaded,
+    /// Download failed
+    Failed(String),
 }
 
 impl AppState {

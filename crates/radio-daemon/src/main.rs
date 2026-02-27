@@ -47,21 +47,21 @@ where
         if !matches!(*level, tracing::Level::WARN | tracing::Level::ERROR) {
             return;
         }
-        
+
         // Format the log message
         let mut message = String::new();
-        
+
         // Add timestamp
         let now = chrono::Local::now();
         message.push_str(&format!("{} ", now.format("%H:%M:%S")));
-        
+
         // Add level
         message.push_str(&format!("[{}] ", level));
-        
+
         // Add the message
         let mut visitor = MessageVisitor(&mut message);
         event.record(&mut visitor);
-        
+
         // Send to broadcast channel (ignore errors - no receivers is OK)
         let _ = self.sender.send(BroadcastMessage::Log(message));
     }
@@ -98,7 +98,7 @@ async fn main() -> anyhow::Result<()> {
     let fmt_layer = tracing_subscriber::fmt::layer()
         .with_writer(log_file)
         .with_ansi(false);
-    
+
     let broadcast_layer = BroadcastLayer::new(broadcast_tx.clone());
 
     tracing_subscriber::registry()
@@ -119,19 +119,13 @@ async fn main() -> anyhow::Result<()> {
     let (event_tx, event_rx) = tokio::sync::mpsc::channel::<core::DaemonEvent>(256);
 
     // Build DaemonCore (loads stations, initialises mpv driver)
-    let daemon_core = core::DaemonCore::new(
-        config.clone(),
-        broadcast_tx.clone(),
-        event_tx.clone(),
-    )
-    .await?;
+    let daemon_core =
+        core::DaemonCore::new(config.clone(), broadcast_tx.clone(), event_tx.clone()).await?;
 
     let state_manager = daemon_core.state_manager();
 
     // Client list for socket server shutdown detection
-    let clients = std::sync::Arc::new(tokio::sync::RwLock::new(
-        Vec::<socket::ClientHandle>::new(),
-    ));
+    let clients = std::sync::Arc::new(tokio::sync::RwLock::new(Vec::<socket::ClientHandle>::new()));
 
     // Start TCP socket server
     let _socket_handle = socket::start_server(

@@ -85,6 +85,8 @@ pub enum Action {
     // ── Song recognition ─────────────────────────────────────────────────────
     /// Trigger song recognition (vibra + icy + nts pipeline).
     RecognizeSong,
+    /// Toggle passive background polling for station now-playing annotations.
+    ToggleAutoPolling,
 
     // ── UI toggles ───────────────────────────────────────────────────────────
     ToggleLogs,

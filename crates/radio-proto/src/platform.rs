@@ -150,11 +150,25 @@ fn ffprobe_binary_names() -> &'static [&'static str] {
     &["ffprobe.exe", "ffprobe"]
 }
 
+#[cfg(unix)]
+fn yt_dlp_binary_names() -> &'static [&'static str] {
+    &["yt-dlp"]
+}
+
+#[cfg(windows)]
+fn yt_dlp_binary_names() -> &'static [&'static str] {
+    &["yt-dlp.exe", "yt-dlp"]
+}
+
 fn find_beside_exe(names: &[&str]) -> Option<PathBuf> {
     let current_exe = std::env::current_exe().ok()?;
     let dir = current_exe.parent()?;
     for name in names {
         let p = dir.join(name);
+        if p.exists() {
+            return Some(p);
+        }
+        let p = dir.join("external").join(name);
         if p.exists() {
             return Some(p);
         }
@@ -263,4 +277,28 @@ pub fn find_mpv_binary() -> Option<PathBuf> {
     }
 
     None
+}
+
+/// Find yt-dlp binary for downloading audio.
+///
+/// Searches in order:
+/// 1. YT_DLP_PATH environment variable
+/// 2. Beside current executable
+/// 3. PATH
+pub fn find_yt_dlp_binary() -> Option<PathBuf> {
+    // 1. Environment variable override
+    if let Ok(path) = std::env::var("YT_DLP_PATH") {
+        let p = PathBuf::from(path);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+
+    // 2. Beside executable
+    if let Some(p) = find_beside_exe(yt_dlp_binary_names()) {
+        return Some(p);
+    }
+
+    // 3. PATH
+    find_on_path(yt_dlp_binary_names())
 }

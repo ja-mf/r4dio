@@ -16,7 +16,7 @@ url         = "https://streaming.prositel.cl/8068/stream"
 network     = "Universidad de Valparaiso"
 description = "Cultural radio from the University of Chile — news, arts, academia"
 tags        = ["talk", "culture", "academia", "news", "spanish", "latin america"]
-city        = "Santiago"
+city        = "Valparaiso"
 country     = "Chile"
 
 [[station]]
@@ -129,6 +129,7 @@ country     = "UK"
 [[station]]
 name        = "NTS: Slow Focus"
 url         = "https://stream-mixtape-geo.ntslive.net/mixtape"
+mixtape_url = "https://www.nts.live/infinite-mixtapes/slow-focus"
 network     = "NTS"
 description = "Meditative, slow-tempo sounds — ambient, drone, minimalism"
 tags        = ["ambient", "drone", "meditation", "slow", "minimalism", "nts mixtape"]
@@ -138,6 +139,7 @@ country     = "UK"
 [[station]]
 name        = "NTS: Labyrinth"
 url         = "https://stream-mixtape-geo.ntslive.net/mixtape31"
+mixtape_url = "https://www.nts.live/infinite-mixtapes/labyrinth"
 network     = "NTS"
 description = "Enter the void — dark, psychedelic and experimental music"
 tags        = ["experimental", "psychedelic", "dark", "avant-garde", "nts mixtape"]
@@ -147,6 +149,7 @@ country     = "UK"
 [[station]]
 name        = "NTS: Expansions"
 url         = "https://stream-mixtape-geo.ntslive.net/mixtape3"
+mixtape_url = "https://www.nts.live/infinite-mixtapes/expansions"
 network     = "NTS"
 description = "Jazz and spiritual jazz in the tradition of Lonnie Liston Smith"
 tags        = ["jazz", "spiritual jazz", "soul jazz", "nts mixtape"]
@@ -156,6 +159,7 @@ country     = "UK"
 [[station]]
 name        = "NTS: Sheet Music"
 url         = "https://stream-mixtape-geo.ntslive.net/mixtape35"
+mixtape_url = "https://www.nts.live/infinite-mixtapes/sheet-music"
 network     = "NTS"
 description = "Classical music curated by NTS"
 tags        = ["classical", "chamber", "orchestral", "nts mixtape"]
@@ -165,6 +169,7 @@ country     = "UK"
 [[station]]
 name        = "NTS: Field Recordings"
 url         = "https://stream-mixtape-geo.ntslive.net/mixtape23"
+mixtape_url = "https://www.nts.live/infinite-mixtapes/field-recordings"
 network     = "NTS"
 description = "Sounds from the world — environmental audio and field recordings"
 tags        = ["field recordings", "ambient", "nature", "sound art", "nts mixtape"]
@@ -174,6 +179,7 @@ country     = "UK"
 [[station]]
 name        = "NTS: Island Time"
 url         = "https://stream-mixtape-geo.ntslive.net/mixtape21"
+mixtape_url = "https://www.nts.live/infinite-mixtapes/island-time"
 network     = "NTS"
 description = "Tropical rhythms, island vibes — reggae, calypso, afrobeat"
 tags        = ["reggae", "calypso", "afrobeat", "tropical", "world", "nts mixtape"]
@@ -183,6 +189,7 @@ country     = "UK"
 [[station]]
 name        = "NTS: Feelings"
 url         = "https://stream-mixtape-geo.ntslive.net/mixtape27"
+mixtape_url = "https://www.nts.live/infinite-mixtapes/feelings"
 network     = "NTS"
 description = "Deep soul and R&B from the NTS archive"
 tags        = ["soul", "r&b", "deep soul", "nts mixtape"]
@@ -192,6 +199,7 @@ country     = "UK"
 [[station]]
 name        = "NTS: Lowkey"
 url         = "https://stream-mixtape-geo.ntslive.net/mixtape2"
+mixtape_url = "https://www.nts.live/infinite-mixtapes/100-percent-hip-hop"
 network     = "NTS"
 description = "Understated soul — late-night quiet storm vibes"
 tags        = ["soul", "quiet storm", "r&b", "late night", "nts mixtape"]
@@ -201,6 +209,7 @@ country     = "UK"
 [[station]]
 name        = "NTS: Poolside"
 url         = "https://stream-mixtape-geo.ntslive.net/mixtape4"
+mixtape_url = "https://www.nts.live/infinite-mixtapes/poolside"
 network     = "NTS"
 description = "Sunshine soul and breezy daytime grooves"
 tags        = ["soul", "funk", "breezy", "summer", "grooves", "nts mixtape"]
@@ -210,6 +219,7 @@ country     = "UK"
 [[station]]
 name        = "NTS: Memory Lane"
 url         = "https://stream-mixtape-geo.ntslive.net/mixtape6"
+mixtape_url = "https://www.nts.live/infinite-mixtapes/memory-lane"
 network     = "NTS"
 description = "Nostalgia and golden-era soul, pop and r&b"
 tags        = ["soul", "r&b", "nostalgia", "classic", "nts mixtape"]
@@ -219,6 +229,7 @@ country     = "UK"
 [[station]]
 name        = "NTS: Sweat"
 url         = "https://stream-mixtape-geo.ntslive.net/mixtape24"
+mixtape_url = "https://www.nts.live/infinite-mixtapes/sweat"
 network     = "NTS"
 description = "High-energy party music — dance, house, electro"
 tags        = ["party", "dance", "house", "electro", "high energy", "nts mixtape"]
@@ -228,6 +239,7 @@ country     = "UK"
 [[station]]
 name        = "NTS: House"
 url         = "https://stream-mixtape-geo.ntslive.net/mixtape5"
+mixtape_url = "https://www.nts.live/infinite-mixtapes/4-to-the-floor"
 network     = "NTS"
 description = "Four to the floor — classic and contemporary house music"
 tags        = ["house", "dance", "electronic", "four-to-the-floor", "nts mixtape"]
@@ -237,6 +249,7 @@ country     = "UK"
 [[station]]
 name        = "NTS: The Pit"
 url         = "https://stream-mixtape-geo.ntslive.net/mixtape34"
+mixtape_url = "https://www.nts.live/infinite-mixtapes/the-pit"
 network     = "NTS"
 description = "Heavy metal and extreme music"
 tags        = ["metal", "heavy metal", "hardcore", "extreme", "nts mixtape"]
@@ -246,6 +259,7 @@ country     = "UK"
 [[station]]
 name        = "NTS: The Tube"
 url         = "https://stream-mixtape-geo.ntslive.net/mixtape26"
+mixtape_url = "https://www.nts.live/infinite-mixtapes/the-tube"
 network     = "NTS"
 description = "Oddball post-punk, new wave and leftfield guitar music"
 tags        = ["post-punk", "new wave", "alternative", "indie", "leftfield", "nts mixtape"]
@@ -255,6 +269,7 @@ country     = "UK"
 [[station]]
 name        = "NTS: Xmas Crackers"
 url         = "https://stream-mixtape-geo.ntslive.net/mixtape32"
+mixtape_url = "https://www.nts.live/infinite-mixtapes/xmas-crackers"
 network     = "NTS"
 description = "Festive sounds — seasonal music from the NTS archive"
 tags        = ["christmas", "festive", "seasonal", "nts mixtape"]

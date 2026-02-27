@@ -1,13 +1,7 @@
 use crate::core::DaemonEvent;
+use axum::{extract::State, http::StatusCode, response::Json, routing::get, Router};
 use radio_proto::protocol::Command;
 use radio_proto::state::StateManager;
-use axum::{
-    extract::State,
-    http::StatusCode,
-    response::Json,
-    routing::get,
-    Router,
-};
 use serde::Serialize;
 use std::sync::Arc;
 use tokio::net::TcpListener;
@@ -15,7 +9,7 @@ use tokio::sync::mpsc;
 use tracing::{error, info};
 
 #[derive(Clone)]
-struct HttpState {
+struct AppState {
     state_manager: Arc<StateManager>,
     event_tx: mpsc::Sender<DaemonEvent>,
 }
@@ -48,8 +42,11 @@ pub fn start_server(
     event_tx: mpsc::Sender<DaemonEvent>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
-        let app_state = HttpState { state_manager, event_tx };
-        
+        let app_state = AppState {
+            state_manager,
+            event_tx,
+        };
+
         let app = Router::new()
             .route("/api/state", get(get_state))
             .route("/api/play/:idx", get(play_station).post(play_station))
@@ -60,7 +57,7 @@ pub fn start_server(
             .route("/api/volume/:volume", get(set_volume).post(set_volume))
             .route("/api/volume", get(get_volume))
             .with_state(app_state);
-        
+
         let addr = format!("{}:{}", bind_address, port);
         let listener = match TcpListener::bind(&addr).await {
             Ok(l) => l,
@@ -69,18 +66,18 @@ pub fn start_server(
                 return;
             }
         };
-        
+
         info!("HTTP API server listening on http://{}", addr);
-        
+
         if let Err(e) = axum::serve(listener, app).await {
             error!("HTTP server error: {}", e);
         }
     })
 }
 
-async fn get_state(State(state): State<HttpState>) -> Result<Json<ApiState>, StatusCode> {
+async fn get_state(State(state): State<AppState>) -> Result<Json<ApiState>, StatusCode> {
     let daemon_state = state.state_manager.get_state().await;
-    
+
     let stations: Vec<StationInfo> = daemon_state
         .stations
         .iter()
@@ -91,7 +88,7 @@ async fn get_state(State(state): State<HttpState>) -> Result<Json<ApiState>, Sta
             description: s.description.clone(),
         })
         .collect();
-    
+
     let api_state = ApiState {
         stations,
         current_station: daemon_state.current_station,
@@ -99,53 +96,78 @@ async fn get_state(State(state): State<HttpState>) -> Result<Json<ApiState>, Sta
         is_playing: daemon_state.is_playing,
         icy_title: daemon_state.icy_title,
     };
-    
+
     Ok(Json(api_state))
 }
 
 async fn play_station(
-    State(state): State<HttpState>,
+    State(state): State<AppState>,
     axum::extract::Path(idx): axum::extract::Path<usize>,
 ) -> StatusCode {
     info!("HTTP API: Play station {}", idx);
     let cmd = Command::Play { station_idx: idx };
-    if state.event_tx.send(DaemonEvent::ClientCommand(cmd)).await.is_err() {
+    if state
+        .event_tx
+        .send(DaemonEvent::ClientCommand(cmd))
+        .await
+        .is_err()
+    {
         error!("Failed to send play command");
         return StatusCode::INTERNAL_SERVER_ERROR;
     }
     StatusCode::OK
 }
 
-async fn stop(State(state): State<HttpState>) -> StatusCode {
+async fn stop(State(state): State<AppState>) -> StatusCode {
     info!("HTTP API: Stop");
-    if state.event_tx.send(DaemonEvent::ClientCommand(Command::Stop)).await.is_err() {
+    if state
+        .event_tx
+        .send(DaemonEvent::ClientCommand(Command::Stop))
+        .await
+        .is_err()
+    {
         error!("Failed to send stop command");
         return StatusCode::INTERNAL_SERVER_ERROR;
     }
     StatusCode::OK
 }
 
-async fn next_station(State(state): State<HttpState>) -> StatusCode {
+async fn next_station(State(state): State<AppState>) -> StatusCode {
     info!("HTTP API: Next station");
-    if state.event_tx.send(DaemonEvent::ClientCommand(Command::Next)).await.is_err() {
+    if state
+        .event_tx
+        .send(DaemonEvent::ClientCommand(Command::Next))
+        .await
+        .is_err()
+    {
         error!("Failed to send next command");
         return StatusCode::INTERNAL_SERVER_ERROR;
     }
     StatusCode::OK
 }
 
-async fn prev_station(State(state): State<HttpState>) -> StatusCode {
+async fn prev_station(State(state): State<AppState>) -> StatusCode {
     info!("HTTP API: Previous station");
-    if state.event_tx.send(DaemonEvent::ClientCommand(Command::Prev)).await.is_err() {
+    if state
+        .event_tx
+        .send(DaemonEvent::ClientCommand(Command::Prev))
+        .await
+        .is_err()
+    {
         error!("Failed to send prev command");
         return StatusCode::INTERNAL_SERVER_ERROR;
     }
     StatusCode::OK
 }
 
-async fn random_station(State(state): State<HttpState>) -> StatusCode {
+async fn random_station(State(state): State<AppState>) -> StatusCode {
     info!("HTTP API: Random station");
-    if state.event_tx.send(DaemonEvent::ClientCommand(Command::Random)).await.is_err() {
+    if state
+        .event_tx
+        .send(DaemonEvent::ClientCommand(Command::Random))
+        .await
+        .is_err()
+    {
         error!("Failed to send random command");
         return StatusCode::INTERNAL_SERVER_ERROR;
     }
@@ -153,20 +175,25 @@ async fn random_station(State(state): State<HttpState>) -> StatusCode {
 }
 
 async fn set_volume(
-    State(state): State<HttpState>,
+    State(state): State<AppState>,
     axum::extract::Path(volume): axum::extract::Path<i32>,
 ) -> StatusCode {
     let vol = (volume as f32 / 100.0).clamp(0.0, 1.0);
     info!("HTTP API: Set volume to {}%", volume);
     let cmd = Command::Volume { value: vol };
-    if state.event_tx.send(DaemonEvent::ClientCommand(cmd)).await.is_err() {
+    if state
+        .event_tx
+        .send(DaemonEvent::ClientCommand(cmd))
+        .await
+        .is_err()
+    {
         error!("Failed to send volume command");
         return StatusCode::INTERNAL_SERVER_ERROR;
     }
     StatusCode::OK
 }
 
-async fn get_volume(State(state): State<HttpState>) -> Json<VolumeStatus> {
+async fn get_volume(State(state): State<AppState>) -> Json<VolumeStatus> {
     let daemon_state = state.state_manager.get_state().await;
     let volume = (daemon_state.volume * 100.0).round() as u8;
     Json(VolumeStatus { volume })

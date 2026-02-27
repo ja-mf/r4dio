@@ -146,6 +146,9 @@ pub struct DaemonState {
 pub struct Station {
     pub name: String,
     pub url: String,
+    /// Optional NTS Infinite Mixtape page URL (metadata lookup source)
+    #[serde(default)]
+    pub mixtape_url: String,
     /// Short description / blurb
     #[serde(default)]
     pub description: String,

@@ -27,7 +27,7 @@ pub struct StateManager {
 impl StateManager {
     pub fn new(state_file: PathBuf, stations: Vec<Station>) -> Self {
         let persistent = Self::load_persistent(&state_file);
-        
+
         let state = DaemonState {
             rev: 1,
             stations,
@@ -42,21 +42,21 @@ impl StateManager {
             duration_secs: None,
             mpv_health: MpvHealth::Absent,
         };
-        
+
         Self {
             state: Arc::new(RwLock::new(state)),
             state_file,
         }
     }
-    
+
     pub fn arc(&self) -> Arc<RwLock<DaemonState>> {
         Arc::clone(&self.state)
     }
-    
+
     pub async fn get_state(&self) -> DaemonState {
         self.state.read().await.clone()
     }
-    
+
     pub async fn set_playing(&self, idx: usize) -> anyhow::Result<()> {
         {
             let mut state = self.state.write().await;
@@ -114,7 +114,7 @@ impl StateManager {
         state.mpv_health = health;
         state.rev += 1;
     }
-    
+
     pub async fn set_volume(&self, volume: f32) -> anyhow::Result<()> {
         {
             let mut state = self.state.write().await;
@@ -123,7 +123,7 @@ impl StateManager {
         }
         self.save().await
     }
-    
+
     pub async fn set_icy_title(&self, title: Option<String>) {
         let mut state = self.state.write().await;
         state.icy_title = title;
@@ -136,17 +136,17 @@ impl StateManager {
         state.duration_secs = duration_secs;
         state.rev += 1;
     }
-    
+
     pub async fn next_station(&self) -> anyhow::Result<()> {
         let stations_len = {
             let state = self.state.read().await;
             state.stations.len()
         };
-        
+
         if stations_len == 0 {
             return Ok(());
         }
-        
+
         {
             let mut state = self.state.write().await;
             let current = state.current_station.unwrap_or(0);
@@ -157,17 +157,17 @@ impl StateManager {
         }
         self.save().await
     }
-    
+
     pub async fn prev_station(&self) -> anyhow::Result<()> {
         let stations_len = {
             let state = self.state.read().await;
             state.stations.len()
         };
-        
+
         if stations_len == 0 {
             return Ok(());
         }
-        
+
         {
             let mut state = self.state.write().await;
             let current = state.current_station.unwrap_or(0);
@@ -182,21 +182,21 @@ impl StateManager {
         }
         self.save().await
     }
-    
+
     pub async fn random_station(&self) -> anyhow::Result<()> {
         use rand::Rng;
-        
+
         let stations_len = {
             let state = self.state.read().await;
             state.stations.len()
         };
-        
+
         if stations_len == 0 {
             return Ok(());
         }
-        
+
         let random_idx = rand::thread_rng().gen_range(0..stations_len);
-        
+
         {
             let mut state = self.state.write().await;
             state.current_station = Some(random_idx);
@@ -205,23 +205,23 @@ impl StateManager {
         }
         self.save().await
     }
-    
+
     async fn save(&self) -> anyhow::Result<()> {
         let state = self.state.read().await;
         let persistent = PersistentState {
             last_station_idx: state.current_station,
             volume: state.volume,
         };
-        
+
         if let Some(parent) = self.state_file.parent() {
             tokio::fs::create_dir_all(parent).await?;
         }
-        
+
         let json = serde_json::to_string_pretty(&persistent)?;
         tokio::fs::write(&self.state_file, json).await?;
         Ok(())
     }
-    
+
     fn load_persistent(state_file: &PathBuf) -> PersistentState {
         if let Ok(content) = std::fs::read_to_string(state_file) {
             if let Ok(persistent) = serde_json::from_str::<PersistentState>(&content) {
@@ -286,6 +286,8 @@ struct TomlStation {
     name: String,
     url: String,
     #[serde(default)]
+    mixtape_url: String,
+    #[serde(default)]
     network: String,
     #[serde(default)]
     description: String,
@@ -310,6 +312,7 @@ pub fn parse_stations_from_toml_str(content: &str) -> anyhow::Result<Vec<Station
         .map(|s| Station {
             name: s.name,
             url: s.url,
+            mixtape_url: s.mixtape_url,
             network: s.network,
             description: s.description,
             tags: s.tags,

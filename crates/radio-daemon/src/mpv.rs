@@ -203,10 +203,7 @@ impl MpvDriver {
 
     /// Try to connect to an already-running mpv socket without spawning.
     #[cfg(unix)]
-    pub async fn try_reconnect(
-        &mut self,
-        event_tx: mpsc::Sender<MpvEvent>,
-    ) -> Option<MpvHandle> {
+    pub async fn try_reconnect(&mut self, event_tx: mpsc::Sender<MpvEvent>) -> Option<MpvHandle> {
         let socket_path = std::path::PathBuf::from(&self.socket_name);
         if !socket_path.exists() {
             return None;
@@ -291,10 +288,7 @@ impl MpvDriver {
     }
 
     #[cfg(windows)]
-    pub async fn try_reconnect(
-        &mut self,
-        event_tx: mpsc::Sender<MpvEvent>,
-    ) -> Option<MpvHandle> {
+    pub async fn try_reconnect(&mut self, event_tx: mpsc::Sender<MpvEvent>) -> Option<MpvHandle> {
         let pipe_path = format!(r"\\.\pipe\{}", self.socket_name);
         match ClientOptions::new().open(&pipe_path) {
             Ok(client) => {
@@ -372,10 +366,7 @@ async fn reader_task<R>(
                             debug!("mpv reader: response req={} ok", req_id);
                             Ok(val)
                         } else {
-                            let err = val["error"]
-                                .as_str()
-                                .unwrap_or("unknown error")
-                                .to_string();
+                            let err = val["error"].as_str().unwrap_or("unknown error").to_string();
                             debug!("mpv reader: response req={} err={}", req_id, err);
                             Err(anyhow::anyhow!("mpv error: {}", err))
                         };
@@ -416,7 +407,11 @@ async fn writer_task<W>(
             let mut map = pending.lock().await;
             map.insert(req.req_id, req.reply);
         }
-        debug!("mpv writer: send req={} payload={}", req.req_id, req.payload.trim());
+        debug!(
+            "mpv writer: send req={} payload={}",
+            req.req_id,
+            req.payload.trim()
+        );
         if let Err(e) = writer.write_all(req.payload.as_bytes()).await {
             warn!("mpv writer: write error: {}", e);
             // Remove and fail the request we just registered
@@ -447,7 +442,8 @@ impl MpvHandle {
 
     pub async fn set_volume(&self, vol: f32) -> anyhow::Result<()> {
         let vol_pct = (vol * 100.0).clamp(0.0, 100.0);
-        self.send(json!(["set_property", "volume", vol_pct])).await?;
+        self.send(json!(["set_property", "volume", vol_pct]))
+            .await?;
         Ok(())
     }
 
@@ -486,16 +482,15 @@ impl MpvHandle {
             (OBS_AUDIO_LEVEL, "af-metadata/meter"),
         ];
         for (id, name) in &props {
-            match self
-                .send(json!(["observe_property", id, name]))
-                .await
-            {
+            match self.send(json!(["observe_property", id, name])).await {
                 Ok(_) => debug!("mpv: observe_property id={} name={}", id, name),
                 Err(e) => warn!("mpv: observe_property {} failed: {}", name, e),
             }
         }
         // Also observe icy-title directly (some mpv versions expose it here too)
-        let _ = self.send(json!(["observe_property", 6u64, "icy-title"])).await;
+        let _ = self
+            .send(json!(["observe_property", 6u64, "icy-title"]))
+            .await;
     }
 
     /// Install the lavfi astats audio filter so mpv exposes per-chunk RMS/peak

@@ -83,29 +83,26 @@ pub fn draw_keys_bar(
     mode: InputMode,
     workspace: crate::action::Workspace,
     mpv_audio_level: f32,
+    auto_polling_enabled: bool,
 ) {
     let (label, label_color, bulb, show_bulb) = match mode {
         InputMode::Filter => ("FILTER", C_MODE_FILTER, C_MODE_FILTER, false),
         InputMode::Command => ("COMMAND", C_MODE_COMMAND, C_MODE_COMMAND, false),
         InputMode::Normal => match workspace {
-            crate::action::Workspace::Radio => (
-                "RADIO",
-                C_MODE_NORMAL,
-                bulb_color(mpv_audio_level),
-                true,
-            ),
-            crate::action::Workspace::Files => (
-                "FILES",
-                C_MODE_NORMAL,
-                bulb_color(mpv_audio_level),
-                true,
-            ),
+            crate::action::Workspace::Radio => {
+                ("RADIO", C_MODE_NORMAL, bulb_color(mpv_audio_level), true)
+            }
+            crate::action::Workspace::Files => {
+                ("FILES", C_MODE_NORMAL, bulb_color(mpv_audio_level), true)
+            }
         },
     };
 
     let mut left_spans = vec![Span::styled(
         format!(" {} ", label),
-        Style::default().fg(label_color).add_modifier(Modifier::BOLD),
+        Style::default()
+            .fg(label_color)
+            .add_modifier(Modifier::BOLD),
     )];
     if show_bulb {
         left_spans.push(Span::styled(
@@ -113,15 +110,27 @@ pub fn draw_keys_bar(
             Style::default().fg(bulb).add_modifier(Modifier::BOLD),
         ));
         left_spans.push(Span::raw(" "));
+        let poll_label = if auto_polling_enabled {
+            "poll:on"
+        } else {
+            "poll:off"
+        };
+        let poll_color = if auto_polling_enabled {
+            C_PLAYING
+        } else {
+            C_MUTED
+        };
+        left_spans.push(Span::styled(poll_label, Style::default().fg(poll_color)));
+        left_spans.push(Span::raw(" "));
     }
 
     let keys = match mode {
         InputMode::Normal => match workspace {
             crate::action::Workspace::Radio => {
-                " ↑↓/jk select  Enter play/stop  Space pause  ←→ vol  n/p/r playback  !/@ NTS  o scope  Tab/1-4 panes  / filter  K keys  L logs  ? help  q quit"
+                " ↑↓/jk select  Enter play/stop  Space pause  ←→ vol  n/P/r/R playback  p polling  !/@ NTS  o scope  Tab/1-4 panes  / filter  K keys  L logs  ? help  q quit"
             }
             crate::action::Workspace::Files => {
-                " ↑↓/jk select  Enter play/stop  Space pause  ,/. seek (Shift=±5m)  ←→ vol  r random  R back  Tab/1-4 panes  / filter  K keys  L logs  ? help  q quit"
+                " ↑↓/jk select  Enter play/stop  Space pause  ,/. seek (Shift=±5m)  ←→ vol  n/P/r/R playback  p polling  Tab/1-4 panes  / filter  K keys  L logs  ? help  q quit"
             }
         },
         InputMode::Filter => " type to filter  Up/Down move  Enter keep  Esc clear+close  Tab next pane",

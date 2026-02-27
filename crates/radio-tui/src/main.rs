@@ -4,11 +4,13 @@ mod app_state;
 mod component;
 mod components;
 mod core;
+mod download_manager;
 mod focus;
 mod http;
 mod intent;
 mod latency;
 mod mpv;
+mod nts_download;
 mod proxy;
 mod scope;
 mod theme;
@@ -54,6 +56,23 @@ async fn main() -> anyhow::Result<()> {
         .map(|p| p.join("nts-downloads"))
         .unwrap_or_else(|| radio_proto::platform::temp_dir().join("nts-downloads"));
     let stars_path = tui_data_dir.join("starred.toml");
+    // Seed starred.toml on first run from beside-exe (or data/ subdir) for bundled packages
+    if !stars_path.exists() {
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(dir) = exe.parent() {
+                let candidates = [
+                    dir.join("starred.toml"),
+                    dir.join("data").join("starred.toml"),
+                ];
+                for seed in &candidates {
+                    if seed.exists() {
+                        let _ = std::fs::copy(seed, &stars_path);
+                        break;
+                    }
+                }
+            }
+        }
+    }
     let random_history_path = tui_data_dir.join("random_history.json");
     let recent_path = tui_data_dir.join("recent.toml");
     let file_positions_path = tui_data_dir.join("file_positions.toml");
@@ -89,15 +108,12 @@ async fn main() -> anyhow::Result<()> {
     let (event_tx, event_rx) = mpsc::channel::<core::DaemonEvent>(1024);
 
     // ── Build DaemonCore ─────────────────────────────────────────────────────
-    let daemon_core = core::DaemonCore::new(config.clone(), broadcast_tx.clone(), event_tx.clone()).await?;
+    let daemon_core =
+        core::DaemonCore::new(config.clone(), broadcast_tx.clone(), event_tx.clone()).await?;
     let state_manager = daemon_core.state_manager();
 
     // ── Stream proxy for station playback + visual tap ───────────────────────
-    proxy::start_server(
-        proxy::PROXY_HOST.to_string(),
-        proxy::PROXY_PORT,
-        state_manager.clone(),
-    );
+    proxy::start_server(state_manager.clone());
 
     // ── HTTP server ──────────────────────────────────────────────────────────
     if config.http.enabled {
@@ -135,6 +151,8 @@ async fn main() -> anyhow::Result<()> {
         downloads_dir,
         event_tx,
         state_manager,
+        config.polling.auto_polling,
+        config.polling.poll_interval_secs,
     );
     app.run(broadcast_rx).await?;
 

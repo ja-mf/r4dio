@@ -47,14 +47,19 @@ impl Default for GraphConfig {
 
 impl GraphConfig {
     pub fn palette(&self, index: usize) -> Color {
-        *self.palette.get(index % self.palette.len()).unwrap_or(&Color::White)
+        *self
+            .palette
+            .get(index % self.palette.len())
+            .unwrap_or(&Color::White)
     }
 }
 
 pub trait DisplayMode {
     fn axis(&self, cfg: &GraphConfig, dimension: Dimension) -> Axis<'_>;
     fn process(&mut self, cfg: &GraphConfig, data: &Matrix) -> Vec<DataSet>;
-    fn references(&self, _cfg: &GraphConfig) -> Vec<DataSet> { vec![] }
+    fn references(&self, _cfg: &GraphConfig) -> Vec<DataSet> {
+        vec![]
+    }
 }
 
 pub struct DataSet {
@@ -73,7 +78,13 @@ impl DataSet {
         graph_type: GraphType,
         color: Color,
     ) -> Self {
-        Self { name, data, marker_type, graph_type, color }
+        Self {
+            name,
+            data,
+            marker_type,
+            graph_type,
+            color,
+        }
     }
 }
 
