@@ -21,6 +21,7 @@ use radio_proto::state::{StateManager, load_stations_from_m3u, load_stations_fro
 use tokio::sync::{broadcast, mpsc};
 use tracing::{debug, error, info, warn};
 
+use crate::latency::{PipelineTelemetry, record_ffmpeg_first_sample, record_vu_first_display};
 use crate::mpv::{MpvDriver, MpvEvent, MpvHandle, OBS_AUDIO_LEVEL, OBS_CORE_IDLE, OBS_DURATION, OBS_ICY_TITLE, OBS_PAUSE, OBS_TIME_POS};
 use crate::BroadcastMessage;
 
@@ -69,6 +70,8 @@ pub struct DaemonCore {
     connecting_since: Option<tokio::time::Instant>,
     /// Last derived playback status (to avoid redundant broadcasts).
     last_status: PlaybackStatus,
+    /// Telemetry for latency measurement (optional, for debugging).
+    telemetry: Option<PipelineTelemetry>,
     /// Last ICY title broadcast (to avoid duplicate IcyUpdated).
     last_icy: Option<String>,
     /// Last source context (to reset connecting timer on source change).
@@ -109,6 +112,7 @@ impl DaemonCore {
             obs_duration: None,
             connecting_since: None,
             last_status: PlaybackStatus::Idle,
+            telemetry: None,
             last_icy: None,
             last_source: (None, None),
         })
@@ -117,6 +121,17 @@ impl DaemonCore {
     /// Borrow the state manager (for use by the HTTP server).
     pub fn state_manager(&self) -> Arc<StateManager> {
         Arc::clone(&self.state_manager)
+    }
+    
+    /// Enable latency telemetry for debugging.
+    pub fn enable_telemetry(&mut self) {
+        self.telemetry = Some(PipelineTelemetry::new());
+        info!("DaemonCore: latency telemetry enabled");
+    }
+    
+    /// Get telemetry report if enabled.
+    pub fn telemetry_report(&self) -> Option<crate::latency::LatencyReport> {
+        self.telemetry.as_ref().map(|t| t.report())
     }
 
     /// Run the core event loop.  Returns when a `Shutdown` event is received
@@ -465,6 +480,17 @@ impl DaemonCore {
             Command::GetState => {
                 // State will be broadcast automatically
             }
+            Command::EnableTelemetry => {
+                crate::latency::enable_global_telemetry();
+                info!("Latency telemetry enabled via command");
+            }
+            Command::PrintTelemetryReport => {
+                if let Some(report) = crate::latency::global_report() {
+                    info!("Latency Report: {}", report.format());
+                } else {
+                    info!("Latency telemetry not enabled");
+                }
+            }
         }
         Ok(())
     }
@@ -493,16 +519,17 @@ impl DaemonCore {
             self.state_manager.set_playing(idx).await?;
             let _ = self.broadcast_tx.send(BroadcastMessage::StateUpdated);
 
+            // Proxy URL for visualizer tap - always use proxy for sync
+            let proxy_url = crate::proxy::proxy_url(idx);
+            
             match self.ensure_mpv_handle().await {
                 Some(handle) => {
-                    let mut stream_url = station.url.clone();
                     let wants_proxy = !station.url.to_ascii_lowercase().contains(".m3u8");
                     let mut used_proxy = false;
                     if wants_proxy {
-                        let proxy_url = crate::proxy::proxy_url(idx);
                         if let Err(e) = handle.load_stream(&proxy_url, volume).await {
                             warn!("Failed to load proxy stream '{}': {}", station.name, e);
-                            if let Err(e2) = handle.load_stream(&stream_url, volume).await {
+                            if let Err(e2) = handle.load_stream(&station.url, volume).await {
                                 warn!("Failed to load direct stream '{}': {}", station.name, e2);
                                 self.intend_playing = false;
                                 self.state_manager
@@ -512,10 +539,9 @@ impl DaemonCore {
                                 return Ok(());
                             }
                         } else {
-                            stream_url = proxy_url;
                             used_proxy = true;
                         }
-                    } else if let Err(e) = handle.load_stream(&stream_url, volume).await {
+                    } else if let Err(e) = handle.load_stream(&station.url, volume).await {
                         warn!("Failed to load direct stream '{}': {}", station.name, e);
                         self.intend_playing = false;
                         self.state_manager
@@ -525,7 +551,7 @@ impl DaemonCore {
                         return Ok(());
                     }
                     if used_proxy {
-                        info!("Playing '{}' via shared proxy: {}", station.name, stream_url);
+                        info!("Playing '{}' via shared proxy: {}", station.name, proxy_url);
                     } else if wants_proxy {
                         info!("Playing '{}' direct URL (proxy unavailable)", station.name);
                     } else {
@@ -541,11 +567,13 @@ impl DaemonCore {
                     self.audio_observer_handle = Some(obs);
 
                     // Spawn ffmpeg PCM task for oscilloscope.
-                    // Prefer proxy URL so mpv + ffmpeg share one upstream source.
+                    // ALWAYS use proxy URL so mpv + ffmpeg share one upstream source,
+                    // even when mpv fell back to direct URL (proxy still works for viz).
+                    let pcm_url = proxy_url;
                     let tx = self.broadcast_tx.clone();
                     let handle = tokio::spawn(async move {
                         loop {
-                            if let Err(e) = run_vu_ffmpeg(&stream_url, &tx).await {
+                            if let Err(e) = run_vu_ffmpeg(&pcm_url, &tx).await {
                                 debug!("VU ffmpeg exited: {e}");
                             }
                             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
@@ -864,10 +892,11 @@ async fn run_vu_ffmpeg(
         .kill_on_drop(true)
         .spawn()?;
 
-    let mut stdout = child.stdout.take().expect("ffmpeg stdout");
+    let mut stdout = child.stdout.take().ok_or_else(|| anyhow::anyhow!("ffmpeg stdout not piped"))?;
     let buf_bytes = VU_WINDOW_SAMPLES * 2;
     let mut buf = vec![0u8; buf_bytes];
     let mut sample_buf: Vec<i16> = Vec::with_capacity(VU_WINDOW_SAMPLES);
+    let mut first_sample = true;
 
     loop {
         let n = stdout.read(&mut buf).await?;
@@ -878,8 +907,18 @@ async fn run_vu_ffmpeg(
             sample_buf.push(sample);
             if sample_buf.len() >= VU_WINDOW_SAMPLES {
                 let pcm: Vec<f32> = sample_buf.iter().map(|&s| s as f32 / 32768.0).collect();
+                
+                // Telemetry: record first sample decoded
+                if first_sample {
+                    first_sample = false;
+                    record_ffmpeg_first_sample();
+                    debug!("VU ffmpeg: first sample decoded");
+                }
+                
                 let _ = broadcast_tx.send(BroadcastMessage::PcmChunk(std::sync::Arc::new(pcm)));
                 sample_buf.clear();
+                // Yield to prevent starving other tasks (smooths out proxy broadcast)
+                tokio::task::yield_now().await;
             }
         }
     }
@@ -891,9 +930,4 @@ async fn run_vu_ffmpeg(
     Ok(())
 }
 
-fn pcm_rms_db(samples: &[i16]) -> f32 {
-    if samples.is_empty() { return -90.0; }
-    let sum_sq: f64 = samples.iter().map(|&s| { let f = s as f64 / 32768.0; f * f }).sum();
-    let rms = (sum_sq / samples.len() as f64).sqrt();
-    if rms < 1e-10 { -90.0 } else { (20.0 * rms.log10()) as f32 }
-}
+

@@ -2,7 +2,7 @@
 
 use crate::theme::{
     style_focused_border, style_unfocused_border, C_MUTED, C_NUMBER_HINT, C_PANEL_BORDER,
-    C_PANEL_BORDER_FOCUSED, C_PRIMARY, C_SECONDARY,
+    C_PRIMARY, C_SECONDARY,
 };
 use ratatui::{
     layout::Rect,

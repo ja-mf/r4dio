@@ -7,6 +7,7 @@ mod core;
 mod focus;
 mod http;
 mod intent;
+mod latency;
 mod mpv;
 mod proxy;
 mod scope;

@@ -14,16 +14,19 @@ use tokio::sync::{Mutex, broadcast};
 use tracing::{debug, info, warn};
 
 use radio_proto::state::StateManager;
+use crate::latency::{PipelineTelemetry, BroadcastLagMonitor, record_proxy_first_byte};
 
 pub const PROXY_PORT: u16 = 8990;
 pub const PROXY_HOST: &str = "127.0.0.1";
-const PROXY_BROADCAST_CAPACITY: usize = 4096;
+const PROXY_BROADCAST_CAPACITY: usize = 128;
 
 #[derive(Clone)]
 pub struct ProxyState {
     state_manager: Arc<StateManager>,
     client: Client,
     streams: Arc<Mutex<HashMap<usize, Arc<SharedStream>>>>,
+    /// Optional telemetry for latency measurement.
+    telemetry: Option<PipelineTelemetry>,
 }
 
 struct SharedStream {
@@ -33,6 +36,11 @@ struct SharedStream {
 
 impl ProxyState {
     pub fn new(state_manager: Arc<StateManager>) -> Self {
+        Self::with_telemetry(state_manager, None)
+    }
+    
+    /// Create with telemetry enabled.
+    pub fn with_telemetry(state_manager: Arc<StateManager>, telemetry: Option<PipelineTelemetry>) -> Self {
         let client = Client::builder()
             .redirect(reqwest::redirect::Policy::limited(10))
             .default_headers({
@@ -41,12 +49,23 @@ impl ProxyState {
                 h
             })
             .build()
-            .expect("failed to build reqwest client for stream proxy");
+            .map_err(|e| {
+                tracing::error!("failed to build reqwest client: {}", e);
+                // Return a dummy client - this is a fatal error but we handle it gracefully
+                // The actual error will surface on first use
+            })
+            .unwrap_or_else(|_| {
+                Client::builder()
+                    .redirect(reqwest::redirect::Policy::limited(10))
+                    .build()
+                    .expect("failed to build even basic reqwest client")
+            });
 
         Self {
             state_manager,
             client,
             streams: Arc::new(Mutex::new(HashMap::new())),
+            telemetry,
         }
     }
 
@@ -90,9 +109,11 @@ impl ProxyState {
 
         let streams = self.streams.clone();
         let shared_for_task = shared.clone();
+        let telemetry = self.telemetry.clone();
         tokio::spawn(async move {
             let mut bytes_stream = upstream.bytes_stream();
             let mut no_receivers_since: Option<Instant> = None;
+            let mut first_byte = true;
 
             while let Some(next) = bytes_stream.next().await {
                 let chunk = match next {
@@ -102,6 +123,13 @@ impl ProxyState {
                         break;
                     }
                 };
+                
+                // Telemetry: record first byte received from upstream
+                if first_byte {
+                    first_byte = false;
+                    record_proxy_first_byte();
+                    debug!("proxy: first byte received for idx={}", idx);
+                }
 
                 if shared_for_task.tx.receiver_count() == 0 {
                     if no_receivers_since
@@ -143,10 +171,10 @@ async fn stream_station(
     let shared = match state.get_or_start_stream(idx).await {
         Ok(s) => s,
         Err(code) => {
-            return Response::builder()
-                .status(code)
-                .body(Body::empty())
-                .unwrap();
+            return match Response::builder().status(code).body(Body::empty()) {
+                Ok(resp) => resp,
+                Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+            };
         }
     };
 
@@ -175,7 +203,10 @@ async fn stream_station(
         }
     });
 
-    builder.body(Body::from_stream(stream)).unwrap()
+    match builder.body(Body::from_stream(stream)) {
+        Ok(resp) => resp,
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
 }
 
 pub fn start_server(

@@ -27,12 +27,13 @@ use ratatui::{
 };
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{broadcast, mpsc};
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, info, warn};
 
-use radio_proto::protocol::{Command, DaemonState, MpvHealth, PlaybackStatus};
+use radio_proto::protocol::{Command, DaemonState, MpvHealth};
 use radio_proto::state::StateManager;
 
 use crate::core::DaemonEvent;
+use crate::latency::record_vu_first_display;
 use crate::BroadcastMessage;
 
 use radio_proto::songs::{
@@ -59,7 +60,7 @@ use crate::{
     },
     widgets::{
         status_bar::{self, InputMode},
-        toast::{Severity, ToastManager},
+        toast::ToastManager,
     },
     workspace::{RightPane, WorkspaceManager},
 };
@@ -204,6 +205,9 @@ pub struct App {
 
     /// Previous mpv health — used to detect transitions for toast notifications.
     prev_mpv_health: MpvHealth,
+    
+    /// Telemetry: whether we've recorded the first VU display.
+    vu_first_display_recorded: bool,
 
     /// Last ICY title received for the currently-playing station, keyed by
     /// station name.  Updated only by `IcyUpdated` messages; cleared when the
@@ -248,7 +252,7 @@ impl App {
         let file_positions = load_file_positions(&file_positions_path);
         let ui_state = load_ui_session_state(&ui_state_path);
 
-        let mut file_metadata_cache: HashMap<String, FileMetadata> = HashMap::new();
+        let file_metadata_cache: HashMap<String, FileMetadata> = HashMap::new();
         // Pre-probe files that are already in cache (will be picked up in refresh)
         let _ = &files; // make borrow checker happy
 
@@ -362,6 +366,7 @@ impl App {
             pane_areas: PaneAreas::default(),
             toast: ToastManager::new(),
             prev_mpv_health: MpvHealth::Absent,
+            vu_first_display_recorded: false,
             last_known_icy: None,
             recognition_tx: None, // set in run()
             intent_pause: crate::intent::IntentState::new(false),
@@ -623,6 +628,13 @@ impl App {
     /// fresh RMS dBFS measurement. Called from MeterTick (streams via jitter
     /// buffer) and AudioLevel (local files via lavfi).
     fn update_audio_trackers(&mut self, rms_db: f32) {
+        // Telemetry: record first VU display (non-silence audio)
+        if !self.vu_first_display_recorded && rms_db > -80.0 {
+            self.vu_first_display_recorded = true;
+            record_vu_first_display();
+            debug!("VU meter: first audio displayed ({} dB)", rms_db);
+        }
+        
         let now = std::time::Instant::now();
         let elapsed = now
             .duration_since(self.state.peak_last_update)
@@ -961,6 +973,8 @@ impl App {
             self.state.pcm_ring.clear();
             self.state.pcm_pending.clear();
             self.state.pcm_pending_started = false;
+            // Reset telemetry flag for new playback session
+            self.vu_first_display_recorded = false;
         }
 
         // Clear last_known_icy when the station changes — the new station's
@@ -1905,7 +1919,7 @@ impl App {
         use ratatui::widgets::Borders;
 
         let right_maximized = self.wm.radio_right_maximized;
-        let has_overlay = self.state.nts_hover_channel.is_some()
+        let _has_overlay = self.state.nts_hover_channel.is_some()
             && matches!(self.wm.radio_right_pane, RightPane::Tickers);
 
         // Assign fixed pane number keys: StationList=1, Icy=2, Songs=3, NtsPanel=4

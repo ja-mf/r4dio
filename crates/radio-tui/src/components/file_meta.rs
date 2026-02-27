@@ -16,7 +16,7 @@ use crate::{
     theme::{C_LOCATION, C_MUTED, C_PRIMARY, C_SECONDARY},
     widgets::{
         filter_input::{FilterAction, FilterInput},
-        pane_chrome::{pane_chrome_borders, Badge},
+        pane_chrome::pane_chrome_borders,
     },
 };
 use ratatui::widgets::Borders;

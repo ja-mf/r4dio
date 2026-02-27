@@ -33,3 +33,6 @@ futures-util = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 tokio = { version = "1.35", features = ["rt-multi-thread", "macros", "process", "time", "io-std", "sync", "net", "fs", "windows-sys"] }
+
+[dev-dependencies]
+tokio-test = "0.4"

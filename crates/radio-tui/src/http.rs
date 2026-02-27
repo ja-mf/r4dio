@@ -15,7 +15,7 @@ use tokio::sync::mpsc;
 use tracing::{error, info};
 
 #[derive(Clone)]
-struct AppState {
+struct HttpState {
     state_manager: Arc<StateManager>,
     event_tx: mpsc::Sender<DaemonEvent>,
 }
@@ -48,7 +48,7 @@ pub fn start_server(
     event_tx: mpsc::Sender<DaemonEvent>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
-        let app_state = AppState { state_manager, event_tx };
+        let app_state = HttpState { state_manager, event_tx };
         
         let app = Router::new()
             .route("/api/state", get(get_state))
@@ -78,7 +78,7 @@ pub fn start_server(
     })
 }
 
-async fn get_state(State(state): State<AppState>) -> Result<Json<ApiState>, StatusCode> {
+async fn get_state(State(state): State<HttpState>) -> Result<Json<ApiState>, StatusCode> {
     let daemon_state = state.state_manager.get_state().await;
     
     let stations: Vec<StationInfo> = daemon_state
@@ -104,7 +104,7 @@ async fn get_state(State(state): State<AppState>) -> Result<Json<ApiState>, Stat
 }
 
 async fn play_station(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     axum::extract::Path(idx): axum::extract::Path<usize>,
 ) -> StatusCode {
     info!("HTTP API: Play station {}", idx);
@@ -116,7 +116,7 @@ async fn play_station(
     StatusCode::OK
 }
 
-async fn stop(State(state): State<AppState>) -> StatusCode {
+async fn stop(State(state): State<HttpState>) -> StatusCode {
     info!("HTTP API: Stop");
     if state.event_tx.send(DaemonEvent::ClientCommand(Command::Stop)).await.is_err() {
         error!("Failed to send stop command");
@@ -125,7 +125,7 @@ async fn stop(State(state): State<AppState>) -> StatusCode {
     StatusCode::OK
 }
 
-async fn next_station(State(state): State<AppState>) -> StatusCode {
+async fn next_station(State(state): State<HttpState>) -> StatusCode {
     info!("HTTP API: Next station");
     if state.event_tx.send(DaemonEvent::ClientCommand(Command::Next)).await.is_err() {
         error!("Failed to send next command");
@@ -134,7 +134,7 @@ async fn next_station(State(state): State<AppState>) -> StatusCode {
     StatusCode::OK
 }
 
-async fn prev_station(State(state): State<AppState>) -> StatusCode {
+async fn prev_station(State(state): State<HttpState>) -> StatusCode {
     info!("HTTP API: Previous station");
     if state.event_tx.send(DaemonEvent::ClientCommand(Command::Prev)).await.is_err() {
         error!("Failed to send prev command");
@@ -143,7 +143,7 @@ async fn prev_station(State(state): State<AppState>) -> StatusCode {
     StatusCode::OK
 }
 
-async fn random_station(State(state): State<AppState>) -> StatusCode {
+async fn random_station(State(state): State<HttpState>) -> StatusCode {
     info!("HTTP API: Random station");
     if state.event_tx.send(DaemonEvent::ClientCommand(Command::Random)).await.is_err() {
         error!("Failed to send random command");
@@ -153,7 +153,7 @@ async fn random_station(State(state): State<AppState>) -> StatusCode {
 }
 
 async fn set_volume(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     axum::extract::Path(volume): axum::extract::Path<i32>,
 ) -> StatusCode {
     let vol = (volume as f32 / 100.0).clamp(0.0, 1.0);
@@ -166,7 +166,7 @@ async fn set_volume(
     StatusCode::OK
 }
 
-async fn get_volume(State(state): State<AppState>) -> Json<VolumeStatus> {
+async fn get_volume(State(state): State<HttpState>) -> Json<VolumeStatus> {
     let daemon_state = state.state_manager.get_state().await;
     let volume = (daemon_state.volume * 100.0).round() as u8;
     Json(VolumeStatus { volume })

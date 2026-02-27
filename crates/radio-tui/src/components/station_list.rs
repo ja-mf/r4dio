@@ -26,7 +26,7 @@ use crate::{
     },
     widgets::{
         filter_input::{FilterAction, FilterInput},
-        pane_chrome::{pane_chrome_borders, Badge},
+        pane_chrome::pane_chrome_borders,
         scrollable_list::ScrollableList,
     },
 };

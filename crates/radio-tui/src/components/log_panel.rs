@@ -17,7 +17,7 @@ use crate::{
     app_state::AppState,
     component::Component,
     theme::{C_MUTED, C_SECONDARY},
-    widgets::pane_chrome::{pane_chrome_borders, Badge},
+    widgets::pane_chrome::pane_chrome_borders,
 };
 use ratatui::widgets::Borders;
 

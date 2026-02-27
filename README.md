@@ -46,6 +46,28 @@ cargo build --release -p radio-tui --bin r4dio
 - `songs.vds`: recognition DB (starts empty in release bundles)
 - `config.toml`: runtime config (HTTP + station source + defaults)
 
+## Credits & Dependencies
+
+r4dio stands on the shoulders of exceptional open-source projects. Special thanks to the individual contributors and small teams behind:
+
+**Audio & Playback:**
+- [mpv](https://github.com/mpv-player/mpv) — powerful command-line video/audio player with JSON-RPC IPC
+- [ffmpeg](https://ffmpeg.org/) — multimedia framework for encoding, decoding, and stream processing
+
+**TUI & Visualization:**
+- [ratatui](https://github.com/ratatui-org/ratatui) — Rust library for building terminal user interfaces
+- [scope-tui](https://github.com/alacritty/alacritty/tree/master/extra/man) — oscilloscope-style waveform rendering in the terminal (adapted for audio visualization)
+
+**Song Recognition:**
+- [vibra](https://github.com/izwb003/vibra) — Shazam-like audio fingerprinting and song identification (maintained by solo developer)
+
+**Runtime:**
+- [tokio](https://github.com/tokio-rs/tokio) — async runtime for Rust
+- [reqwest](https://github.com/seanmonstar/reqwest) — HTTP client
+- [serde](https://github.com/serde-rs/serde) — serialization framework
+
+Each of these projects solves a critical piece of the r4dio puzzle. Without them, building a real-time, responsive, cross-platform radio client would require orders of magnitude more development effort. If you find r4dio useful, consider supporting these upstream projects as well.
+
 ## License
 
 MIT

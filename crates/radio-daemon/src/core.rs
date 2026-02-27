@@ -552,6 +552,14 @@ impl DaemonCore {
             Command::GetState => {
                 // State will be broadcast automatically
             }
+            Command::EnableTelemetry => {
+                // Telemetry only available in TUI mode
+                tracing::info!("Telemetry commands only available in TUI mode");
+            }
+            Command::PrintTelemetryReport => {
+                // Telemetry only available in TUI mode
+                tracing::info!("Telemetry commands only available in TUI mode");
+            }
         }
         Ok(())
     }

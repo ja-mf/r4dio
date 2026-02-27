@@ -22,11 +22,11 @@ use crate::{
     intent::RenderHint,
     theme::{
         C_ACCENT, C_BADGE_ERR, C_BADGE_PENDING, C_CONNECTING, C_LOCATION, C_MUTED, C_PLAYING,
-        C_PRIMARY, C_SECONDARY, C_SELECTION_BG, C_STARS, C_TAG,
+        C_PRIMARY, C_SECONDARY, C_SELECTION_BG, C_STARS,
     },
     widgets::{
         filter_input::{FilterAction, FilterInput},
-        pane_chrome::{pane_chrome_borders, Badge},
+        pane_chrome::pane_chrome_borders,
         scrollable_list::ScrollableList,
     },
 };
@@ -96,7 +96,7 @@ pub struct FileList {
 impl FileList {
     pub fn new() -> Self {
         Self {
-            list: ScrollableList::new(|entry: &LocalFileEntry, _q: &str| {
+            list: ScrollableList::new(|_entry: &LocalFileEntry, _q: &str| {
                 // Actual matching is done against the search_index externally
                 true
             }),
@@ -403,7 +403,7 @@ impl Component for FileList {
         vec![]
     }
 
-    fn on_action(&mut self, action: &Action, state: &AppState) -> Vec<Action> {
+    fn on_action(&mut self, action: &Action, _state: &AppState) -> Vec<Action> {
         match action {
             Action::FilterChanged(q) => {
                 self.apply_text_filter(q);
@@ -459,7 +459,7 @@ impl Component for FileList {
         let items: Vec<ListItem> = items_with_idx
             .iter()
             .enumerate()
-            .map(|(view_row, (orig_idx, file))| {
+            .map(|(view_row, (_orig_idx, file))| {
                 let is_selected = view_row == sel_in_view;
                 let path = file.path.to_string_lossy().to_string();
                 let is_current = state.daemon_state.current_file.as_deref() == Some(&path);

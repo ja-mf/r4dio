@@ -22,6 +22,10 @@ pub enum Command {
     SeekRelative { seconds: f64 },
     SeekTo { seconds: f64 },
     GetState,
+    /// Enable latency telemetry for debugging.
+    EnableTelemetry,
+    /// Print latency telemetry report to log.
+    PrintTelemetryReport,
 }
 
 /// Messages sent from Daemon to TUI (broadcasts)
