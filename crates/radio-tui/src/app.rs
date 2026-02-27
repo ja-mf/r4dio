@@ -81,6 +81,8 @@ enum AppMessage {
     RecognitionComplete(String, String), // job_id, display string
     /// Vibra recognition produced no match (or stream_url was absent).
     RecognitionNoMatch,
+    /// Fires after a 1-second delay to start the next queued recognition job.
+    RecognitionQueueNext,
     /// Real-time audio RMS level from daemon (dBFS).
     AudioLevel(f32),
     /// Raw PCM chunk (mono f32 normalised -1..1, 44100 Hz) for scope display.
@@ -216,6 +218,21 @@ pub struct App {
 
     /// Sender used by recognition background tasks to report results.
     recognition_tx: Option<mpsc::Sender<AppMessage>>,
+
+    // ── Recognition safety queue ──────────────────────────────────────────────
+    /// Pending recognition jobs (station_name, stream_url, icy_title, nts_ch). Max 3.
+    /// Cleared automatically when the station changes.
+    recognize_queue: std::collections::VecDeque<(Option<String>, Option<String>, Option<String>, Option<usize>)>,
+    /// True while a recognition job is in flight (vibra running).
+    recognize_in_flight: bool,
+    /// Station name that the current queue belongs to; used to detect station changes.
+    recognize_active_station: Option<String>,
+
+    // ── Download safety queue ─────────────────────────────────────────────────
+    /// Pending downloads (url, display_name). Executed one at a time.
+    download_queue: std::collections::VecDeque<(String, String)>,
+    /// True while a download is in progress.
+    download_in_flight: bool,
 
     // ── Pending-intent trackers ───────────────────────────────────────────────
     /// Intent tracker for play/pause state (true = playing).
@@ -367,6 +384,11 @@ impl App {
             prev_mpv_health: MpvHealth::Absent,
             last_known_icy: None,
             recognition_tx: None, // set in run()
+            recognize_queue: std::collections::VecDeque::new(),
+            recognize_in_flight: false,
+            recognize_active_station: None,
+            download_queue: std::collections::VecDeque::new(),
+            download_in_flight: false,
             intent_pause: crate::intent::IntentState::new(false),
             intent_volume: crate::intent::IntentState::new(0.7),
             intent_station: crate::intent::IntentState::new(None),
@@ -799,20 +821,49 @@ impl App {
 
             AppMessage::RecognitionComplete(job_id, rec_display) => {
                 info!("[app] Recognition complete job_id={} display={:?}", job_id, rec_display);
+                self.recognize_in_flight = false;
                 self.toast.resolve_spinner(
                     crate::widgets::toast::Severity::Success,
                     format!("identified: {}", rec_display),
                     std::time::Duration::from_secs(5),
                 );
+                // Schedule next queued job after a 1-second safety gap.
+                if !self.recognize_queue.is_empty() {
+                    if let Some(tx) = self.recognition_tx.clone() {
+                        tokio::spawn(async move {
+                            tokio::time::sleep(Duration::from_secs(1)).await;
+                            let _ = tx.send(AppMessage::RecognitionQueueNext).await;
+                        });
+                    }
+                }
             }
 
             AppMessage::RecognitionNoMatch => {
                 info!("[app] Recognition: no match from vibra");
+                self.recognize_in_flight = false;
                 self.toast.resolve_spinner(
                     crate::widgets::toast::Severity::Warning,
                     "no match",
                     std::time::Duration::from_secs(3),
                 );
+                // Schedule next queued job after a 1-second safety gap.
+                if !self.recognize_queue.is_empty() {
+                    if let Some(tx) = self.recognition_tx.clone() {
+                        tokio::spawn(async move {
+                            tokio::time::sleep(Duration::from_secs(1)).await;
+                            let _ = tx.send(AppMessage::RecognitionQueueNext).await;
+                        });
+                    }
+                }
+            }
+            AppMessage::RecognitionQueueNext => {
+                // Pop the next queued recognition job and start it.
+                if let Some((station_name, stream_url, icy_title, nts_ch)) = self.recognize_queue.pop_front() {
+                    info!("[app] Starting next queued recognition ({} remaining)", self.recognize_queue.len());
+                    self.recognize_in_flight = true;
+                    self.spawn_recognition_job(station_name, stream_url, icy_title, nts_ch);
+                    self.toast.spinner("identifying…");
+                }
             }
             AppMessage::AudioLevel(rms_db) => {
                 // Keep mpv-lavfi RMS for debug bulbs on all sources.
@@ -941,10 +992,10 @@ impl App {
             }
             
             AppMessage::DownloadComplete { url, result } => {
+                self.download_in_flight = false;
                 match result {
                     Ok(_) => {
                         self.state.download_statuses.insert(url, DownloadStatus::Downloaded);
-                        // Resolve spinner with success (like recognition does)
                         self.toast.resolve_spinner(
                             Severity::Success,
                             "download complete".to_string(),
@@ -953,13 +1004,16 @@ impl App {
                     }
                     Err(e) => {
                         self.state.download_statuses.insert(url, DownloadStatus::Failed(e.clone()));
-                        // Resolve spinner with error
                         self.toast.resolve_spinner(
                             Severity::Error,
                             format!("download failed: {}", e),
                             std::time::Duration::from_secs(5),
                         );
                     }
+                }
+                // Start next queued download immediately.
+                if let Some((next_url, next_display)) = self.download_queue.pop_front() {
+                    self.start_download(next_url, next_display);
                 }
             }
         }
@@ -1753,8 +1807,27 @@ impl App {
                     warn!("[app] Cannot start recognition: nothing playing");
                     self.toast.warning("nothing playing — can't identify");
                 } else {
-                    self.spawn_recognition_job(station_name, stream_url, icy_title, nts_ch);
-                    self.toast.spinner("identifying…");
+                    // If the station changed, discard the old queue entirely.
+                    if self.recognize_active_station.as_deref() != station_name.as_deref() {
+                        self.recognize_queue.clear();
+                        self.recognize_active_station = station_name.clone();
+                    }
+
+                    if self.recognize_in_flight {
+                        // Deduplicate & cap at 3 queued jobs.
+                        if self.recognize_queue.len() < 3 {
+                            self.recognize_queue.push_back((station_name, stream_url, icy_title, nts_ch));
+                            info!("[app] Recognition queued ({} in queue)", self.recognize_queue.len());
+                        } else {
+                            info!("[app] Recognition queue full (3), ignoring duplicate press");
+                        }
+                    } else {
+                        // Start immediately.
+                        self.recognize_in_flight = true;
+                        self.recognize_active_station = station_name.clone();
+                        self.spawn_recognition_job(station_name, stream_url, icy_title, nts_ch);
+                        self.toast.spinner("identifying…");
+                    }
                 }
             }
 
@@ -1817,20 +1890,18 @@ impl App {
                 // Get selected song entry and download if it has an NTS URL
                 if let Some(entry) = self.get_selected_song_entry() {
                     if let Some(url) = entry.nts_url.clone() {
-                        info!("Starting download for: {}", url);
-                        // Show spinner like recognition does
-                        self.toast.spinner(format!("downloading {}…", entry.display()));
-                        // Mark as downloading
-                        self.state.download_statuses.insert(url.clone(), DownloadStatus::Downloading(0.0));
-                        // Spawn download task
-                        let download_dir = self.state.downloads_dir.clone();
-                        let tx = self.recognition_tx.clone();
-                        tokio::spawn(async move {
-                            let result = Self::download_nts_show(&url, &download_dir).await;
-                            if let Some(tx) = tx {
-                                let _ = tx.send(AppMessage::DownloadComplete { url, result }).await;
+                        let display = entry.display().to_string();
+                        if self.download_in_flight {
+                            // Queue only if this URL isn't already pending.
+                            if !self.download_queue.iter().any(|(u, _)| u == &url) {
+                                self.download_queue.push_back((url, display));
+                                info!("[app] Download queued ({} in queue)", self.download_queue.len());
+                            } else {
+                                info!("[app] Download already queued, ignoring duplicate press");
                             }
-                        });
+                        } else {
+                            self.start_download(url, display);
+                        }
                     } else {
                         self.toast.error("No NTS URL available for download");
                     }
@@ -2467,6 +2538,22 @@ impl App {
         } else {
             None
         }
+    }
+
+    /// Start an NTS download immediately (no queue check — caller is responsible).
+    fn start_download(&mut self, url: String, display: String) {
+        info!("[app] Starting download for: {}", url);
+        self.download_in_flight = true;
+        self.toast.spinner(format!("downloading {}…", display));
+        self.state.download_statuses.insert(url.clone(), DownloadStatus::Downloading(0.0));
+        let download_dir = self.state.downloads_dir.clone();
+        let tx = self.recognition_tx.clone();
+        tokio::spawn(async move {
+            let result = Self::download_nts_show(&url, &download_dir).await;
+            if let Some(tx) = tx {
+                let _ = tx.send(AppMessage::DownloadComplete { url, result }).await;
+            }
+        });
     }
     
     /// Download an NTS show
