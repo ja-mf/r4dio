@@ -121,6 +121,16 @@ pub fn mpv_binary_name() -> &'static str {
 }
 
 #[cfg(unix)]
+fn mpv_binary_names() -> &'static [&'static str] {
+    &["mpv"]
+}
+
+#[cfg(windows)]
+fn mpv_binary_names() -> &'static [&'static str] {
+    &["mpv.exe", "mpv"]
+}
+
+#[cfg(unix)]
 fn vibra_binary_names() -> &'static [&'static str] {
     &["vibra"]
 }
@@ -251,32 +261,12 @@ pub fn find_ffprobe_binary() -> Option<PathBuf> {
 }
 
 pub fn find_mpv_binary() -> Option<PathBuf> {
-    let exe_name = mpv_binary_name();
-
-    if let Ok(current_exe) = std::env::current_exe() {
-        if let Some(dir) = current_exe.parent() {
-            let local_mpv = dir.join(exe_name);
-            if local_mpv.exists() {
-                return Some(local_mpv);
-            }
-        }
+    // Check beside exe and external/ subdir (matches Windows zip layout)
+    if let Some(p) = find_beside_exe(mpv_binary_names()) {
+        return Some(p);
     }
 
-    if let Ok(path) = std::env::var("PATH") {
-        #[cfg(unix)]
-        let separator = ":";
-        #[cfg(windows)]
-        let separator = ";";
-
-        for dir in path.split(separator) {
-            let mpv_path = PathBuf::from(dir).join(exe_name);
-            if mpv_path.exists() {
-                return Some(mpv_path);
-            }
-        }
-    }
-
-    None
+    find_on_path(mpv_binary_names())
 }
 
 /// Find yt-dlp binary for downloading audio.
