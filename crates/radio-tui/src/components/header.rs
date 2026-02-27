@@ -36,6 +36,38 @@ const C_METER_PEAK: Color = Color::Rgb(214, 120, 50); // orange peak marker
 const C_METER_INSTANT: Color = Color::Rgb(172, 186, 238); // cool lamp-like RMS marker
 const C_METER_EMPTY: Color = Color::Rgb(6, 6, 10); // background-adjacent
 
+// ── Dynamic RMS marker characters ─────────────────────────────────────────────
+// Morphing Unicode characters based on energy level
+const RMS_CHARS_LOW: [char; 4] = ['○', '◌', '◍', '◎'];      // Gentle, ghostly
+const RMS_CHARS_MID: [char; 4] = ['●', '◉', '◆', '▣'];      // Solid, punchy  
+const RMS_CHARS_HIGH: [char; 4] = ['⬤', '◈', '▓', '█'];     // Intense, burning
+
+// Stela trail characters (for the "tail" behind the RMS marker)
+const STELA_CHARS: [char; 5] = ['·', '•', '∙', '●', '◆'];
+
+/// Select RMS marker character based on energy level and frame
+fn select_rms_char(energy: f32, position_fract: f32) -> char {
+    // Energy determines which character set to use
+    let char_set = if energy < 0.33 {
+        &RMS_CHARS_LOW
+    } else if energy < 0.66 {
+        &RMS_CHARS_MID
+    } else {
+        &RMS_CHARS_HIGH
+    };
+    
+    // Position fraction creates subtle animation within the cell
+    let idx = ((position_fract * 3.0) + (energy * 2.0)) as usize % char_set.len();
+    char_set[idx]
+}
+
+/// Select stela trail character based on distance from RMS
+fn select_stela_char(distance: f32, energy: f32) -> char {
+    let intensity = (1.0 - distance).clamp(0.0, 1.0) * energy;
+    let idx = (intensity * (STELA_CHARS.len() - 1) as f32) as usize;
+    STELA_CHARS[idx.min(STELA_CHARS.len() - 1)]
+}
+
 fn title_lamp_level(state: &AppState) -> f32 {
     // Adaptive dB window from long-term signal statistics.
     let spread = state.meter_spread_db.clamp(2.0, 22.0);
@@ -396,7 +428,8 @@ fn draw_row2(frame: &mut Frame, area: Rect, state: &AppState) {
 // ── VU meter bar builder ──────────────────────────────────────────────────────
 
 /// Build a coloured VU-meter line on a fixed dBFS scale.
-/// Includes a peak marker and a smooth near-instant RMS marker.
+/// Includes a peak marker, smooth RMS body, and dynamic "stela" trail effect.
+/// The RMS marker morphs its character based on energy level and leaves a glowing trail.
 fn build_meter(vu_db: f32, peak_db: f32, instant_db: f32, width: usize) -> Line<'static> {
     if width == 0 {
         return Line::from(vec![]);
@@ -429,7 +462,14 @@ fn build_meter(vu_db: f32, peak_db: f32, instant_db: f32, width: usize) -> Line<
     let peak_cell = ((peak_frac * width as f32) as usize).min(width.saturating_sub(1));
     let instant_pos = instant_frac * width as f32;
     let instant_cell = (instant_pos as usize).min(width.saturating_sub(1));
-    let instant_marker = MARKERS[((instant_pos.fract() * 7.0).round() as usize).min(7)];
+    let instant_fract = instant_pos.fract();
+    
+    // Dynamic RMS marker character based on energy and position
+    let rms_char = select_rms_char(energy, instant_fract);
+    
+    // Stela trail: cells behind the RMS marker that show the "tail"
+    let stela_length = (energy * 4.0).ceil() as usize; // 0-4 cells trail
+    let stela_start = instant_cell.saturating_sub(stela_length);
 
     let mut spans: Vec<Span<'static>> = Vec::new();
     let mut current_color: Option<Color> = None;
@@ -447,6 +487,12 @@ fn build_meter(vu_db: f32, peak_db: f32, instant_db: f32, width: usize) -> Line<
         let db_here = DB_MIN + linear * DB_RANGE;
         let is_peak = i == peak_cell && peak_db > DB_MIN + 1.0;
         let is_instant = i == instant_cell && instant_db > DB_MIN + 1.0;
+        let is_stela = i >= stela_start && i < instant_cell && instant_db > DB_MIN + 1.0;
+        let stela_distance = if is_stela {
+            (instant_cell - i) as f32 / stela_length as f32
+        } else {
+            1.0
+        };
 
         let zone_color = meter_zone_color(db_here, DB_MIN, DB_MAX);
         let fill_color = meter_fill_color(zone_color, db_here, energy);
@@ -455,14 +501,24 @@ fn build_meter(vu_db: f32, peak_db: f32, instant_db: f32, width: usize) -> Line<
         let empty_color = meter_empty_color(energy);
 
         let (ch, color) = if is_peak {
+            // Peak marker - thin vertical bar
             ('▌', peak_color)
         } else if is_instant {
-            (instant_marker, instant_color)
+            // Dynamic RMS marker - morphing character based on energy
+            (rms_char, instant_color)
+        } else if is_stela {
+            // Stela trail - fading trail behind the RMS marker
+            let trail_char = select_stela_char(stela_distance, energy);
+            let trail_color = meter_stela_color(energy, stela_distance);
+            (trail_char, trail_color)
         } else if i < full_cells {
+            // RMS body fill
             ('█', fill_color)
         } else if i == full_cells && partial > 0 {
+            // Partial block at RMS edge
             (BLOCKS[partial], fill_color)
         } else {
+            // Empty space
             (' ', empty_color)
         };
 
@@ -532,6 +588,26 @@ fn meter_instant_color(energy: f32) -> Color {
         (r * boost + 28.0 * energy).round().min(255.0) as u8,
         (g * boost + 18.0 * energy).round().min(255.0) as u8,
         (b * boost + 22.0 * energy).round().min(255.0) as u8,
+    )
+}
+
+/// Stela trail color - fades from bright (near RMS) to dim (far back)
+fn meter_stela_color(energy: f32, distance: f32) -> Color {
+    // Base stela color: cooler, more ghostly version of instant color
+    let (r, g, b) = match C_METER_INSTANT {
+        Color::Rgb(r, g, b) => (r as f32, g as f32, b as f32),
+        _ => (172.0, 186.0, 238.0),
+    };
+    
+    // Fade intensity based on distance from RMS marker (0.0 = close, 1.0 = far)
+    let fade = (1.0 - distance).clamp(0.0, 1.0);
+    let intensity = fade * (0.3 + 0.7 * energy); // Never fully bright, max at high energy
+    
+    // Shift color slightly toward purple/ghostly for trail effect
+    Color::Rgb(
+        ((r * 0.8 + 40.0) * intensity).round().min(255.0) as u8,
+        ((g * 0.85 + 30.0) * intensity).round().min(255.0) as u8,
+        ((b * 0.9 + 60.0) * intensity).round().min(255.0) as u8,
     )
 }
 
