@@ -37,35 +37,32 @@ const C_METER_INSTANT: Color = Color::Rgb(172, 186, 238); // cool lamp-like RMS 
 const C_METER_EMPTY: Color = Color::Rgb(6, 6, 10); // background-adjacent
 
 // ── Dynamic RMS marker characters ─────────────────────────────────────────────
-// Morphing Unicode characters based on energy level
-const RMS_CHARS_LOW: [char; 4] = ['○', '◌', '◍', '◎'];      // Gentle, ghostly
-const RMS_CHARS_MID: [char; 4] = ['●', '◉', '◆', '▣'];      // Solid, punchy  
-const RMS_CHARS_HIGH: [char; 4] = ['⬤', '◈', '▓', '█'];     // Intense, burning
+// Single character per energy band - no morphing to avoid blinking
+const RMS_CHAR_LOW: char = '○';    // Gentle, open
+const RMS_CHAR_MID: char = '●';    // Solid, punchy  
+const RMS_CHAR_HIGH: char = '⬤';   // Intense, filled
 
-// Stela trail characters (for the "tail" behind the RMS marker)
-const STELA_CHARS: [char; 5] = ['·', '•', '∙', '●', '◆'];
-
-/// Select RMS marker character based on energy level and frame
-fn select_rms_char(energy: f32, position_fract: f32) -> char {
-    // Energy determines which character set to use
-    let char_set = if energy < 0.33 {
-        &RMS_CHARS_LOW
+/// Select RMS marker character based on energy level - stable, no blinking
+fn select_rms_char(energy: f32) -> char {
+    if energy < 0.33 {
+        RMS_CHAR_LOW
     } else if energy < 0.66 {
-        &RMS_CHARS_MID
+        RMS_CHAR_MID
     } else {
-        &RMS_CHARS_HIGH
-    };
-    
-    // Position fraction creates subtle animation within the cell
-    let idx = ((position_fract * 3.0) + (energy * 2.0)) as usize % char_set.len();
-    char_set[idx]
+        RMS_CHAR_HIGH
+    }
 }
 
-/// Select stela trail character based on distance from RMS
-fn select_stela_char(distance: f32, energy: f32) -> char {
-    let intensity = (1.0 - distance).clamp(0.0, 1.0) * energy;
-    let idx = (intensity * (STELA_CHARS.len() - 1) as f32) as usize;
-    STELA_CHARS[idx.min(STELA_CHARS.len() - 1)]
+/// Stela trail character - simple dot that fades with distance
+fn select_stela_char(distance: f32, _energy: f32) -> char {
+    // Simple trail: closer to marker = more solid
+    if distance < 0.3 {
+        '·'
+    } else if distance < 0.6 {
+        '•'
+    } else {
+        '∙'
+    }
 }
 
 fn title_lamp_level(state: &AppState) -> f32 {
@@ -462,14 +459,15 @@ fn build_meter(vu_db: f32, peak_db: f32, instant_db: f32, width: usize) -> Line<
     let peak_cell = ((peak_frac * width as f32) as usize).min(width.saturating_sub(1));
     let instant_pos = instant_frac * width as f32;
     let instant_cell = (instant_pos as usize).min(width.saturating_sub(1));
-    let instant_fract = instant_pos.fract();
     
-    // Dynamic RMS marker character based on energy and position
-    let rms_char = select_rms_char(energy, instant_fract);
+    // Dynamic RMS marker character - stable, no blinking
+    let rms_char = select_rms_char(energy);
     
-    // Stela trail: cells behind the RMS marker that show the "tail"
-    let stela_length = (energy * 4.0).ceil() as usize; // 0-4 cells trail
-    let stela_start = instant_cell.saturating_sub(stela_length);
+    // Stela trail: only in empty space AHEAD of the RMS marker (predictive)
+    // Creates a subtle hint of where the audio is heading
+    let stela_length = ((energy * 2.0).ceil() as usize).max(1);
+    let stela_start = instant_cell.saturating_add(1);
+    let stela_end = (stela_start + stela_length).min(width);
 
     let mut spans: Vec<Span<'static>> = Vec::new();
     let mut current_color: Option<Color> = None;
@@ -487,9 +485,10 @@ fn build_meter(vu_db: f32, peak_db: f32, instant_db: f32, width: usize) -> Line<
         let db_here = DB_MIN + linear * DB_RANGE;
         let is_peak = i == peak_cell && peak_db > DB_MIN + 1.0;
         let is_instant = i == instant_cell && instant_db > DB_MIN + 1.0;
-        let is_stela = i >= stela_start && i < instant_cell && instant_db > DB_MIN + 1.0;
+        // Stela only appears in empty space ahead of the marker
+        let is_stela = i >= stela_start && i < stela_end && i > full_cells && instant_db > DB_MIN + 1.0;
         let stela_distance = if is_stela {
-            (instant_cell - i) as f32 / stela_length as f32
+            (i - instant_cell) as f32 / stela_length as f32
         } else {
             1.0
         };
