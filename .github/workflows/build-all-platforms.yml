@@ -329,8 +329,9 @@ jobs:
           EOF
           chmod +x dist/r4dio-macos-x86_64/ffmpeg dist/r4dio-macos-x86_64/ffprobe
           # Download yt-dlp for macOS x86_64
+          # Pinned to 2025.08.11: last release that ships yt-dlp_macos_legacy (Intel/x86_64 build)
           echo "Downloading yt-dlp for macOS x86_64..."
-          curl -fsSL "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos_legacy" -o dist/r4dio-macos-x86_64/yt-dlp
+          curl -fsSL "https://github.com/yt-dlp/yt-dlp/releases/download/2025.08.11/yt-dlp_macos_legacy" -o dist/r4dio-macos-x86_64/yt-dlp
           chmod +x dist/r4dio-macos-x86_64/yt-dlp
           echo "yt-dlp downloaded successfully"
       - name: Add runtime files
