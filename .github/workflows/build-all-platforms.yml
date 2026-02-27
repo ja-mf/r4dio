@@ -55,24 +55,32 @@ jobs:
           name: vibra-windows
           path: dist/r4dio-windows-x86_64/
       - name: Bundle mpv + ffmpeg
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           mkdir -p /tmp/mpv-win /tmp/ffmpeg-win
-          API_JSON="$(curl --retry 5 --retry-delay 2 --retry-all-errors -fsSL \
-            -H "Authorization: Bearer ${{ github.token }}" \
-            -H "Accept: application/vnd.github+json" \
-            https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest)"
-          MPV_URL="$(echo "$API_JSON" | jq -r '.assets[]? | select(.name|test("^mpv-x86_64(-v3)?-.*\\.7z$")) | .browser_download_url' | head -n1)"
-          FFMPEG_URL="$(echo "$API_JSON" | jq -r '.assets[]? | select(.name|test("^ffmpeg-x86_64(-v3)?-git-.*\\.7z$")) | .browser_download_url' | head -n1)"
-          test -n "$MPV_URL" && test "$MPV_URL" != "null"
-          test -n "$FFMPEG_URL" && test "$FFMPEG_URL" != "null"
-          curl --retry 5 --retry-delay 2 --retry-all-errors -fsSL "$MPV_URL" -o /tmp/mpv.7z
-          curl --retry 5 --retry-delay 2 --retry-all-errors -fsSL "$FFMPEG_URL" -o /tmp/ffmpeg.7z
-          7z x /tmp/mpv.7z -o/tmp/mpv-win -y >/dev/null
-          7z x /tmp/ffmpeg.7z -o/tmp/ffmpeg-win -y >/dev/null
+          # gh api handles public-repo auth correctly; avoids cross-repo token issues
+          MPV_URL="$(gh api repos/shinchiro/mpv-winbuild-cmake/releases/latest \
+            --jq '.assets[] | select(.name | test("^mpv-x86_64-[0-9].*\\.7z$")) | .browser_download_url' \
+            | head -1)"
+          FFMPEG_URL="$(gh api repos/shinchiro/mpv-winbuild-cmake/releases/latest \
+            --jq '.assets[] | select(.name | test("^ffmpeg-x86_64-git-.*\\.7z$")) | .browser_download_url' \
+            | head -1)"
+          echo "MPV_URL: $MPV_URL"
+          echo "FFMPEG_URL: $FFMPEG_URL"
+          test -n "$MPV_URL"
+          test -n "$FFMPEG_URL"
+          curl -fsSL "$MPV_URL" -o /tmp/mpv.7z
+          curl -fsSL "$FFMPEG_URL" -o /tmp/ffmpeg.7z
+          7z x /tmp/mpv.7z -o/tmp/mpv-win -y
+          7z x /tmp/ffmpeg.7z -o/tmp/ffmpeg-win -y
           MPV_EXE="$(find /tmp/mpv-win -type f -name mpv.exe | head -n1)"
           FFMPEG_EXE="$(find /tmp/ffmpeg-win -type f -name ffmpeg.exe | head -n1)"
           FFPROBE_EXE="$(find /tmp/ffmpeg-win -type f -name ffprobe.exe | head -n1)"
+          echo "MPV_EXE: $MPV_EXE"
+          echo "FFMPEG_EXE: $FFMPEG_EXE"
+          echo "FFPROBE_EXE: $FFPROBE_EXE"
           test -f "$MPV_EXE"
           test -f "$FFMPEG_EXE"
           test -f "$FFPROBE_EXE"
