@@ -1,29 +1,45 @@
 # r4dio — Project Status & Roadmap
 
-> Developer reference. Updated after v1.0 release (2026-02).
+> Developer reference. Updated after v1.0.1 release (2026-02).
 
 ---
 
 ## Current Status
 
-**v1.0 released.** All platforms building and shipping.
+**v1.0.1 released.** All platforms building and shipping.
 | Platform | Binary | Bundled |
 |---|---|---|
-| macOS arm64 | `r4dio.app` DMG | mpv, ffmpeg, ffprobe, vibra |
-| macOS x86_64 | `r4dio.app` DMG | mpv, ffmpeg, ffprobe, vibra |
-| Linux x86_64 | `r4dio` tarball | mpv (AppImage), ffmpeg, ffprobe, vibra |
-| Windows x86_64 | `r4dio.exe` zip | mpv.exe, ffmpeg.exe, vibra.exe, DLLs |
+| macOS arm64 | `r4dio.app` DMG | mpv, ffmpeg, ffprobe, yt-dlp, vibra, starred.toml |
+| macOS x86_64 | `r4dio.app` DMG | mpv, ffmpeg, ffprobe, yt-dlp, vibra, starred.toml |
+| Linux x86_64 | `r4dio` tarball | mpv (AppImage), ffmpeg, ffprobe, yt-dlp, vibra, starred.toml |
+| Windows x86_64 | `r4dio.exe` zip | mpv.exe, ffmpeg.exe, ffprobe.exe, yt-dlp.exe, vibra.exe, DLLs, starred.toml |
+
+**Windows zip layout (v1.0.1):**
+```
+r4dio-windows-x86_64/
+  r4dio.exe, config.toml, README.txt
+  external/   ← all executables + mpv DLLs (vibra statically linked — no VCRUNTIME/libcurl/libfftw3 deps)
+  data/       ← stations.toml, starred.toml, songs.vds
+```
 
 **Working features:**
 - Radio streaming via proxy (ICY-aware, HLS detection)
 - Local file playback with chapter navigation
 - VU meter (PCM/lavfi dual path), oscilloscope, adaptive title lamp
 - Song identification via vibra (Shazam-like fingerprinting) + NTS show metadata
+- NTS show download via yt-dlp (`d` key in songs ticker) with progress indicators
 - NTS live schedule panel (NTS 1 & 2)
 - File browser with star ratings, sort, filter
 - HTTP remote control API on :8989
-- stations.toml bundled and found correctly at runtime (beside-exe fallback)
+- stations.toml + starred.toml bundled and found correctly at runtime; starred.toml auto-seeded on first run
 - macOS app bundle: Finder drag-to-Applications, Spotlight indexable, Terminal.app launcher
+
+**Fixed in v1.0.1:**
+- ✅ All 4 Windows DLL errors on `i` key: VCRUNTIME140.dll, MSVCP140.dll, libcurl.dll, libfftw3-3.dll — vibra now statically linked (`x64-windows-static` + `/MT`)
+- ✅ No ffprobe.exe on Windows — now sourced from ffmpeg-static and bundled in `external/`
+- ✅ starred.toml not bundled — now committed to repo and auto-seeded into OS data dir on first run
+- ✅ Windows zip cluttered — reorganized into `external/` and `data/` subdirs
+- ✅ Radio Valentin Letelier city wrong (Santiago → Valparaiso)
 
 ---
 
@@ -58,9 +74,6 @@
   versions when launching from certain contexts. If ffmpeg fails to run, this is why.
 
 ### Windows
-- **No ffprobe.exe bundled**: The shinchiro ffmpeg archive doesn't include ffprobe.
-  The file browser metadata panel will silently fall back to system ffprobe (likely
-  missing). Either source a different ffmpeg build or document this limitation.
 - **Windows cross-compilation via cargo-xwin**: Takes ~8 min in CI. Could speed up
   by caching the MSVC sysroot.
 

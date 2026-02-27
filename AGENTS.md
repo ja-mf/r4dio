@@ -26,6 +26,7 @@ r4dio/
 ├── Cargo.toml                   # Workspace manifest (members: crates/*)
 ├── config.toml                  # Reference user config
 ├── stations.toml                # Station definitions
+├── starred.toml                 # Personal station/file star ratings (bundled in releases)
 │
 ├── crates/
 │   ├── radio-proto/             # Shared types: DaemonState, Message, Config, Station, songs
@@ -45,6 +46,17 @@ r4dio/
 ### Playback engine (`src/core.rs` + `src/mpv.rs`)
 - `src/core.rs` — `DaemonCore`: mpv lifecycle, command handling, VU/PCM ffmpeg task
 - `src/mpv.rs` — `MpvDriver` / `MpvHandle`: spawn mpv, JSON IPC socket, property observers
+
+### NTS download (`src/nts_download/` + `src/download_manager.rs`)
+- `src/download_manager.rs` — concurrent download manager, progress tracking
+- `src/nts_download/mod.rs` — public API: `download_episode(url, dir, yt_dlp)`
+- `src/nts_download/api.rs` — NTS API client (fetches episode metadata)
+- `src/nts_download/parser.rs` — HTML/JSON parser for NTS episode pages
+- `src/nts_download/download.rs` — yt-dlp invocation and output capture
+- `src/nts_download/metadata.rs` — audio tag embedding via `lofty`
+- `src/nts_download/tests.rs` — unit tests
+
+Downloads saved to `~/radio-downloads/`. Binary found via `find_yt_dlp_binary()` in `platform.rs` (checks `YT_DLP_PATH` env, beside exe, `external/` subdir, PATH).
 
 **Key flows:**
 - `play_station(idx)`: aborts lavfi observer, aborts old VU task, loads proxy URL into mpv, spawns `run_vu_ffmpeg` against real station URL (⚠️ not yet synced via proxy)
@@ -185,6 +197,7 @@ Esc            Clear filter / close overlay
 ?              Toggle help
 q              Quit
 i              Identify song (fingerprint)
+d              Download NTS show (yt-dlp, songs ticker only)
 
 Scope (when focused):
   Up/Down        Scale ±0.01 (×10 with Shift)
@@ -281,4 +294,13 @@ All issues and detailed solutions are documented in PROJECT.md.
 
 **Linux:** XDG paths, mpv socket at `/tmp/radio-mpv.sock`
 
-**Windows:** Portable mode — `config.toml` beside `r4dio.exe`, named pipes for mpv IPC
+**Windows:** Portable mode — `config.toml` beside `r4dio.exe`, named pipes for mpv IPC.
+Release zip layout:
+```
+r4dio-windows-x86_64/
+  r4dio.exe, config.toml, README.txt
+  external/   ← mpv.exe, ffmpeg.exe, ffprobe.exe, yt-dlp.exe, vibra.exe + mpv DLLs
+  data/        ← stations.toml, starred.toml, songs.vds
+```
+`find_beside_exe()` in `platform.rs` searches both the exe dir and `external/` subdir.
+`starred.toml` and `songs.vds` are auto-seeded from `data/` into the OS data dir on first run.

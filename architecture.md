@@ -259,21 +259,24 @@ small (no embedded station list) while shipping a sensible default that works of
 ## Distribution and Cross-Platform Considerations
 
 r4dio is compiled and released for macOS (arm64, x86_64), Linux (x86_64), and Windows
-(x86_64). Each release bundles mpv, ffmpeg, ffprobe, and vibra to avoid system dependencies.
+(x86_64). Each release bundles mpv, ffmpeg, ffprobe, yt-dlp, and vibra to avoid system dependencies. `starred.toml` is also bundled and auto-seeded into the OS data dir on first run.
 
 macOS releases use .app bundles with a launcher script that detects whether the app was
 launched from Finder (double-click) or Terminal. If Finder, it opens Terminal.app and runs
 r4dio there. If Terminal, it runs directly. The .app is unsigned, so users see a Gatekeeper
-warning on first launch; the v1.1 release will include code signing once a developer certificate
-is obtained.
+warning on first launch (right-click → Open); v1.1 will add code signing.
 
 Linux releases are tarballs with a relative directory structure, assuming they are extracted
 to a working directory. mpv is bundled as an AppImage.
 
-Windows releases are .zip files with .exe + DLLs. Vibra is compiled as a native Windows
-binary (cross-compiled from Linux). ffmpeg and ffprobe are sourced from the shinchiro
-windows-build-cmake project. In v1.0, ffprobe.exe is not bundled (archive issue); v1.1
-will source it separately or document the limitation.
+Windows releases are .zip files reorganized into subdirectories:
+```
+r4dio-windows-x86_64/
+  r4dio.exe, config.toml, README.txt
+  external/   ← mpv.exe, ffmpeg.exe, ffprobe.exe, yt-dlp.exe, vibra.exe + mpv DLLs
+  data/        ← stations.toml, starred.toml, songs.vds
+```
+Vibra is statically linked (`x64-windows-static` + `/MT`) so it requires no VCRUNTIME140.dll, MSVCP140.dll, libcurl.dll, or libfftw3-3.dll. The app finds executables in `external/` via `find_beside_exe()` which searches both the exe directory and `external/` subdir.
 
 ## Testing and Logging
 
@@ -286,6 +289,6 @@ and logged.
 
 Version 1.1 will unify the PCM pipeline (ffmpeg-via-proxy for both paths), implement auto-
 reconnect with jitter buffer, add code signing for macOS, and fix the three panic sites. Version
-1.2 targets oscilloscope for files, per-band EQ visualization, and mouse support. Version 2.0
-would add a daemon mode (separate HTTP-only process for headless/embedded use) and mpris2 /
-Now Playing integration on Linux.
+1.2 targets oscilloscope for files, per-band EQ visualization, and mouse support. The NTS
+download feature (v1.0.1+) will be extended to support batch downloads, metadata enrichment
+from the NTS API, and playlist generation for downloaded shows.
