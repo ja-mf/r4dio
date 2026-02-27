@@ -1,0 +1,35 @@
+[package]
+name = "radio-tui"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "r4dio"
+path = "src/main.rs"
+
+[dependencies]
+radio-proto = { workspace = true }
+tokio = { workspace = true }
+cpal = "0.15"
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+toml = { workspace = true }
+dirs = { workspace = true }
+ratatui = { workspace = true }
+tui-input = { workspace = true }
+rand = { workspace = true }
+chrono = { workspace = true }
+unicode-width = { workspace = true }
+reqwest = { workspace = true }
+arboard = { workspace = true }
+axum = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
+futures-util = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+tokio = { version = "1.35", features = ["rt-multi-thread", "macros", "process", "time", "io-std", "sync", "net", "fs", "windows-sys"] }

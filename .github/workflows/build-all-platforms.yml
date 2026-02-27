@@ -1,26 +1,29 @@
-name: Build All Platforms
+name: Build and Release
 
 on:
   push:
-    branches: [main]
     tags:
-      - 'v*'
+      - "v*"
   workflow_dispatch:
 
-# IMPORTANT: Grant write permissions for releases
 permissions:
   contents: write
-  actions: read
-
-env:
-  MPV_VERSION: "20260207"
-  MPV_COMMIT: "git-9ccd889"
-  FFMPEG_COMMIT: "git-c352a9ab0"
 
 jobs:
-  # ============================================================================
-  # WINDOWS BUILD
-  # ============================================================================
+  build-r4dio-windows:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - run: cargo install cargo-xwin
+      - run: cargo xwin build --release --target x86_64-pc-windows-msvc -p radio-tui --bin r4dio
+      - uses: actions/upload-artifact@v4
+        with:
+          name: r4dio-windows
+          path: target/x86_64-pc-windows-msvc/release/r4dio.exe
+
   build-vibra-windows:
     runs-on: windows-2022
     steps:
@@ -37,59 +40,49 @@ jobs:
           name: vibra-windows
           path: build/cli/Release/vibra.exe
 
-  build-radio-tui-windows:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-msvc
-      - run: cargo install cargo-xwin
-      - run: cargo xwin build --target x86_64-pc-windows-msvc --release
-      - uses: actions/upload-artifact@v4
-        with:
-          name: radio-tui-windows
-          path: |
-            target/x86_64-pc-windows-msvc/release/radio-tui.exe
-            target/x86_64-pc-windows-msvc/release/radio-daemon.exe
-
   package-windows:
-    needs: [build-vibra-windows, build-radio-tui-windows]
+    needs: [build-r4dio-windows, build-vibra-windows]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: mkdir -p dist/radio-tui-windows
-      
+      - run: sudo apt-get update && sudo apt-get install -y p7zip-full jq zip
+      - uses: actions/download-artifact@v4
+        with:
+          name: r4dio-windows
+          path: dist/r4dio-windows-x86_64/
       - uses: actions/download-artifact@v4
         with:
           name: vibra-windows
-          path: dist/radio-tui-windows/
-      
-      - uses: actions/download-artifact@v4
-        with:
-          name: radio-tui-windows
-          path: dist/radio-tui-windows/
-      
-      - name: Download MPV
+          path: dist/r4dio-windows-x86_64/
+      - name: Bundle mpv + ffmpeg
         run: |
-          cd dist/radio-tui-windows
-          # Download MPV - try both URL formats
-          wget -q "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/${{ env.MPV_VERSION }}/mpv-x86_64-${{ env.MPV_VERSION }}-${{ env.MPV_COMMIT }}.7z" -O mpv.7z || \
-            wget -q "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/${{ env.MPV_VERSION }}/mpv-x86_64-${{ env.MPV_COMMIT }}-${{ env.MPV_VERSION }}.7z" -O mpv.7z
-          7z x mpv.7z -y && rm mpv.7z
-          # Move files from subdirectory if present
-          if ls -d mpv-x86_64*/ 1> /dev/null 2>&1; then
-            mv mpv-x86_64*/* . && rm -rf mpv-x86_64*/
-          fi
-      
-      - run: |
-          cp songs.vds.template dist/radio-tui-windows/songs.vds
-          cp stations.toml dist/radio-tui-windows/
-      
-      - run: |
-          cat > dist/radio-tui-windows/config.toml << 'EOF'
-          # Radio TUI Configuration (Windows Portable)
-          [daemon]
+          set -euo pipefail
+          mkdir -p /tmp/mpv-win /tmp/ffmpeg-win
+          API_JSON="$(curl -fsSL https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest)"
+          MPV_URL="$(echo "$API_JSON" | jq -r '.assets[] | select(.name|test("^mpv-x86_64-.*\\.7z$")) | .browser_download_url' | head -n1)"
+          FFMPEG_URL="$(echo "$API_JSON" | jq -r '.assets[] | select(.name|test("^ffmpeg-x86_64(-v3)?-git-.*\\.7z$")) | .browser_download_url' | head -n1)"
+          test -n "$MPV_URL"
+          test -n "$FFMPEG_URL"
+          curl -fsSL "$MPV_URL" -o /tmp/mpv.7z
+          curl -fsSL "$FFMPEG_URL" -o /tmp/ffmpeg.7z
+          7z x /tmp/mpv.7z -o/tmp/mpv-win -y >/dev/null
+          7z x /tmp/ffmpeg.7z -o/tmp/ffmpeg-win -y >/dev/null
+          MPV_EXE="$(find /tmp/mpv-win -type f -name mpv.exe | head -n1)"
+          FFMPEG_EXE="$(find /tmp/ffmpeg-win -type f -name ffmpeg.exe | head -n1)"
+          FFPROBE_EXE="$(find /tmp/ffmpeg-win -type f -name ffprobe.exe | head -n1)"
+          test -f "$MPV_EXE"
+          test -f "$FFMPEG_EXE"
+          test -f "$FFPROBE_EXE"
+          cp "$MPV_EXE" dist/r4dio-windows-x86_64/mpv.exe
+          cp "$FFMPEG_EXE" dist/r4dio-windows-x86_64/ffmpeg.exe
+          cp "$FFPROBE_EXE" dist/r4dio-windows-x86_64/ffprobe.exe
+          MPV_DIR="$(dirname "$MPV_EXE")"
+          find "$MPV_DIR" -maxdepth 1 -type f -name '*.dll' -exec cp {} dist/r4dio-windows-x86_64/ \;
+      - name: Add runtime files
+        run: |
+          cp stations.toml dist/r4dio-windows-x86_64/
+          cp songs.vds.template dist/r4dio-windows-x86_64/songs.vds
+          cat > dist/r4dio-windows-x86_64/config.toml << 'EOF'
           [http]
           enabled = true
           bind_address = "127.0.0.1"
@@ -100,243 +93,193 @@ jobs:
           stations_toml = "stations.toml"
           m3u_url = "https://raw.githubusercontent.com/ja-mf/radio-curation/refs/heads/main/jamf_radios.m3u"
           EOF
-      
-      - run: |
-          cat > dist/radio-tui-windows/README.txt << 'EOF'
-          Radio TUI for Windows
-          =======================
-          
-          A terminal-based internet radio player.
-          
-          USAGE
-          -----
-          1. Run radio.exe
-          2. Navigate with arrow keys
-          3. Enter to play, Space to pause
-          4. Press 'r' to recognize songs
-          5. Press 'q' to quit
-          
-          FILES
-          -----
-          - radio.exe, radio-daemon.exe, mpv.exe, vibra.exe
-          - stations.toml, config.toml, songs.vds
-          
-          REQUIREMENTS
-          ------------
-          - Windows 10/11
-          - No installation required
+          cat > dist/r4dio-windows-x86_64/README.txt << 'EOF'
+          r4dio (Windows x86_64)
+          ---------------------
+          1) Unzip this folder.
+          2) Run r4dio.exe.
+          3) Enter plays, Space pauses, q quits, i runs recognition.
+
+          Bundled: mpv, ffmpeg, ffprobe, vibra, stations.toml, songs.vds
           EOF
-      
-      - run: |
-          cat > dist/radio-tui-windows/radio.bat << 'EOF'
-          @echo off
-          cd /d "%~dp0"
-          "%~dp0radio.exe"
-          EOF
-      
-      - run: cd dist && zip -r radio-tui-windows.zip radio-tui-windows/
-      
+          (cd dist && zip -r r4dio-windows-x86_64.zip r4dio-windows-x86_64 >/dev/null)
       - uses: actions/upload-artifact@v4
         with:
-          name: radio-tui-windows-complete
-          path: dist/radio-tui-windows.zip
+          name: r4dio-windows-package
+          path: dist/r4dio-windows-x86_64.zip
 
-  # ============================================================================
-  # LINUX BUILD
-  # ============================================================================
-  build-radio-tui-linux:
+  build-r4dio-linux:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo build --release
+      - run: cargo build --release -p radio-tui --bin r4dio
       - uses: actions/upload-artifact@v4
         with:
-          name: radio-tui-linux
-          path: |
-            target/release/radio-tui
-            target/release/radio-daemon
+          name: r4dio-linux
+          path: target/release/r4dio
 
-  package-linux:
-    needs: [build-radio-tui-linux]
+  build-vibra-linux:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: mkdir -p dist/radio-tui-linux
-      
-      - uses: actions/download-artifact@v4
-        with:
-          name: radio-tui-linux
-          path: dist/radio-tui-linux/
-      
-      - run: |
-          chmod +x dist/radio-tui-linux/radio-tui
-          chmod +x dist/radio-tui-linux/radio-daemon
-          cp songs.vds.template dist/radio-tui-linux/songs.vds
-          cp stations.toml dist/radio-tui-linux/
-      
-      - run: |
-          cat > dist/radio-tui-linux/README.md << 'EOF'
-          # Radio TUI for Linux
-          
-          A terminal-based internet radio player.
-          
-          ## Installation
-          
-          1. Extract the archive
-          2. Ensure MPV is installed: `sudo apt install mpv` (or your package manager)
-          3. Run: `./radio-tui`
-          
-          ## Usage
-          
-          - Navigate with arrow keys
-          - Enter to play, Space to pause
-          - 'r' to recognize songs (requires vibra - build separately)
-          - 'q' to quit
-          
-          ## Requirements
-          
-          - Linux with terminal
-          - MPV installed system-wide
-          - Optional: Vibra for song recognition (https://github.com/BayernMuller/vibra)
-          EOF
-      
-      - run: |
-          cat > dist/radio-tui-linux/install.sh << 'EOF'
-          #!/bin/bash
-          # Install radio-tui to /usr/local/bin
-          
-          set -e
-          
-          echo "Installing Radio TUI..."
-          sudo cp radio-tui radio-daemon /usr/local/bin/
-          echo "Creating config directory..."
-          mkdir -p ~/.config/radio
-          cp stations.toml ~/.config/radio/ 2>/dev/null || true
-          echo "Done! Run: radio-tui"
-          EOF
-          chmod +x dist/radio-tui-linux/install.sh
-      
-      - run: cd dist && tar czf radio-tui-linux.tar.gz radio-tui-linux/
-      
-      - uses: actions/upload-artifact@v4
-        with:
-          name: radio-tui-linux-complete
-          path: dist/radio-tui-linux.tar.gz
-
-  # ============================================================================
-  # MACOS INTEL BUILD (x86_64)
-  # ============================================================================
-  build-vibra-macos-intel:
-    runs-on: macos-14  # Intel runner
     steps:
       - uses: actions/checkout@v4
         with:
           repository: BayernMuller/vibra
           ref: main
-      
-      - name: Install dependencies
-        run: brew install cmake fftw pkg-config
-      
-      - name: Build vibra for Intel
+      - run: sudo apt-get update && sudo apt-get install -y cmake build-essential pkg-config libcurl4-openssl-dev libfftw3-dev
+      - run: cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --config Release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vibra-linux
+          path: build/cli/vibra
+
+  package-linux:
+    needs: [build-r4dio-linux, build-vibra-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y jq xz-utils tar
+      - uses: actions/download-artifact@v4
+        with:
+          name: r4dio-linux
+          path: dist/r4dio-linux-x86_64/
+      - uses: actions/download-artifact@v4
+        with:
+          name: vibra-linux
+          path: dist/r4dio-linux-x86_64/
+      - name: Bundle mpv + ffmpeg
         run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=x86_64
-          cmake --build build --config Release
-      
+          set -euo pipefail
+          mkdir -p /tmp/linux-bundle
+          MPV_URL="$(curl -fsSL https://api.github.com/repos/ivan-hc/MPV-appimage/releases/latest | jq -r '.assets[] | select(.name|endswith(".AppImage")) | .browser_download_url' | head -n1)"
+          FFMPEG_URL="$(curl -fsSL https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/latest | jq -r '.assets[] | select(.name=="ffmpeg-master-latest-linux64-gpl.tar.xz") | .browser_download_url')"
+          test -n "$MPV_URL"
+          test -n "$FFMPEG_URL"
+          curl -fsSL "$MPV_URL" -o dist/r4dio-linux-x86_64/mpv
+          chmod +x dist/r4dio-linux-x86_64/mpv
+          curl -fsSL "$FFMPEG_URL" -o /tmp/ffmpeg-linux.tar.xz
+          tar -xf /tmp/ffmpeg-linux.tar.xz -C /tmp/linux-bundle
+          FFMPEG_EXE="$(find /tmp/linux-bundle -type f -path '*ffmpeg-master-latest-linux64-gpl*/bin/ffmpeg' | head -n1)"
+          FFPROBE_EXE="$(find /tmp/linux-bundle -type f -path '*ffmpeg-master-latest-linux64-gpl*/bin/ffprobe' | head -n1)"
+          test -f "$FFMPEG_EXE"
+          test -f "$FFPROBE_EXE"
+          cp "$FFMPEG_EXE" dist/r4dio-linux-x86_64/ffmpeg
+          cp "$FFPROBE_EXE" dist/r4dio-linux-x86_64/ffprobe
+          chmod +x dist/r4dio-linux-x86_64/ffmpeg dist/r4dio-linux-x86_64/ffprobe
+      - name: Add runtime files
+        run: |
+          chmod +x dist/r4dio-linux-x86_64/r4dio dist/r4dio-linux-x86_64/vibra
+          cp stations.toml dist/r4dio-linux-x86_64/
+          cp songs.vds.template dist/r4dio-linux-x86_64/songs.vds
+          cat > dist/r4dio-linux-x86_64/config.toml << 'EOF'
+          [http]
+          enabled = true
+          bind_address = "127.0.0.1"
+          port = 8989
+          [mpv]
+          default_volume = 0.5
+          [stations]
+          stations_toml = "stations.toml"
+          m3u_url = "https://raw.githubusercontent.com/ja-mf/radio-curation/refs/heads/main/jamf_radios.m3u"
+          EOF
+          cat > dist/r4dio-linux-x86_64/README.txt << 'EOF'
+          r4dio (Linux x86_64)
+          -------------------
+          1) Extract tarball.
+          2) Run ./r4dio
+          3) Enter plays, Space pauses, q quits, i runs recognition.
+
+          Bundled: mpv, ffmpeg, ffprobe, vibra, stations.toml, songs.vds
+          EOF
+          (cd dist && tar czf r4dio-linux-x86_64.tar.gz r4dio-linux-x86_64)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: r4dio-linux-package
+          path: dist/r4dio-linux-x86_64.tar.gz
+
+  build-r4dio-macos-intel:
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
+      - run: cargo build --release --target x86_64-apple-darwin -p radio-tui --bin r4dio
+      - uses: actions/upload-artifact@v4
+        with:
+          name: r4dio-macos-intel
+          path: target/x86_64-apple-darwin/release/r4dio
+
+  build-vibra-macos-intel:
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: BayernMuller/vibra
+          ref: main
+      - run: brew install cmake fftw pkg-config
+      - run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=x86_64 && cmake --build build --config Release
       - uses: actions/upload-artifact@v4
         with:
           name: vibra-macos-intel
           path: build/cli/vibra
 
-  build-radio-tui-macos-intel:
-    runs-on: macos-14  # Intel runner
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - run: |
-          rustup target add x86_64-apple-darwin
-          cargo build --release --target x86_64-apple-darwin
-      - uses: actions/upload-artifact@v4
-        with:
-          name: radio-tui-macos-intel
-          path: |
-            target/x86_64-apple-darwin/release/radio-tui
-            target/x86_64-apple-darwin/release/radio-daemon
-
   package-macos-intel:
-    needs: [build-radio-tui-macos-intel]
-    runs-on: macos-14
+    needs: [build-r4dio-macos-intel, build-vibra-macos-intel]
+    runs-on: macos-13
     steps:
       - uses: actions/checkout@v4
-      - run: mkdir -p dist/Radio\ TUI.app/Contents/MacOS dist/artifacts
-      
-      # Note: Vibra for Intel is not included (cross-compilation issues with FFTW)
-      # Users can install vibra separately if needed
-      
+      - run: brew install jq
       - uses: actions/download-artifact@v4
         with:
-          name: radio-tui-macos-intel
-          path: dist/artifacts/radio/
-      
-      - name: Setup app bundle
+          name: r4dio-macos-intel
+          path: dist/r4dio-macos-x86_64/
+      - uses: actions/download-artifact@v4
+        with:
+          name: vibra-macos-intel
+          path: dist/r4dio-macos-x86_64/
+      - name: Bundle mpv + ffmpeg
         run: |
-          # Find and move binaries (artifacts preserve directory structure)
-          find dist/artifacts -name "radio-tui" -type f -exec cp {} dist/Radio\ TUI.app/Contents/MacOS/ \;
-          find dist/artifacts -name "radio-daemon" -type f -exec cp {} dist/Radio\ TUI.app/Contents/MacOS/ \;
-          
-          # Make binaries executable
-          chmod +x dist/Radio\ TUI.app/Contents/MacOS/*
-          
-          # Copy config files
-          cp songs.vds.template dist/Radio\ TUI.app/Contents/MacOS/songs.vds
-          cp stations.toml dist/Radio\ TUI.app/Contents/MacOS/
-          
-          # Create Info.plist
-          cat > dist/Radio\ TUI.app/Contents/Info.plist << 'EOF'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-              <key>CFBundleName</key>
-              <string>Radio TUI</string>
-              <key>CFBundleDisplayName</key>
-              <string>Radio TUI</string>
-              <key>CFBundleIdentifier</key>
-              <string>com.jamf.radio-tui</string>
-              <key>CFBundleVersion</key>
-              <string>1.0</string>
-              <key>CFBundlePackageType</key>
-              <string>APPL</string>
-              <key>CFBundleExecutable</key>
-              <string>launcher</string>
-              <key>LSUIElement</key>
-              <false/>
-          </dict>
-          </plist>
-          EOF
-          
-          # Create FIXED launcher script (no escaped quotes!)
-          cat > dist/Radio\ TUI.app/Contents/MacOS/launcher << 'SCRIPT'
+          set -euo pipefail
+          MPV_URL="$(curl -fsSL https://api.github.com/repos/pashynskykh/mpv-macos/releases/latest | jq -r '.assets[] | select(.name|test("x86_64\\.dmg$")) | .browser_download_url' | head -n1)"
+          FFMPEG_URL="$(curl -fsSL https://api.github.com/repos/ColorsWind/FFmpeg-macOS/releases/latest | jq -r '.assets[] | select(.name|test("OSX-x86_64\\.zip$")) | .browser_download_url' | head -n1)"
+          test -n "$MPV_URL"
+          test -n "$FFMPEG_URL"
+          curl -fsSL "$MPV_URL" -o /tmp/mpv-macos-intel.dmg
+          hdiutil attach /tmp/mpv-macos-intel.dmg -nobrowse -mountpoint /tmp/mpv-mount-intel
+          cp -R /tmp/mpv-mount-intel/mpv.app dist/r4dio-macos-x86_64/mpv.app
+          hdiutil detach /tmp/mpv-mount-intel
+          cat > dist/r4dio-macos-x86_64/mpv << 'EOF'
           #!/bin/bash
-          # Launcher script that opens Terminal and runs radio-tui
-          
-          # Get the directory where this script is located
-          APP_DIR="$(cd "$(dirname "$0")" && pwd)"
-          
-          # Open Terminal and run radio-tui
-          osascript << APPLESCRIPT
-          tell application "Terminal"
-              activate
-              do script "cd '$APP_DIR' && ./radio-tui; exit"
-          end tell
-          APPLESCRIPT
-          SCRIPT
-          chmod +x dist/Radio\ TUI.app/Contents/MacOS/launcher
-          
-          # Create config.toml
-          cat > dist/Radio\ TUI.app/Contents/MacOS/config.toml << 'EOF'
-          # Radio TUI Configuration (macOS)
-          [daemon]
+          DIR="$(cd "$(dirname "$0")" && pwd)"
+          exec "$DIR/mpv.app/Contents/MacOS/mpv" "$@"
+          EOF
+          chmod +x dist/r4dio-macos-x86_64/mpv
+          curl -fsSL "$FFMPEG_URL" -o /tmp/ffmpeg-macos-intel.zip
+          unzip -q /tmp/ffmpeg-macos-intel.zip -d /tmp/ffmpeg-macos-intel
+          FF_ROOT="$(dirname "$(dirname "$(find /tmp/ffmpeg-macos-intel -type f -path '*/bin/ffmpeg' | head -n1)")")"
+          test -d "$FF_ROOT"
+          mkdir -p dist/r4dio-macos-x86_64/ffmpeg-dist
+          cp -R "$FF_ROOT"/. dist/r4dio-macos-x86_64/ffmpeg-dist/
+          cat > dist/r4dio-macos-x86_64/ffmpeg << 'EOF'
+          #!/bin/bash
+          DIR="$(cd "$(dirname "$0")" && pwd)"
+          export DYLD_LIBRARY_PATH="$DIR/ffmpeg-dist/lib:${DYLD_LIBRARY_PATH:-}"
+          exec "$DIR/ffmpeg-dist/bin/ffmpeg" "$@"
+          EOF
+          cat > dist/r4dio-macos-x86_64/ffprobe << 'EOF'
+          #!/bin/bash
+          DIR="$(cd "$(dirname "$0")" && pwd)"
+          export DYLD_LIBRARY_PATH="$DIR/ffmpeg-dist/lib:${DYLD_LIBRARY_PATH:-}"
+          exec "$DIR/ffmpeg-dist/bin/ffprobe" "$@"
+          EOF
+          chmod +x dist/r4dio-macos-x86_64/ffmpeg dist/r4dio-macos-x86_64/ffprobe
+      - name: Add runtime files
+        run: |
+          chmod +x dist/r4dio-macos-x86_64/r4dio dist/r4dio-macos-x86_64/vibra
+          cp stations.toml dist/r4dio-macos-x86_64/
+          cp songs.vds.template dist/r4dio-macos-x86_64/songs.vds
+          cat > dist/r4dio-macos-x86_64/config.toml << 'EOF'
           [http]
           enabled = true
           bind_address = "127.0.0.1"
@@ -347,175 +290,104 @@ jobs:
           stations_toml = "stations.toml"
           m3u_url = "https://raw.githubusercontent.com/ja-mf/radio-curation/refs/heads/main/jamf_radios.m3u"
           EOF
-      
-      - name: Create DMG with Applications shortcut
-        run: |
-          # Create a temporary directory for DMG contents
-          mkdir -p dist/dmg-contents
-          
-          # Copy the app
-          cp -r dist/Radio\ TUI.app dist/dmg-contents/
-          
-          # Create Applications folder alias
-          ln -s /Applications dist/dmg-contents/Applications
-          
-          # Create README
-          cat > dist/dmg-contents/README.txt << 'EOF'
-          Radio TUI for macOS (Intel)
-          ============================
-          
-          INSTALLATION
-          ------------
-          Drag Radio TUI.app to the Applications folder
-          
-          USAGE
-          -----
-          1. Double-click Radio TUI.app (opens in Terminal)
-          2. Navigate with arrow keys
-          3. Enter to play, Space to pause
-          4. 'r' to recognize songs
-          5. 'q' to quit
-          
-          REQUIREMENTS
-          ------------
-          - macOS 11.0 or later (Intel)
-          - MPV installed: brew install mpv
-          
-          TROUBLESHOOTING
-          ---------------
-          If "Radio TUI can't be opened":
-          Right-click the app and select "Open"
+          cat > dist/r4dio-macos-x86_64/README.txt << 'EOF'
+          r4dio (macOS x86_64)
+          --------------------
+          1) Unzip this folder.
+          2) Run ./r4dio
+          3) Enter plays, Space pauses, q quits, i runs recognition.
+
+          Bundled: mpv.app wrapper, ffmpeg, ffprobe, vibra, stations.toml, songs.vds
           EOF
-          
-          # Create the DMG
-          hdiutil create \
-            -volname "Radio TUI (Intel)" \
-            -srcfolder dist/dmg-contents \
-            -ov \
-            -format UDZO \
-            dist/Radio-TUI-macOS-Intel.dmg
-      
+          (cd dist && zip -r r4dio-macos-x86_64.zip r4dio-macos-x86_64 >/dev/null)
       - uses: actions/upload-artifact@v4
         with:
-          name: radio-tui-macos-intel-complete
-          path: dist/Radio-TUI-macOS-Intel.dmg
+          name: r4dio-macos-x86_64-package
+          path: dist/r4dio-macos-x86_64.zip
 
-  # ============================================================================
-  # MACOS APPLE SILICON BUILD (arm64)
-  # ============================================================================
+  build-r4dio-macos-arm:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+      - run: cargo build --release --target aarch64-apple-darwin -p radio-tui --bin r4dio
+      - uses: actions/upload-artifact@v4
+        with:
+          name: r4dio-macos-arm
+          path: target/aarch64-apple-darwin/release/r4dio
+
   build-vibra-macos-arm:
-    runs-on: macos-14  # Apple Silicon runner
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
         with:
           repository: BayernMuller/vibra
           ref: main
-      
-      - name: Install dependencies
-        run: brew install cmake fftw pkg-config
-      
-      - name: Build vibra for Apple Silicon
-        run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64
-          cmake --build build --config Release
-      
+      - run: brew install cmake fftw pkg-config
+      - run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64 && cmake --build build --config Release
       - uses: actions/upload-artifact@v4
         with:
           name: vibra-macos-arm
           path: build/cli/vibra
 
-  build-radio-tui-macos-arm:
-    runs-on: macos-14  # Apple Silicon runner
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - run: |
-          rustup target add aarch64-apple-darwin
-          cargo build --release --target aarch64-apple-darwin
-      - uses: actions/upload-artifact@v4
-        with:
-          name: radio-tui-macos-arm
-          path: |
-            target/aarch64-apple-darwin/release/radio-tui
-            target/aarch64-apple-darwin/release/radio-daemon
-
   package-macos-arm:
-    needs: [build-vibra-macos-arm, build-radio-tui-macos-arm]
+    needs: [build-r4dio-macos-arm, build-vibra-macos-arm]
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
-      - run: mkdir -p dist/Radio\ TUI.app/Contents/MacOS dist/artifacts
-      
+      - run: brew install jq
+      - uses: actions/download-artifact@v4
+        with:
+          name: r4dio-macos-arm
+          path: dist/r4dio-macos-arm64/
       - uses: actions/download-artifact@v4
         with:
           name: vibra-macos-arm
-          path: dist/artifacts/vibra/
-      
-      - uses: actions/download-artifact@v4
-        with:
-          name: radio-tui-macos-arm
-          path: dist/artifacts/radio/
-      
-      - name: Setup app bundle
+          path: dist/r4dio-macos-arm64/
+      - name: Bundle mpv + ffmpeg
         run: |
-          # Find and move binaries (artifacts preserve directory structure)
-          find dist/artifacts -name "vibra" -type f -exec cp {} dist/Radio\ TUI.app/Contents/MacOS/ \;
-          find dist/artifacts -name "radio-tui" -type f -exec cp {} dist/Radio\ TUI.app/Contents/MacOS/ \;
-          find dist/artifacts -name "radio-daemon" -type f -exec cp {} dist/Radio\ TUI.app/Contents/MacOS/ \;
-          
-          # Make binaries executable
-          chmod +x dist/Radio\ TUI.app/Contents/MacOS/*
-          
-          # Copy config files
-          cp songs.vds.template dist/Radio\ TUI.app/Contents/MacOS/songs.vds
-          cp stations.toml dist/Radio\ TUI.app/Contents/MacOS/
-          
-          # Create Info.plist
-          cat > dist/Radio\ TUI.app/Contents/Info.plist << 'EOF'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-              <key>CFBundleName</key>
-              <string>Radio TUI</string>
-              <key>CFBundleDisplayName</key>
-              <string>Radio TUI</string>
-              <key>CFBundleIdentifier</key>
-              <string>com.jamf.radio-tui</string>
-              <key>CFBundleVersion</key>
-              <string>1.0</string>
-              <key>CFBundlePackageType</key>
-              <string>APPL</string>
-              <key>CFBundleExecutable</key>
-              <string>launcher</string>
-              <key>LSUIElement</key>
-              <false/>
-          </dict>
-          </plist>
-          EOF
-          
-          # Create FIXED launcher script
-          cat > dist/Radio\ TUI.app/Contents/MacOS/launcher << 'SCRIPT'
+          set -euo pipefail
+          MPV_URL="$(curl -fsSL https://api.github.com/repos/pashynskykh/mpv-macos/releases/latest | jq -r '.assets[] | select(.name|test("arm64\\.dmg$")) | .browser_download_url' | head -n1)"
+          FFMPEG_URL="$(curl -fsSL https://api.github.com/repos/ColorsWind/FFmpeg-macOS/releases/latest | jq -r '.assets[] | select(.name|test("OSX-arm64\\.zip$")) | .browser_download_url' | head -n1)"
+          test -n "$MPV_URL"
+          test -n "$FFMPEG_URL"
+          curl -fsSL "$MPV_URL" -o /tmp/mpv-macos-arm.dmg
+          hdiutil attach /tmp/mpv-macos-arm.dmg -nobrowse -mountpoint /tmp/mpv-mount-arm
+          cp -R /tmp/mpv-mount-arm/mpv.app dist/r4dio-macos-arm64/mpv.app
+          hdiutil detach /tmp/mpv-mount-arm
+          cat > dist/r4dio-macos-arm64/mpv << 'EOF'
           #!/bin/bash
-          # Launcher script that opens Terminal and runs radio-tui
-          
-          # Get the directory where this script is located
-          APP_DIR="$(cd "$(dirname "$0")" && pwd)"
-          
-          # Open Terminal and run radio-tui
-          osascript << APPLESCRIPT
-          tell application "Terminal"
-              activate
-              do script "cd '$APP_DIR' && ./radio-tui; exit"
-          end tell
-          APPLESCRIPT
-          SCRIPT
-          chmod +x dist/Radio\ TUI.app/Contents/MacOS/launcher
-          
-          # Create config.toml
-          cat > dist/Radio\ TUI.app/Contents/MacOS/config.toml << 'EOF'
-          # Radio TUI Configuration (macOS)
-          [daemon]
+          DIR="$(cd "$(dirname "$0")" && pwd)"
+          exec "$DIR/mpv.app/Contents/MacOS/mpv" "$@"
+          EOF
+          chmod +x dist/r4dio-macos-arm64/mpv
+          curl -fsSL "$FFMPEG_URL" -o /tmp/ffmpeg-macos-arm.zip
+          unzip -q /tmp/ffmpeg-macos-arm.zip -d /tmp/ffmpeg-macos-arm
+          FF_ROOT="$(dirname "$(dirname "$(find /tmp/ffmpeg-macos-arm -type f -path '*/bin/ffmpeg' | head -n1)")")"
+          test -d "$FF_ROOT"
+          mkdir -p dist/r4dio-macos-arm64/ffmpeg-dist
+          cp -R "$FF_ROOT"/. dist/r4dio-macos-arm64/ffmpeg-dist/
+          cat > dist/r4dio-macos-arm64/ffmpeg << 'EOF'
+          #!/bin/bash
+          DIR="$(cd "$(dirname "$0")" && pwd)"
+          export DYLD_LIBRARY_PATH="$DIR/ffmpeg-dist/lib:${DYLD_LIBRARY_PATH:-}"
+          exec "$DIR/ffmpeg-dist/bin/ffmpeg" "$@"
+          EOF
+          cat > dist/r4dio-macos-arm64/ffprobe << 'EOF'
+          #!/bin/bash
+          DIR="$(cd "$(dirname "$0")" && pwd)"
+          export DYLD_LIBRARY_PATH="$DIR/ffmpeg-dist/lib:${DYLD_LIBRARY_PATH:-}"
+          exec "$DIR/ffmpeg-dist/bin/ffprobe" "$@"
+          EOF
+          chmod +x dist/r4dio-macos-arm64/ffmpeg dist/r4dio-macos-arm64/ffprobe
+      - name: Add runtime files
+        run: |
+          chmod +x dist/r4dio-macos-arm64/r4dio dist/r4dio-macos-arm64/vibra
+          cp stations.toml dist/r4dio-macos-arm64/
+          cp songs.vds.template dist/r4dio-macos-arm64/songs.vds
+          cat > dist/r4dio-macos-arm64/config.toml << 'EOF'
           [http]
           enabled = true
           bind_address = "127.0.0.1"
@@ -526,102 +398,53 @@ jobs:
           stations_toml = "stations.toml"
           m3u_url = "https://raw.githubusercontent.com/ja-mf/radio-curation/refs/heads/main/jamf_radios.m3u"
           EOF
-      
-      - name: Create DMG with Applications shortcut
-        run: |
-          # Create a temporary directory for DMG contents
-          mkdir -p dist/dmg-contents
-          
-          # Copy the app
-          cp -r dist/Radio\ TUI.app dist/dmg-contents/
-          
-          # Create Applications folder alias
-          ln -s /Applications dist/dmg-contents/Applications
-          
-          # Create README
-          cat > dist/dmg-contents/README.txt << 'EOF'
-          Radio TUI for macOS (Apple Silicon)
-          =====================================
-          
-          INSTALLATION
-          ------------
-          Drag Radio TUI.app to the Applications folder
-          
-          USAGE
-          -----
-          1. Double-click Radio TUI.app (opens in Terminal)
-          2. Navigate with arrow keys
-          3. Enter to play, Space to pause
-          4. 'r' to recognize songs
-          5. 'q' to quit
-          
-          REQUIREMENTS
-          ------------
-          - macOS 11.0 or later (Apple Silicon/M1/M2/M3)
-          - MPV installed: brew install mpv
-          
-          TROUBLESHOOTING
-          ---------------
-          If "Radio TUI can't be opened":
-          Right-click the app and select "Open"
+          cat > dist/r4dio-macos-arm64/README.txt << 'EOF'
+          r4dio (macOS arm64)
+          -------------------
+          1) Unzip this folder.
+          2) Run ./r4dio
+          3) Enter plays, Space pauses, q quits, i runs recognition.
+
+          Bundled: mpv.app wrapper, ffmpeg, ffprobe, vibra, stations.toml, songs.vds
           EOF
-          
-          # Create the DMG
-          hdiutil create \
-            -volname "Radio TUI (Apple Silicon)" \
-            -srcfolder dist/dmg-contents \
-            -ov \
-            -format UDZO \
-            dist/Radio-TUI-macOS-AppleSilicon.dmg
-      
+          (cd dist && zip -r r4dio-macos-arm64.zip r4dio-macos-arm64 >/dev/null)
       - uses: actions/upload-artifact@v4
         with:
-          name: radio-tui-macos-arm-complete
-          path: dist/Radio-TUI-macOS-AppleSilicon.dmg
+          name: r4dio-macos-arm64-package
+          path: dist/r4dio-macos-arm64.zip
 
-  # ============================================================================
-  # CREATE RELEASE
-  # ============================================================================
   release:
-    needs: [package-windows, package-linux, package-macos-intel, package-macos-arm]
+    needs:
+      - package-windows
+      - package-linux
+      - package-macos-intel
+      - package-macos-arm
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
       - uses: actions/download-artifact@v4
-      
       - uses: softprops/action-gh-release@v1
         with:
           files: |
-            radio-tui-windows-complete/radio-tui-windows.zip
-            radio-tui-linux-complete/radio-tui-linux.tar.gz
-            radio-tui-macos-intel-complete/Radio-TUI-macOS-Intel.dmg
-            radio-tui-macos-arm-complete/Radio-TUI-macOS-AppleSilicon.dmg
+            r4dio-windows-package/r4dio-windows-x86_64.zip
+            r4dio-linux-package/r4dio-linux-x86_64.tar.gz
+            r4dio-macos-x86_64-package/r4dio-macos-x86_64.zip
+            r4dio-macos-arm64-package/r4dio-macos-arm64.zip
           body: |
-            Radio TUI - Terminal Radio Player
-            
-            ## Downloads
-            
-            ### Windows
-            - `radio-tui-windows.zip` - Extract and run `radio.exe`
-            
-            ### Linux
-            - `radio-tui-linux.tar.gz` - Extract and run `./radio-tui`
-            
-            ### macOS
-            - **Intel Macs**: `Radio-TUI-macOS-Intel.dmg` - Mount and copy to Applications
-            - **Apple Silicon (M1/M2/M3)**: `Radio-TUI-macOS-AppleSilicon.dmg` - Mount and copy to Applications
-            
-            ## Features
-            - Terminal-based radio player
-            - MPV backend for audio playback
-            - Vibra integration for song recognition (Windows/macOS)
-            - Portable - no installation required (Windows)
-            
-            ## Quick Start
-            1. Launch the application
-            2. Navigate stations with arrow keys
-            3. Enter to play, Space to pause
-            4. 'r' to recognize and save songs
-            5. 'q' to quit
+            r4dio v1.0
+
+            Downloads:
+            - Windows: r4dio-windows-x86_64.zip
+            - Linux: r4dio-linux-x86_64.tar.gz
+            - macOS Intel: r4dio-macos-x86_64.zip
+            - macOS Apple Silicon: r4dio-macos-arm64.zip
+
+            Each archive includes:
+            - r4dio
+            - mpv
+            - ffmpeg + ffprobe
+            - vibra
+            - stations.toml (current repo version)
+            - songs.vds (empty template)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,41 @@
+# Radio TUI Configuration File
+# 
+# This is the default configuration file. Copy this to:
+#   - macOS/Linux: ~/.config/radio/config.toml
+#   - Windows portable: place beside radio-tui.exe (or in %APPDATA%\radio\config.toml)
+#
+# On first run, a default config will be created automatically.
+
+[daemon]
+# PID file for the daemon process
+pid_file = "~/.local/share/radio/daemon.pid"
+
+# State file for persisting daemon state
+state_file = "~/.local/share/radio/state.json"
+
+[http]
+# Enable the built-in HTTP server for remote control
+enabled = true
+
+# Bind address for the HTTP server
+bind_address = "127.0.0.1"
+
+# Port for the HTTP server
+port = 8989
+
+[mpv]
+# Default volume level (0.0 - 1.0)
+default_volume = 0.5
+
+[stations]
+# Path to the stations TOML file (local file)
+# On Windows portable, this can be a relative path like "stations.toml"
+stations_toml = "~/.config/radio/stations.toml"
+
+# URL for an M3U playlist (fallback if stations_toml doesn't exist)
+m3u_url = "https://raw.githubusercontent.com/ja-mf/radio-curation/refs/heads/main/jamf_radios.m3u"
+
+[paths]
+# Directory for NTS show downloads
+# On Windows portable, this can be a relative path like "downloads"
+downloads_dir = "~/nts-downloads"

@@ -13,7 +13,7 @@
 [[station]]
 name        = "Radio Valentin Letelier"
 url         = "https://streaming.prositel.cl/8068/stream"
-network     = "Universidad de Chile"
+network     = "Universidad de Valparaiso"
 description = "Cultural radio from the University of Chile — news, arts, academia"
 tags        = ["talk", "culture", "academia", "news", "spanish", "latin america"]
 city        = "Santiago"
@@ -382,7 +382,7 @@ country     = "Spain"
 
 [[station]]
 name        = "Juanito's local stream #1"
-url         = "http://localhost:11000/local1"
+url         = "https://radio.chungo.es:10000/uno"
 network     = "Juanito Local"
 description = "Local Icecast channel 1 from Juanito"
 tags        = ["local", "barcelona", "personal", "icecast"]
@@ -391,7 +391,7 @@ country     = "Spain"
 
 [[station]]
 name        = "Juanito's local stream #2"
-url         = "http://localhost:11000/local2"
+url         = "https://radio.chungo.es:10000/dos"
 network     = "Juanito Local"
 description = "Local Icecast channel 2 from Juanito"
 tags        = ["local", "barcelona", "personal", "icecast"]
@@ -400,7 +400,7 @@ country     = "Spain"
 
 [[station]]
 name        = "Juanito's local stream #3"
-url         = "http://localhost:11000/local3"
+url         = "https://radio.chungo.es:10000/tres"
 network     = "Juanito Local"
 description = "Analog Africa + South America + rarities"
 tags        = ["local", "barcelona", "world", "latin", "africa", "rarities", "icecast"]
@@ -409,7 +409,7 @@ country     = "Spain"
 
 [[station]]
 name        = "Juanito's local stream #4"
-url         = "http://localhost:11000/local4"
+url         = "https://radio.chungo.es:10000/cuatro"
 network     = "Juanito Local"
 description = "Classic FLACs + good classics"
 tags        = ["local", "barcelona", "classics", "flac", "icecast"]
