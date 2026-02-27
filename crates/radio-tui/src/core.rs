@@ -736,7 +736,7 @@ impl DaemonCore {
 pub async fn load_stations(config: &Config) -> anyhow::Result<Vec<Station>> {
     use std::path::PathBuf;
 
-    // 1. Local TOML (highest priority)
+    // 1. User config dir (highest priority — user's custom stations)
     let toml_path = &config.stations.stations_toml;
     if toml_path.exists() {
         match load_stations_from_toml(toml_path) {
@@ -745,6 +745,22 @@ pub async fn load_stations(config: &Config) -> anyhow::Result<Vec<Station>> {
                 return Ok(s);
             }
             Err(e) => warn!("Failed to parse TOML stations: {}", e),
+        }
+    }
+
+    // 1.5. stations.toml beside executable (bundled distribution)
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let beside = dir.join("stations.toml");
+            if beside.exists() {
+                match load_stations_from_toml(&beside) {
+                    Ok(s) => {
+                        info!("Loaded {} stations from beside-exe: {}", s.len(), beside.display());
+                        return Ok(s);
+                    }
+                    Err(e) => warn!("Failed to parse beside-exe stations.toml: {}", e),
+                }
+            }
         }
     }
 

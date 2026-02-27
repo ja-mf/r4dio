@@ -96,6 +96,7 @@ jobs:
         run: |
           cp stations.toml dist/r4dio-windows-x86_64/
           cp songs.vds.template dist/r4dio-windows-x86_64/songs.vds
+          cp LICENSE dist/r4dio-windows-x86_64/LICENSE.txt
           cat > dist/r4dio-windows-x86_64/config.toml << 'EOF'
           [http]
           enabled = true
@@ -186,6 +187,7 @@ jobs:
           chmod +x dist/r4dio-linux-x86_64/r4dio dist/r4dio-linux-x86_64/vibra
           cp stations.toml dist/r4dio-linux-x86_64/
           cp songs.vds.template dist/r4dio-linux-x86_64/songs.vds
+          cp LICENSE dist/r4dio-linux-x86_64/LICENSE
           cat > dist/r4dio-linux-x86_64/config.toml << 'EOF'
           [http]
           enabled = true
@@ -305,34 +307,83 @@ jobs:
           chmod +x dist/r4dio-macos-x86_64/ffmpeg dist/r4dio-macos-x86_64/ffprobe
       - name: Add runtime files
         run: |
-          chmod +x dist/r4dio-macos-x86_64/r4dio dist/r4dio-macos-x86_64/vibra
-          cp stations.toml dist/r4dio-macos-x86_64/
-          cp songs.vds.template dist/r4dio-macos-x86_64/songs.vds
-          cat > dist/r4dio-macos-x86_64/config.toml << 'EOF'
-          [http]
-          enabled = true
-          bind_address = "127.0.0.1"
-          port = 8989
-          [mpv]
-          default_volume = 0.5
-          [stations]
-          stations_toml = "stations.toml"
-          m3u_url = "https://raw.githubusercontent.com/ja-mf/radio-curation/refs/heads/main/jamf_radios.m3u"
+          set -euo pipefail
+          DIST="dist/r4dio-macos-x86_64"
+          BUNDLE="$DIST/r4dio.app/Contents/MacOS"
+          mkdir -p "$BUNDLE"
+          # Info.plist
+          cat > "$DIST/r4dio.app/Contents/Info.plist" << 'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleExecutable</key><string>r4dio</string>
+            <key>CFBundleIdentifier</key><string>com.ja-mf.r4dio</string>
+            <key>CFBundleName</key><string>r4dio</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleShortVersionString</key><string>1.0</string>
+            <key>CFBundleVersion</key><string>1</string>
+            <key>LSMinimumSystemVersion</key><string>10.14</string>
+            <key>NSHighResolutionCapable</key><true/>
+          </dict>
+          </plist>
+          PLIST
+          # Move binary into bundle as r4dio-bin; launcher script as r4dio
+          mv "$DIST/r4dio" "$BUNDLE/r4dio-bin"
+          chmod +x "$BUNDLE/r4dio-bin"
+          cat > "$BUNDLE/r4dio" << 'EOF'
+          #!/bin/bash
+          DIR="$(cd "$(dirname "$0")" && pwd)"
+          export PATH="$DIR:$PATH"
+          if [ -t 0 ]; then
+            exec "$DIR/r4dio-bin" "$@"
+          else
+            osascript -e "tell application \"Terminal\" to activate" \
+                      -e "tell application \"Terminal\" to do script \"'$DIR/r4dio-bin'\""
+          fi
           EOF
-          cat > dist/r4dio-macos-x86_64/README.txt << 'EOF'
-          r4dio (macOS x86_64)
-          --------------------
-          1) Unzip this folder.
-          2) Run ./r4dio
-          3) Enter plays, Space pauses, q quits, i runs recognition.
-
-          Bundled: mpv.app wrapper, ffmpeg, ffprobe, vibra, stations.toml, songs.vds
+          chmod +x "$BUNDLE/r4dio"
+          # Move support binaries into bundle
+          mv "$DIST/vibra" "$BUNDLE/vibra" && chmod +x "$BUNDLE/vibra"
+          mv "$DIST/mpv.app" "$BUNDLE/mpv.app"
+          cat > "$BUNDLE/mpv" << 'EOF'
+          #!/bin/bash
+          DIR="$(cd "$(dirname "$0")" && pwd)"
+          exec "$DIR/mpv.app/Contents/MacOS/mpv" "$@"
           EOF
-          (cd dist && zip -r r4dio-macos-x86_64.zip r4dio-macos-x86_64 >/dev/null)
+          chmod +x "$BUNDLE/mpv"
+          mv "$DIST/ffmpeg-dist" "$BUNDLE/ffmpeg-dist"
+          cat > "$BUNDLE/ffmpeg" << 'EOF'
+          #!/bin/bash
+          DIR="$(cd "$(dirname "$0")" && pwd)"
+          export DYLD_LIBRARY_PATH="$DIR/ffmpeg-dist/lib:${DYLD_LIBRARY_PATH:-}"
+          exec "$DIR/ffmpeg-dist/bin/ffmpeg" "$@"
+          EOF
+          cat > "$BUNDLE/ffprobe" << 'EOF'
+          #!/bin/bash
+          DIR="$(cd "$(dirname "$0")" && pwd)"
+          export DYLD_LIBRARY_PATH="$DIR/ffmpeg-dist/lib:${DYLD_LIBRARY_PATH:-}"
+          exec "$DIR/ffmpeg-dist/bin/ffprobe" "$@"
+          EOF
+          chmod +x "$BUNDLE/ffmpeg" "$BUNDLE/ffprobe"
+          # Remove stale wrapper scripts from dist root (now inside bundle)
+          rm -f "$DIST/mpv" "$DIST/ffmpeg" "$DIST/ffprobe"
+          # Runtime files inside bundle
+          cp stations.toml "$BUNDLE/stations.toml"
+          cp songs.vds.template "$BUNDLE/songs.vds"
+          cp LICENSE "$BUNDLE/LICENSE"
+          # Create DMG with Applications symlink for drag-to-install
+          mkdir -p /tmp/dmg-staging-intel
+          cp -R "$DIST/r4dio.app" /tmp/dmg-staging-intel/
+          ln -s /Applications /tmp/dmg-staging-intel/Applications
+          hdiutil create -volname "r4dio" \
+            -srcfolder /tmp/dmg-staging-intel \
+            -ov -format UDZO \
+            dist/r4dio-macos-x86_64.dmg
       - uses: actions/upload-artifact@v4
         with:
           name: r4dio-macos-x86_64-package
-          path: dist/r4dio-macos-x86_64.zip
+          path: dist/r4dio-macos-x86_64.dmg
 
   build-r4dio-macos-arm:
     runs-on: macos-14
@@ -413,34 +464,83 @@ jobs:
           chmod +x dist/r4dio-macos-arm64/ffmpeg dist/r4dio-macos-arm64/ffprobe
       - name: Add runtime files
         run: |
-          chmod +x dist/r4dio-macos-arm64/r4dio dist/r4dio-macos-arm64/vibra
-          cp stations.toml dist/r4dio-macos-arm64/
-          cp songs.vds.template dist/r4dio-macos-arm64/songs.vds
-          cat > dist/r4dio-macos-arm64/config.toml << 'EOF'
-          [http]
-          enabled = true
-          bind_address = "127.0.0.1"
-          port = 8989
-          [mpv]
-          default_volume = 0.5
-          [stations]
-          stations_toml = "stations.toml"
-          m3u_url = "https://raw.githubusercontent.com/ja-mf/radio-curation/refs/heads/main/jamf_radios.m3u"
+          set -euo pipefail
+          DIST="dist/r4dio-macos-arm64"
+          BUNDLE="$DIST/r4dio.app/Contents/MacOS"
+          mkdir -p "$BUNDLE"
+          # Info.plist
+          cat > "$DIST/r4dio.app/Contents/Info.plist" << 'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleExecutable</key><string>r4dio</string>
+            <key>CFBundleIdentifier</key><string>com.ja-mf.r4dio</string>
+            <key>CFBundleName</key><string>r4dio</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleShortVersionString</key><string>1.0</string>
+            <key>CFBundleVersion</key><string>1</string>
+            <key>LSMinimumSystemVersion</key><string>10.14</string>
+            <key>NSHighResolutionCapable</key><true/>
+          </dict>
+          </plist>
+          PLIST
+          # Move binary into bundle as r4dio-bin; launcher script as r4dio
+          mv "$DIST/r4dio" "$BUNDLE/r4dio-bin"
+          chmod +x "$BUNDLE/r4dio-bin"
+          cat > "$BUNDLE/r4dio" << 'EOF'
+          #!/bin/bash
+          DIR="$(cd "$(dirname "$0")" && pwd)"
+          export PATH="$DIR:$PATH"
+          if [ -t 0 ]; then
+            exec "$DIR/r4dio-bin" "$@"
+          else
+            osascript -e "tell application \"Terminal\" to activate" \
+                      -e "tell application \"Terminal\" to do script \"'$DIR/r4dio-bin'\""
+          fi
           EOF
-          cat > dist/r4dio-macos-arm64/README.txt << 'EOF'
-          r4dio (macOS arm64)
-          -------------------
-          1) Unzip this folder.
-          2) Run ./r4dio
-          3) Enter plays, Space pauses, q quits, i runs recognition.
-
-          Bundled: mpv.app wrapper, ffmpeg, ffprobe, vibra, stations.toml, songs.vds
+          chmod +x "$BUNDLE/r4dio"
+          # Move support binaries into bundle
+          mv "$DIST/vibra" "$BUNDLE/vibra" && chmod +x "$BUNDLE/vibra"
+          mv "$DIST/mpv.app" "$BUNDLE/mpv.app"
+          cat > "$BUNDLE/mpv" << 'EOF'
+          #!/bin/bash
+          DIR="$(cd "$(dirname "$0")" && pwd)"
+          exec "$DIR/mpv.app/Contents/MacOS/mpv" "$@"
           EOF
-          (cd dist && zip -r r4dio-macos-arm64.zip r4dio-macos-arm64 >/dev/null)
+          chmod +x "$BUNDLE/mpv"
+          mv "$DIST/ffmpeg-dist" "$BUNDLE/ffmpeg-dist"
+          cat > "$BUNDLE/ffmpeg" << 'EOF'
+          #!/bin/bash
+          DIR="$(cd "$(dirname "$0")" && pwd)"
+          export DYLD_LIBRARY_PATH="$DIR/ffmpeg-dist/lib:${DYLD_LIBRARY_PATH:-}"
+          exec "$DIR/ffmpeg-dist/bin/ffmpeg" "$@"
+          EOF
+          cat > "$BUNDLE/ffprobe" << 'EOF'
+          #!/bin/bash
+          DIR="$(cd "$(dirname "$0")" && pwd)"
+          export DYLD_LIBRARY_PATH="$DIR/ffmpeg-dist/lib:${DYLD_LIBRARY_PATH:-}"
+          exec "$DIR/ffmpeg-dist/bin/ffprobe" "$@"
+          EOF
+          chmod +x "$BUNDLE/ffmpeg" "$BUNDLE/ffprobe"
+          # Remove stale wrapper scripts from dist root (now inside bundle)
+          rm -f "$DIST/mpv" "$DIST/ffmpeg" "$DIST/ffprobe"
+          # Runtime files inside bundle
+          cp stations.toml "$BUNDLE/stations.toml"
+          cp songs.vds.template "$BUNDLE/songs.vds"
+          cp LICENSE "$BUNDLE/LICENSE"
+          # Create DMG with Applications symlink for drag-to-install
+          mkdir -p /tmp/dmg-staging-arm
+          cp -R "$DIST/r4dio.app" /tmp/dmg-staging-arm/
+          ln -s /Applications /tmp/dmg-staging-arm/Applications
+          hdiutil create -volname "r4dio" \
+            -srcfolder /tmp/dmg-staging-arm \
+            -ov -format UDZO \
+            dist/r4dio-macos-arm64.dmg
       - uses: actions/upload-artifact@v4
         with:
           name: r4dio-macos-arm64-package
-          path: dist/r4dio-macos-arm64.zip
+          path: dist/r4dio-macos-arm64.dmg
 
   release:
     needs:
@@ -457,23 +557,18 @@ jobs:
           files: |
             r4dio-windows-package/r4dio-windows-x86_64.zip
             r4dio-linux-package/r4dio-linux-x86_64.tar.gz
-            r4dio-macos-x86_64-package/r4dio-macos-x86_64.zip
-            r4dio-macos-arm64-package/r4dio-macos-arm64.zip
+            r4dio-macos-x86_64-package/r4dio-macos-x86_64.dmg
+            r4dio-macos-arm64-package/r4dio-macos-arm64.dmg
           body: |
             r4dio v1.0
 
             Downloads:
-            - Windows: r4dio-windows-x86_64.zip
-            - Linux: r4dio-linux-x86_64.tar.gz
-            - macOS Intel: r4dio-macos-x86_64.zip
-            - macOS Apple Silicon: r4dio-macos-arm64.zip
+            - Windows: r4dio-windows-x86_64.zip — extract and run r4dio.exe
+            - Linux: r4dio-linux-x86_64.tar.gz — extract and run ./r4dio
+            - macOS Intel: r4dio-macos-x86_64.dmg — open DMG, drag r4dio to Applications
+            - macOS Apple Silicon: r4dio-macos-arm64.dmg — open DMG, drag r4dio to Applications
 
-            Each archive includes:
-            - r4dio
-            - mpv
-            - ffmpeg + ffprobe
-            - vibra
-            - stations.toml (current repo version)
-            - songs.vds (empty template)
+            Each bundle includes mpv, ffmpeg, vibra, stations.toml, songs.vds, LICENSE.
+            macOS: double-click r4dio.app to open in Terminal, or run from terminal via r4dio.app/Contents/MacOS/r4dio-bin
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
