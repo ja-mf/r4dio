@@ -1642,7 +1642,7 @@ impl App {
                         if n == 0 {
                             self.toast.info(format!("unstarred {}", name));
                         } else {
-                            self.toast.success(format!("{} {}", "★".repeat(n as usize), name));
+                            self.toast.success(format!("{} {}", "✹".repeat(n as usize), name));
                         }
                     }
                     StarContext::File(path) => {

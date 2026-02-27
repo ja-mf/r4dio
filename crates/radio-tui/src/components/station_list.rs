@@ -304,8 +304,7 @@ impl StationList {
 
         let stars = state.station_stars_for(&station.name).min(3);
         let star_prefix = if stars > 0 {
-            format!("{} ", "★".repeat(stars as usize))
-        } else {
+            format!("{} ", "✹".repeat(stars as usize))        } else {
             "  ".to_string()
         };
 

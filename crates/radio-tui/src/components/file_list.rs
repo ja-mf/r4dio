@@ -513,7 +513,7 @@ impl Component for FileList {
 
                 let stars = state.file_stars_for(&path).min(3);
                 let star_prefix = if stars > 0 {
-                    format!("{} ", "★".repeat(stars as usize))
+                    format!("{} ", "✹".repeat(stars as usize))
                 } else {
                     String::new()
                 };
