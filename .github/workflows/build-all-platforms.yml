@@ -568,7 +568,22 @@ jobs:
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/download-artifact@v4
+      - name: Build changelog
+        id: changelog
+        run: |
+          PREV_TAG=$(git tag --sort=-version:refname | grep -v "^${{ github.ref_name }}$" | head -1)
+          if [ -n "$PREV_TAG" ]; then
+            LOG=$(git log --oneline "$PREV_TAG"..HEAD --no-merges)
+          else
+            LOG=$(git log --oneline HEAD --no-merges)
+          fi
+          echo "log<<EOF" >> $GITHUB_OUTPUT
+          echo "$LOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
       - uses: softprops/action-gh-release@v1
         with:
           files: |
@@ -577,15 +592,13 @@ jobs:
             r4dio-macos-x86_64-package/r4dio-macos-x86_64.dmg
             r4dio-macos-arm64-package/r4dio-macos-arm64.dmg
           body: |
-            r4dio v1.0
+            **Windows**: unzip `r4dio-windows-x86_64.zip`, run `r4dio.exe`. Binaries in `external/`, data files in `data/`.
+            **macOS**: open DMG, drag `r4dio` to Applications. First launch: right-click → Open to bypass Gatekeeper.
+            **Linux**: `tar xzf r4dio-linux-x86_64.tar.gz && cd r4dio-linux-x86_64 && ./r4dio`
 
-            Downloads:
-            - Windows: r4dio-windows-x86_64.zip — extract and run r4dio.exe
-            - Linux: r4dio-linux-x86_64.tar.gz — extract and run ./r4dio
-            - macOS Intel: r4dio-macos-x86_64.dmg — open DMG, drag r4dio to Applications
-            - macOS Apple Silicon: r4dio-macos-arm64.dmg — open DMG, drag r4dio to Applications
+            Space = pause · n/p = next/prev · i = identify song · q = quit
 
-            Each bundle includes mpv, ffmpeg, vibra, stations.toml, songs.vds, LICENSE.
-            macOS: double-click r4dio.app to open in Terminal, or run from terminal via r4dio.app/Contents/MacOS/r4dio-bin
+            ## Changes
+            ${{ steps.changelog.outputs.log }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
