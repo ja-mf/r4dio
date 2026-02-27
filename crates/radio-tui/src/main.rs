@@ -112,11 +112,7 @@ async fn main() -> anyhow::Result<()> {
     let state_manager = daemon_core.state_manager();
 
     // ── Stream proxy for station playback + visual tap ───────────────────────
-    proxy::start_server(
-        proxy::PROXY_HOST.to_string(),
-        proxy::PROXY_PORT,
-        state_manager.clone(),
-    );
+    proxy::start_server(state_manager.clone());
 
     // ── HTTP server ──────────────────────────────────────────────────────────
     if config.http.enabled {

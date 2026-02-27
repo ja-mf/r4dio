@@ -180,8 +180,6 @@ async fn stream_station(
 }
 
 pub fn start_server(
-    bind_address: String,
-    port: u16,
     state_manager: Arc<StateManager>,
 ) -> tokio::task::JoinHandle<()> {
     let proxy_state = ProxyState::new(state_manager);
@@ -190,7 +188,7 @@ pub fn start_server(
         .with_state(proxy_state);
 
     tokio::spawn(async move {
-        let addr = format!("{}:{}", bind_address, port);
+        let addr = format!("{}:{}", PROXY_HOST, PROXY_PORT);
         info!("Stream proxy listening on http://{}", addr);
         let listener = match tokio::net::TcpListener::bind(&addr).await {
             Ok(l) => l,
