@@ -158,6 +158,10 @@ fn find_beside_exe(names: &[&str]) -> Option<PathBuf> {
         if p.exists() {
             return Some(p);
         }
+        let p = dir.join("external").join(name);
+        if p.exists() {
+            return Some(p);
+        }
     }
     None
 }

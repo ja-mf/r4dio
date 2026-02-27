@@ -53,6 +53,20 @@ async fn main() -> anyhow::Result<()> {
         .map(|p| p.join("nts-downloads"))
         .unwrap_or_else(|| radio_proto::platform::temp_dir().join("nts-downloads"));
     let stars_path = tui_data_dir.join("starred.toml");
+    // Seed starred.toml on first run from beside-exe (or data/ subdir) for bundled packages
+    if !stars_path.exists() {
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(dir) = exe.parent() {
+                let candidates = [dir.join("starred.toml"), dir.join("data").join("starred.toml")];
+                for seed in &candidates {
+                    if seed.exists() {
+                        let _ = std::fs::copy(seed, &stars_path);
+                        break;
+                    }
+                }
+            }
+        }
+    }
     let random_history_path = tui_data_dir.join("random_history.json");
     let recent_path = tui_data_dir.join("recent.toml");
     let file_positions_path = tui_data_dir.join("file_positions.toml");
