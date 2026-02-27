@@ -207,6 +207,27 @@ const PROXY_BROADCAST_CAPACITY: usize = 4096;  // already named, needs doc comme
 - **Duplicate detection**: When adding to `songs.vds`, check if same song already
   identified within the last X minutes to avoid redundant entries.
 
+### NTS Infinite Mixtape Metadata (planned)
+- **Goal**: Add current-show metadata for `NTS: <Mixtape>` stations in the song-ID path,
+  without Selenium/browser automation.
+- **Discovery source**: query Firestore `mixtape_titles` for latest record by
+  `mixtape_alias` (`orderBy started_at desc`, `limit 1`).
+- **Mixtape URL source**: add explicit `mixtape_url` in `stations.toml` for each
+  `NTS: <Mixtape>` station (e.g. `https://www.nts.live/infinite-mixtapes/slow-focus`).
+- **Alias mapping**: parse alias directly from `mixtape_url` path instead of calling
+  `/api/v2/mixtapes` at recognition time.
+- **URL construction**: if `show_alias` exists, build `/shows/<show_alias>`;
+  append `/episodes/<episode_alias>` when present.
+- **Graceful fallback**:
+  - missing `title` => treat as "not announced" (do not patch VDS NTS fields)
+  - title present + no URL fields => patch title only
+- **Non-goals**: keep NTS 1/2 flow unchanged (`/api/v2/live`).
+
+Validation harnesses (isolated from TUI runtime):
+- Bash: `tests/nts_mixtape_show_test.sh`, `tests/nts_mixtape_scan_all_test.sh`
+- Rust: `crates/radio-proto/tests/nts_mixtape_single.rs`,
+  `crates/radio-proto/tests/nts_mixtape_scan_all.rs`
+
 ### Distribution
 - **macOS code signing**: Requires an Apple Developer account. Once signed, Gatekeeper
   will allow opening without right-click. Notarize for full transparency.
@@ -539,4 +560,3 @@ This gives:
 - Exact VU/scope sync with audible output
 - Uniform pipeline for files and stations
 - All buffers controlled from `config.toml`
-
