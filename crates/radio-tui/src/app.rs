@@ -7,7 +7,7 @@
 //! - Components return `Vec<Action>`; App dispatches each Action.
 //! - Commands to the daemon flow out through a separate `cmd_tx` channel.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -28,7 +28,7 @@ use ratatui::{
 };
 use reqwest::header::HeaderValue;
 use tokio::io::AsyncWriteExt;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, Mutex as TokioMutex};
 use tracing::{debug, info, warn};
 
 use radio_proto::protocol::{Command, DaemonState, MpvHealth, Station};
@@ -118,7 +118,9 @@ const PEAK_RELEASE_TAU_SECS: f32 = 0.09;
 const PEAK_FALL_DB_PER_SEC: f32 = 28.0;
 const MIN_POLL_INTERVAL_SECS: u64 = 10;
 const NTS_POLL_TASK_TIMEOUT_SECS: u64 = 12;
-const NON_NTS_SAMPLE_PER_CYCLE: usize = 5;
+const NON_NTS_MAX_CONCURRENCY: usize = 5;
+const NON_NTS_MAX_JOBS_PER_CYCLE: usize = 20;
+const NON_NTS_CYCLE_BUDGET_SECS: u64 = 95;
 const NON_NTS_CONNECT_TIMEOUT_MS: u64 = 4_000;
 const NON_NTS_REQUEST_TIMEOUT_MS: u64 = 20_000;
 const NON_NTS_METADATA_TIMEOUT_MS: u64 = 10_000;
@@ -156,6 +158,13 @@ struct StationPollOutcome {
     resolver: String,
     show: Option<String>,
     error: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct NonNtsPollJob {
+    ord: usize,
+    station_name: String,
+    stream_url: String,
 }
 
 // ── Persistence serde structs ─────────────────────────────────────────────────
@@ -309,6 +318,7 @@ pub struct App {
     auto_poll_cycle_changed: usize,
     auto_poll_cycle_unchanged: usize,
     auto_poll_cycle_errors: usize,
+    non_nts_poll_cursor: usize,
 }
 
 impl App {
@@ -472,6 +482,7 @@ impl App {
             auto_poll_cycle_changed: 0,
             auto_poll_cycle_unchanged: 0,
             auto_poll_cycle_errors: 0,
+            non_nts_poll_cursor: 0,
         };
 
         // Restore file selection in FileList component
@@ -2790,7 +2801,7 @@ impl App {
         }
 
         let stations = self.state.daemon_state.stations.clone();
-        let targets = build_station_poll_targets(&stations);
+        let targets = build_station_poll_targets(&stations, &mut self.non_nts_poll_cursor);
         let target_count = targets.len();
         if target_count == 0 {
             info!("[poll] skip cycle (no resolvable polling targets)");
@@ -2806,16 +2817,22 @@ impl App {
         self.auto_poll_in_flight = true;
 
         let cycle_id = self.auto_poll_cycle_id;
+        let mut nts_live_count = 0usize;
+        let mut nts_mixtape_count = 0usize;
+        let mut non_nts_count = 0usize;
         let target_labels: Vec<String> = targets
             .iter()
             .map(|t| match t {
                 StationPollTarget::NtsLive { station_name, .. } => {
+                    nts_live_count += 1;
                     format!("nts-live:{}", station_name)
                 }
                 StationPollTarget::NtsMixtape { station_name, .. } => {
+                    nts_mixtape_count += 1;
                     format!("nts-mixtape:{}", station_name)
                 }
                 StationPollTarget::NonNtsIcy { station_name, .. } => {
+                    non_nts_count += 1;
                     format!("icy-probe:{}", station_name)
                 }
             })
@@ -2823,10 +2840,12 @@ impl App {
 
         let why = reason.to_string();
         info!(
-            "[poll] cycle #{} start reason={} targets={} [{}]",
+            "[poll] cycle #{} start reason={} targets={} (nts-live={}, nts-mixtape={}, non-nts={})",
+            cycle_id, why, target_count, nts_live_count, nts_mixtape_count, non_nts_count,
+        );
+        debug!(
+            "[poll] cycle #{} target order: {}",
             cycle_id,
-            why,
-            target_count,
             target_labels.join(", ")
         );
 
@@ -3117,9 +3136,13 @@ impl App {
 
 // ── Daemon connection handler ─────────────────────────────────────────────────
 
-fn build_station_poll_targets(stations: &[Station]) -> Vec<StationPollTarget> {
+fn build_station_poll_targets(
+    stations: &[Station],
+    non_nts_cursor: &mut usize,
+) -> Vec<StationPollTarget> {
     let mut targets = Vec::new();
-    let mut non_nts_candidates = Vec::new();
+    let mut non_nts_somafm = Vec::new();
+    let mut non_nts_other = Vec::new();
     for station in stations {
         if station.name.eq_ignore_ascii_case("NTS 1") {
             targets.push(StationPollTarget::NtsLive {
@@ -3146,21 +3169,60 @@ fn build_station_poll_targets(stations: &[Station]) -> Vec<StationPollTarget> {
         }
 
         if station.url.starts_with("http://") || station.url.starts_with("https://") {
-            non_nts_candidates.push(StationPollTarget::NonNtsIcy {
+            let target = StationPollTarget::NonNtsIcy {
                 station_name: station.name.clone(),
                 stream_url: station.url.clone(),
-            });
+            };
+            if is_somafm_station(station) {
+                non_nts_somafm.push(target);
+            } else {
+                non_nts_other.push(target);
+            }
         }
     }
 
-    if !non_nts_candidates.is_empty() {
+    let mut selected_non_nts = Vec::new();
+    if !non_nts_somafm.is_empty() {
         let mut rng = rand::thread_rng();
-        non_nts_candidates.shuffle(&mut rng);
-        non_nts_candidates.truncate(NON_NTS_SAMPLE_PER_CYCLE);
-        targets.extend(non_nts_candidates);
+        non_nts_somafm.shuffle(&mut rng);
+        selected_non_nts.extend(non_nts_somafm.into_iter().take(2));
     }
 
+    let remaining_budget = NON_NTS_MAX_JOBS_PER_CYCLE.saturating_sub(selected_non_nts.len());
+    if remaining_budget > 0 {
+        selected_non_nts.extend(select_round_robin_non_nts(
+            non_nts_other,
+            non_nts_cursor,
+            remaining_budget,
+        ));
+    }
+
+    targets.extend(selected_non_nts);
+
     targets
+}
+
+fn select_round_robin_non_nts(
+    pool: Vec<StationPollTarget>,
+    cursor: &mut usize,
+    max_take: usize,
+) -> Vec<StationPollTarget> {
+    if pool.is_empty() || max_take == 0 {
+        return Vec::new();
+    }
+
+    let len = pool.len();
+    let start = *cursor % len;
+    let take = max_take.min(len);
+
+    let mut out = Vec::with_capacity(take);
+    for i in 0..take {
+        let idx = (start + i) % len;
+        out.push(pool[idx].clone());
+    }
+
+    *cursor = (start + take) % len;
+    out
 }
 
 async fn run_station_poll_cycle(
@@ -3169,154 +3231,236 @@ async fn run_station_poll_cycle(
     cycle_id: u64,
 ) {
     let total = targets.len();
-    let mut non_nts_jobs = Vec::new();
-
-    let non_nts_client = reqwest::Client::builder()
-        .user_agent("r4dio-passive-icy-poller/0.1")
-        .connect_timeout(Duration::from_millis(NON_NTS_CONNECT_TIMEOUT_MS))
-        .timeout(Duration::from_millis(NON_NTS_REQUEST_TIMEOUT_MS))
-        .build();
+    let mut nts_join = tokio::task::JoinSet::new();
+    let mut non_nts_queue: VecDeque<NonNtsPollJob> = VecDeque::new();
 
     for (idx, target) in targets.into_iter().enumerate() {
-        let resolver = target.resolver_label().to_string();
-        let result = match target {
-            StationPollTarget::NtsLive {
+        let ord = idx + 1;
+        match target {
+            StationPollTarget::NonNtsIcy {
                 station_name,
-                channel_idx,
-            } => match tokio::time::timeout(
-                Duration::from_secs(NTS_POLL_TASK_TIMEOUT_SECS),
-                fetch_nts_channel(channel_idx),
-            )
-            .await
-            {
-                Ok(Ok(ch)) => {
-                    let show = ch.now.broadcast_title.trim().to_string();
-                    let show = if show.is_empty() { None } else { Some(show) };
-                    info!(
-                        "[poll] [{}/{}] {} resolver=nts-live show={:?}",
-                        idx + 1,
-                        total,
-                        station_name,
-                        show
-                    );
-                    StationPollOutcome {
-                        station_name,
-                        resolver,
-                        show,
-                        error: None,
-                    }
-                }
-                Ok(Err(e)) => {
-                    warn!(
-                        "[poll] [{}/{}] {} resolver=nts-live error={}",
-                        idx + 1,
-                        total,
-                        station_name,
-                        e
-                    );
-                    StationPollOutcome {
-                        station_name,
-                        resolver,
-                        show: None,
-                        error: Some(e.to_string()),
-                    }
-                }
-                Err(_) => {
-                    warn!(
-                        "[poll] [{}/{}] {} resolver=nts-live timeout",
-                        idx + 1,
-                        total,
-                        station_name
-                    );
-                    StationPollOutcome {
-                        station_name,
-                        resolver,
-                        show: None,
-                        error: Some("timeout".to_string()),
-                    }
-                }
-            },
-            StationPollTarget::NtsMixtape {
-                station_name,
-                mixtape_url,
+                stream_url,
             } => {
-                let (show, timeout_err) = match tokio::time::timeout(
-                    Duration::from_secs(NTS_POLL_TASK_TIMEOUT_SECS),
-                    recognize_via_nts_mixtape(&mixtape_url),
-                )
-                .await
-                {
-                    Ok(v) => (v.map(|(title, _url)| title), None),
-                    Err(_) => {
-                        warn!(
-                            "[poll] [{}/{}] {} resolver=nts-mixtape timeout",
-                            idx + 1,
-                            total,
-                            station_name
-                        );
-                        (None, Some("timeout".to_string()))
-                    }
-                };
-                info!(
-                    "[poll] [{}/{}] {} resolver=nts-mixtape show={:?}",
-                    idx + 1,
-                    total,
+                non_nts_queue.push_back(NonNtsPollJob {
+                    ord,
                     station_name,
-                    show
+                    stream_url,
+                });
+            }
+            nts_target => {
+                nts_join.spawn(async move { poll_nts_target(nts_target, ord, total).await });
+            }
+        }
+    }
+
+    let non_nts_total = non_nts_queue.len();
+    let nts_total = total.saturating_sub(non_nts_total);
+    debug!(
+        "[poll] cycle #{} scheduling: nts_targets={} non_nts_targets={} non_nts_concurrency={}",
+        cycle_id, nts_total, non_nts_total, NON_NTS_MAX_CONCURRENCY
+    );
+
+    // Launch non-NTS worker pool immediately so it runs concurrently with NTS polling.
+    let mut non_nts_workers = tokio::task::JoinSet::new();
+    if non_nts_total > 0 {
+        match reqwest::Client::builder()
+            .user_agent("r4dio-passive-icy-poller/0.1")
+            .connect_timeout(Duration::from_millis(NON_NTS_CONNECT_TIMEOUT_MS))
+            .timeout(Duration::from_millis(NON_NTS_REQUEST_TIMEOUT_MS))
+            .build()
+        {
+            Ok(client) => {
+                let queue = std::sync::Arc::new(TokioMutex::new(non_nts_queue));
+                let deadline =
+                    std::time::Instant::now() + Duration::from_secs(NON_NTS_CYCLE_BUDGET_SECS);
+                let worker_count = NON_NTS_MAX_CONCURRENCY.min(non_nts_total).max(1);
+                for worker_idx in 0..worker_count {
+                    let queue = queue.clone();
+                    let txw = tx.clone();
+                    let cw = client.clone();
+                    let deadline = deadline;
+                    non_nts_workers.spawn(async move {
+                        loop {
+                            if std::time::Instant::now() >= deadline {
+                                debug!(
+                                    "[poll] worker={} reached non-nts cycle budget, stopping",
+                                    worker_idx
+                                );
+                                break;
+                            }
+
+                            let job = {
+                                let mut q = queue.lock().await;
+                                q.pop_front()
+                            };
+                            let Some(job) = job else {
+                                break;
+                            };
+
+                            debug!(
+                                "[poll] worker={} picked non-nts job {}/{} {}",
+                                worker_idx, job.ord, total, job.station_name
+                            );
+                            let outcome = poll_non_nts_station_icy(
+                                cw.clone(),
+                                job.station_name,
+                                job.stream_url,
+                                job.ord,
+                                total,
+                            )
+                            .await;
+                            let _ = txw
+                                .send(AppMessage::PassivePollOutcome { cycle_id, outcome })
+                                .await;
+                        }
+                        debug!("[poll] worker={} finished non-nts queue", worker_idx);
+                    });
+                }
+
+                // Wait for workers and log whether any jobs were deferred to next cycle.
+                while let Some(joined) = non_nts_workers.join_next().await {
+                    if let Err(e) = joined {
+                        warn!("[poll] icy worker join error: {}", e);
+                    }
+                }
+                let deferred = {
+                    let q = queue.lock().await;
+                    q.len()
+                };
+                if deferred > 0 {
+                    info!(
+                        "[poll] deferred {} non-nts jobs to next cycle due to budget/concurrency",
+                        deferred
+                    );
+                }
+            }
+            Err(e) => {
+                warn!("[poll] failed to build icy probe client: {}", e);
+                for job in non_nts_queue {
+                    let _ = tx
+                        .send(AppMessage::PassivePollOutcome {
+                            cycle_id,
+                            outcome: StationPollOutcome {
+                                station_name: job.station_name,
+                                resolver: "icy-probe".to_string(),
+                                show: None,
+                                error: Some("icy-probe-client-error".to_string()),
+                            },
+                        })
+                        .await;
+                }
+            }
+        }
+    }
+
+    // Drain NTS outcomes as they finish.
+    while let Some(joined) = nts_join.join_next().await {
+        match joined {
+            Ok(outcome) => {
+                let _ = tx
+                    .send(AppMessage::PassivePollOutcome { cycle_id, outcome })
+                    .await;
+            }
+            Err(e) => {
+                warn!("[poll] nts task join error: {}", e);
+            }
+        }
+    }
+}
+
+async fn poll_nts_target(
+    target: StationPollTarget,
+    ord: usize,
+    total: usize,
+) -> StationPollOutcome {
+    let resolver = target.resolver_label().to_string();
+    match target {
+        StationPollTarget::NtsLive {
+            station_name,
+            channel_idx,
+        } => match tokio::time::timeout(
+            Duration::from_secs(NTS_POLL_TASK_TIMEOUT_SECS),
+            fetch_nts_channel(channel_idx),
+        )
+        .await
+        {
+            Ok(Ok(ch)) => {
+                let show = ch.now.broadcast_title.trim().to_string();
+                let show = if show.is_empty() { None } else { Some(show) };
+                info!(
+                    "[poll] [{}/{}] {} resolver=nts-live show={:?}",
+                    ord, total, station_name, show
                 );
                 StationPollOutcome {
                     station_name,
                     resolver,
                     show,
-                    error: timeout_err,
+                    error: None,
                 }
             }
-            StationPollTarget::NonNtsIcy {
+            Ok(Err(e)) => {
+                warn!(
+                    "[poll] [{}/{}] {} resolver=nts-live error={}",
+                    ord, total, station_name, e
+                );
+                StationPollOutcome {
+                    station_name,
+                    resolver,
+                    show: None,
+                    error: Some(e.to_string()),
+                }
+            }
+            Err(_) => {
+                warn!(
+                    "[poll] [{}/{}] {} resolver=nts-live timeout",
+                    ord, total, station_name
+                );
+                StationPollOutcome {
+                    station_name,
+                    resolver,
+                    show: None,
+                    error: Some("timeout".to_string()),
+                }
+            }
+        },
+
+        StationPollTarget::NtsMixtape {
+            station_name,
+            mixtape_url,
+        } => {
+            let (show, timeout_err) = match tokio::time::timeout(
+                Duration::from_secs(NTS_POLL_TASK_TIMEOUT_SECS),
+                recognize_via_nts_mixtape(&mixtape_url),
+            )
+            .await
+            {
+                Ok(v) => (v.map(|(title, _url)| title), None),
+                Err(_) => {
+                    warn!(
+                        "[poll] [{}/{}] {} resolver=nts-mixtape timeout",
+                        ord, total, station_name
+                    );
+                    (None, Some("timeout".to_string()))
+                }
+            };
+            info!(
+                "[poll] [{}/{}] {} resolver=nts-mixtape show={:?}",
+                ord, total, station_name, show
+            );
+            StationPollOutcome {
                 station_name,
-                stream_url,
-            } => {
-                non_nts_jobs.push((idx + 1, station_name, stream_url));
-                continue;
-            }
-        };
-        let _ = tx
-            .send(AppMessage::PassivePollOutcome {
-                cycle_id,
-                outcome: result,
-            })
-            .await;
-
-        if idx + 1 < total && non_nts_jobs.is_empty() {
-            tokio::time::sleep(Duration::from_millis(120)).await;
-        }
-    }
-
-    match non_nts_client {
-        Ok(client) => {
-            let mut join_set = tokio::task::JoinSet::new();
-            for (ord, station_name, stream_url) in non_nts_jobs {
-                let c = client.clone();
-                join_set.spawn(async move {
-                    poll_non_nts_station_icy(c, station_name, stream_url, ord, total).await
-                });
-            }
-
-            while let Some(joined) = join_set.join_next().await {
-                match joined {
-                    Ok(outcome) => {
-                        let _ = tx
-                            .send(AppMessage::PassivePollOutcome { cycle_id, outcome })
-                            .await;
-                    }
-                    Err(e) => {
-                        warn!("[poll] icy-probe task join error: {}", e);
-                    }
-                }
+                resolver,
+                show,
+                error: timeout_err,
             }
         }
-        Err(e) => {
-            warn!("[poll] failed to build icy probe client: {}", e);
-        }
+
+        StationPollTarget::NonNtsIcy { station_name, .. } => StationPollOutcome {
+            station_name,
+            resolver,
+            show: None,
+            error: Some("invalid-nts-target".to_string()),
+        },
     }
 }
 
@@ -3670,6 +3814,11 @@ fn is_playlist_url(url: &str) -> bool {
 
 fn looks_hls_url(url: &str) -> bool {
     url.to_ascii_lowercase().contains(".m3u8")
+}
+
+fn is_somafm_station(station: &Station) -> bool {
+    station.name.to_ascii_lowercase().contains("somafm")
+        || station.url.to_ascii_lowercase().contains("somafm")
 }
 
 // ── NTS fetch ─────────────────────────────────────────────────────────────────
