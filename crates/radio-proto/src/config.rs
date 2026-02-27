@@ -45,7 +45,7 @@ pub struct MpvConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PathsConfig {
     /// Directory for NTS show downloads.
-    /// Defaults to `~/nts-downloads` (or portable `downloads/` on Windows).
+    /// Defaults to `~/radio-downloads` (or portable `downloads/` on Windows).
     #[serde(default = "default_downloads_dir")]
     pub downloads_dir: PathBuf,
 }
@@ -74,7 +74,7 @@ fn default_downloads_dir() -> PathBuf {
 
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("nts-downloads")
+        .join("radio-downloads")
 }
 
 /// Station list source — either an https:// URL or a local file path.

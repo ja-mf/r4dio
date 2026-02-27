@@ -99,6 +99,7 @@ impl Component for HelpOverlay {
             help_row("n / p / r / R", "next / prev / random / random back"),
             help_row("m", "mute"),
             help_row("i", "identify song"),
+            help_row("d", "download NTS show"),
             Line::from(""),
             Line::from(Span::styled(
                 " navigation & panes",

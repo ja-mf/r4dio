@@ -177,6 +177,11 @@ impl Component for SongsTicker {
                 return vec![Action::RecognizeSong];
             }
 
+            // Download NTS show (lowercase d)
+            KeyCode::Char('d') => {
+                return vec![Action::Download];
+            }
+
             KeyCode::Char('y') => {
                 if let Some(e) = self.selected_entry(state) {
                     let text = e.display();
@@ -338,6 +343,30 @@ impl Component for SongsTicker {
                 // Show URL hint
                 if entry.nts_url.is_some() {
                     spans.push(Span::styled(" ↗", Style::default().fg(C_MUTED)));
+                }
+                
+                // Download status indicator
+                if let Some(url) = &entry.nts_url {
+                    use crate::app_state::DownloadStatus;
+                    match state.download_statuses.get(url) {
+                        Some(DownloadStatus::Downloading(_)) => {
+                            // Blinking yellow ↓
+                            let blink = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .map(|d| d.as_millis() % 1000 < 500)
+                                .unwrap_or(true);
+                            if blink {
+                                spans.push(Span::styled(" ↓", Style::default().fg(ratatui::style::Color::Yellow)));
+                            }
+                        }
+                        Some(DownloadStatus::Downloaded) => {
+                            spans.push(Span::styled(" ↓", Style::default().fg(ratatui::style::Color::Green)));
+                        }
+                        Some(DownloadStatus::Failed(_)) => {
+                            spans.push(Span::styled(" ✗", Style::default().fg(ratatui::style::Color::Red)));
+                        }
+                        _ => {}
+                    }
                 }
 
                 Line::from(spans)

@@ -43,7 +43,7 @@ use radio_proto::songs::{
 
 use crate::{
     action::{Action, ComponentId, StarContext, Workspace},
-    app_state::{AppState, FileChapter, FileMetadata, LocalFileEntry, NtsChannel, NtsShow, RandomHistoryEntry, TickerEntry},
+    app_state::{AppState, DownloadStatus, FileChapter, FileMetadata, LocalFileEntry, NtsChannel, NtsShow, RandomHistoryEntry, TickerEntry},
     component::Component,
     components::{
         file_list::FileList,
@@ -87,6 +87,8 @@ enum AppMessage {
     PcmChunk(std::sync::Arc<Vec<f32>>),
     /// Independent render tick — drives VU-meter animation / peak decay.
     MeterTick,
+    /// Download completed (success or failure).
+    DownloadComplete { url: String, result: Result<PathBuf, String> },
 }
 
 const STREAM_PCM_RATE_HZ: usize = 44_100;
@@ -296,6 +298,7 @@ impl App {
             pcm_ring: std::collections::VecDeque::new(),
             pcm_pending: std::collections::VecDeque::new(),
             pcm_pending_started: false,
+            download_statuses: HashMap::new(),
         };
 
         // Restore workspace/focus from session
@@ -935,6 +938,29 @@ impl App {
                 }
 
                 self.state.peak_last_update = now;
+            }
+            
+            AppMessage::DownloadComplete { url, result } => {
+                match result {
+                    Ok(_) => {
+                        self.state.download_statuses.insert(url, DownloadStatus::Downloaded);
+                        // Resolve spinner with success (like recognition does)
+                        self.toast.resolve_spinner(
+                            Severity::Success,
+                            "download complete".to_string(),
+                            std::time::Duration::from_secs(5),
+                        );
+                    }
+                    Err(e) => {
+                        self.state.download_statuses.insert(url, DownloadStatus::Failed(e.clone()));
+                        // Resolve spinner with error
+                        self.toast.resolve_spinner(
+                            Severity::Error,
+                            format!("download failed: {}", e),
+                            std::time::Duration::from_secs(5),
+                        );
+                    }
+                }
             }
         }
         true
@@ -1782,11 +1808,34 @@ impl App {
             | Action::ScrollDown(_)
             | Action::FilterChanged(_)
             | Action::ClearFilter
-            | Action::Download
             | Action::Tick
             | Action::Render
             | Action::Resize(_, _)
             | Action::Noop => {}
+            
+            Action::Download => {
+                // Get selected song entry and download if it has an NTS URL
+                if let Some(entry) = self.get_selected_song_entry() {
+                    if let Some(url) = entry.nts_url.clone() {
+                        info!("Starting download for: {}", url);
+                        // Show spinner like recognition does
+                        self.toast.spinner(format!("downloading {}…", entry.display()));
+                        // Mark as downloading
+                        self.state.download_statuses.insert(url.clone(), DownloadStatus::Downloading(0.0));
+                        // Spawn download task
+                        let download_dir = self.state.downloads_dir.clone();
+                        let tx = self.recognition_tx.clone();
+                        tokio::spawn(async move {
+                            let result = Self::download_nts_show(&url, &download_dir).await;
+                            if let Some(tx) = tx {
+                                let _ = tx.send(AppMessage::DownloadComplete { url, result }).await;
+                            }
+                        });
+                    } else {
+                        self.toast.error("No NTS URL available for download");
+                    }
+                }
+            }
 
             Action::CopyToClipboard(text) => {
                 match arboard::Clipboard::new().and_then(|mut cb| cb.set_text(text.clone())) {
@@ -2407,6 +2456,29 @@ impl App {
                 }
             }
         }
+    }
+    
+    /// Get the currently selected song entry from songs ticker
+    fn get_selected_song_entry(&self) -> Option<radio_proto::songs::RecognitionResult> {
+        // Get the selected index from songs_ticker
+        let selected = self.songs_ticker.selected;
+        if selected < self.state.songs_history.len() {
+            Some(self.state.songs_history[selected].clone())
+        } else {
+            None
+        }
+    }
+    
+    /// Download an NTS show
+    async fn download_nts_show(url: &str, download_dir: &std::path::Path) -> Result<std::path::PathBuf, String> {
+        // Find yt-dlp
+        let yt_dlp_path = radio_proto::platform::find_yt_dlp_binary()
+            .ok_or("yt-dlp not found")?;
+        
+        // Use nts_download module
+        crate::nts_download::download_episode(url, download_dir, &yt_dlp_path)
+            .await
+            .map_err(|e| e.to_string())
     }
 }
 
