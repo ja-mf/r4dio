@@ -36,26 +36,21 @@ use crate::core::DaemonEvent;
 use crate::BroadcastMessage;
 
 use radio_proto::songs::{
-    RecognitionResult, VdsPatch,
-    append_to_vds, load_vds, make_job_id,
-    recognize_via_vibra, recognize_via_nts, vibra_rec_string,
+    append_to_vds, load_vds, make_job_id, recognize_via_nts, recognize_via_nts_mixtape,
+    recognize_via_vibra, vibra_rec_string, RecognitionResult, VdsPatch,
 };
 
 use crate::{
     action::{Action, ComponentId, StarContext, Workspace},
-    app_state::{AppState, DownloadStatus, FileChapter, FileMetadata, LocalFileEntry, NtsChannel, NtsShow, RandomHistoryEntry, TickerEntry},
+    app_state::{
+        AppState, DownloadStatus, FileChapter, FileMetadata, LocalFileEntry, NtsChannel, NtsShow,
+        RandomHistoryEntry, TickerEntry,
+    },
     component::Component,
     components::{
-        file_list::FileList,
-        file_meta::FileMeta,
-        header::Header,
-        help_overlay::HelpOverlay,
-        icy_ticker::IcyTicker,
-        log_panel::LogPanel,
-        nts_panel::NtsPanel,
-        scope_panel::ScopePanel,
-        songs_ticker::SongsTicker,
-        station_list::StationList,
+        file_list::FileList, file_meta::FileMeta, header::Header, help_overlay::HelpOverlay,
+        icy_ticker::IcyTicker, log_panel::LogPanel, nts_panel::NtsPanel, scope_panel::ScopePanel,
+        songs_ticker::SongsTicker, station_list::StationList,
     },
     widgets::{
         status_bar::{self, InputMode},
@@ -90,7 +85,10 @@ enum AppMessage {
     /// Independent render tick — drives VU-meter animation / peak decay.
     MeterTick,
     /// Download completed (success or failure).
-    DownloadComplete { url: String, result: Result<PathBuf, String> },
+    DownloadComplete {
+        url: String,
+        result: Result<PathBuf, String>,
+    },
 }
 
 const STREAM_PCM_RATE_HZ: usize = 44_100;
@@ -150,7 +148,7 @@ struct PaneAreas {
     nts_overlay: Rect, // hover overlay on top of station list (may be default/zero when hidden)
     file_meta: Rect,
     log_panel: Rect,
-    scope: Rect,       // scope panel in header (may be default/zero when hidden)
+    scope: Rect, // scope panel in header (may be default/zero when hidden)
 }
 
 // ── App ───────────────────────────────────────────────────────────────────────
@@ -220,9 +218,16 @@ pub struct App {
     recognition_tx: Option<mpsc::Sender<AppMessage>>,
 
     // ── Recognition safety queue ──────────────────────────────────────────────
-    /// Pending recognition jobs (station_name, stream_url, icy_title, nts_ch). Max 3.
+    /// Pending recognition jobs
+    /// (station_name, stream_url, icy_title, nts_ch, nts_mixtape_url). Max 3.
     /// Cleared automatically when the station changes.
-    recognize_queue: std::collections::VecDeque<(Option<String>, Option<String>, Option<String>, Option<usize>)>,
+    recognize_queue: std::collections::VecDeque<(
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<usize>,
+        Option<String>,
+    )>,
     /// True while a recognition job is in flight (vibra running).
     recognize_in_flight: bool,
     /// Station name that the current queue belongs to; used to detect station changes.
@@ -409,7 +414,8 @@ impl App {
         }
 
         // Restore sort orders
-        app.station_list.set_sort_from_label(&ui_state.station_sort_order);
+        app.station_list
+            .set_sort_from_label(&ui_state.station_sort_order);
         app.file_list.set_sort_from_label(&ui_state.file_sort_order);
 
         // Initial file list sync (stations arrive later via daemon state update).
@@ -420,7 +426,10 @@ impl App {
 
     // ── Main run loop ─────────────────────────────────────────────────────────
 
-    pub async fn run(mut self, mut broadcast_rx: broadcast::Receiver<BroadcastMessage>) -> anyhow::Result<()> {
+    pub async fn run(
+        mut self,
+        mut broadcast_rx: broadcast::Receiver<BroadcastMessage>,
+    ) -> anyhow::Result<()> {
         debug!("run(): enabling raw mode");
         enable_raw_mode()?;
         debug!("run(): raw mode enabled, entering alternate screen");
@@ -503,7 +512,8 @@ impl App {
         log_refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
         // VU-meter/scope render tick: 25 Hz for stability over max smoothness.
-        let mut meter_tick = tokio::time::interval(Duration::from_millis((1000 / METER_FPS) as u64));
+        let mut meter_tick =
+            tokio::time::interval(Duration::from_millis((1000 / METER_FPS) as u64));
         meter_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
         // ── Main loop ─────────────────────────────────────────────────────────
@@ -735,9 +745,15 @@ impl App {
             AppMessage::NtsUpdated(ch, data) => {
                 // Log only when the current show title changes (one line per channel).
                 let prev_title = if ch == 0 {
-                    self.state.nts_ch1.as_ref().map(|c| c.now.broadcast_title.as_str())
+                    self.state
+                        .nts_ch1
+                        .as_ref()
+                        .map(|c| c.now.broadcast_title.as_str())
                 } else {
-                    self.state.nts_ch2.as_ref().map(|c| c.now.broadcast_title.as_str())
+                    self.state
+                        .nts_ch2
+                        .as_ref()
+                        .map(|c| c.now.broadcast_title.as_str())
                 };
                 if prev_title != Some(data.now.broadcast_title.as_str()) {
                     debug!("[nts] ch{}: {:?}", ch + 1, data.now.broadcast_title);
@@ -770,7 +786,8 @@ impl App {
 
             AppMessage::NtsError(ch, msg) => {
                 let ch_label = if ch == 0 { "NTS 1" } else { "NTS 2" };
-                self.toast.warning(format!("{} fetch error: {}", ch_label, msg));
+                self.toast
+                    .warning(format!("{} fetch error: {}", ch_label, msg));
                 if ch == 0 {
                     self.state.nts_ch1_error = Some(msg);
                 } else {
@@ -800,27 +817,47 @@ impl App {
             AppMessage::RecognitionPatch(job_id, patch) => {
                 info!("[app] Recognition patch job_id={}", job_id);
                 // Update in-memory history
-                if let Some(entry) = self.state.songs_history.iter_mut().rev()
+                if let Some(entry) = self
+                    .state
+                    .songs_history
+                    .iter_mut()
+                    .rev()
                     .find(|e| e.job_id == job_id)
                 {
-                    if let Some(v) = &patch.icy_info  { entry.icy_info  = Some(v.clone()); }
-                    if let Some(v) = &patch.nts_show   { entry.nts_show  = Some(v.clone()); }
-                    if let Some(v) = &patch.nts_tag    { entry.nts_tag   = Some(v.clone()); }
-                    if let Some(v) = &patch.nts_url    { entry.nts_url   = Some(v.clone()); }
-                    if let Some(v) = &patch.vibra_rec  { entry.vibra_rec = Some(v.clone()); }
+                    if let Some(v) = &patch.icy_info {
+                        entry.icy_info = Some(v.clone());
+                    }
+                    if let Some(v) = &patch.nts_show {
+                        entry.nts_show = Some(v.clone());
+                    }
+                    if let Some(v) = &patch.nts_tag {
+                        entry.nts_tag = Some(v.clone());
+                    }
+                    if let Some(v) = &patch.nts_url {
+                        entry.nts_url = Some(v.clone());
+                    }
+                    if let Some(v) = &patch.vibra_rec {
+                        entry.vibra_rec = Some(v.clone());
+                    }
                 }
                 // Patch VDS file on disk
                 let vds_path = self.songs_vds_path.clone();
                 let job_id_owned = job_id.clone();
                 tokio::spawn(async move {
-                    if let Err(e) = radio_proto::songs::patch_vds_by_job_id(&vds_path, &job_id_owned, patch).await {
+                    if let Err(e) =
+                        radio_proto::songs::patch_vds_by_job_id(&vds_path, &job_id_owned, patch)
+                            .await
+                    {
                         warn!("[vds] Patch error: {}", e);
                     }
                 });
             }
 
             AppMessage::RecognitionComplete(job_id, rec_display) => {
-                info!("[app] Recognition complete job_id={} display={:?}", job_id, rec_display);
+                info!(
+                    "[app] Recognition complete job_id={} display={:?}",
+                    job_id, rec_display
+                );
                 self.recognize_in_flight = false;
                 self.toast.resolve_spinner(
                     crate::widgets::toast::Severity::Success,
@@ -858,10 +895,21 @@ impl App {
             }
             AppMessage::RecognitionQueueNext => {
                 // Pop the next queued recognition job and start it.
-                if let Some((station_name, stream_url, icy_title, nts_ch)) = self.recognize_queue.pop_front() {
-                    info!("[app] Starting next queued recognition ({} remaining)", self.recognize_queue.len());
+                if let Some((station_name, stream_url, icy_title, nts_ch, nts_mixtape_url)) =
+                    self.recognize_queue.pop_front()
+                {
+                    info!(
+                        "[app] Starting next queued recognition ({} remaining)",
+                        self.recognize_queue.len()
+                    );
                     self.recognize_in_flight = true;
-                    self.spawn_recognition_job(station_name, stream_url, icy_title, nts_ch);
+                    self.spawn_recognition_job(
+                        station_name,
+                        stream_url,
+                        icy_title,
+                        nts_ch,
+                        nts_mixtape_url,
+                    );
                     self.toast.spinner("identifying…");
                 }
             }
@@ -899,9 +947,13 @@ impl App {
                 if self.state.daemon_state.current_station.is_some()
                     && self.state.daemon_state.current_file.is_none()
                 {
-                    if !self.state.pcm_pending_started && self.state.pcm_pending.len() >= PCM_JITTER_TARGET {
+                    if !self.state.pcm_pending_started
+                        && self.state.pcm_pending.len() >= PCM_JITTER_TARGET
+                    {
                         self.state.pcm_pending_started = true;
-                    } else if self.state.pcm_pending_started && self.state.pcm_pending.len() < PCM_JITTER_STOP {
+                    } else if self.state.pcm_pending_started
+                        && self.state.pcm_pending.len() < PCM_JITTER_STOP
+                    {
                         self.state.pcm_pending_started = false;
                     }
 
@@ -941,7 +993,11 @@ impl App {
                         let rms_n = STREAM_FRAME_SAMPLES.max(consumed) as f64;
                         if rms_n > 0.0 {
                             let rms = (sum_sq / rms_n).sqrt();
-                            let rms_db = if rms < 1e-10 { -90.0_f32 } else { (20.0 * rms.log10()) as f32 };
+                            let rms_db = if rms < 1e-10 {
+                                -90.0_f32
+                            } else {
+                                (20.0 * rms.log10()) as f32
+                            };
                             self.update_audio_trackers(rms_db);
                         }
                     }
@@ -973,12 +1029,10 @@ impl App {
                     .duration_since(self.state.last_audio_update)
                     .as_secs_f32();
                 if audio_age > 0.2 && self.state.audio_level > -90.0 {
-                    self.state.audio_level =
-                        (self.state.audio_level - elapsed * 20.0).max(-90.0);
+                    self.state.audio_level = (self.state.audio_level - elapsed * 20.0).max(-90.0);
                 }
                 if audio_age > 0.2 && self.state.vu_level > -90.0 {
-                    self.state.vu_level =
-                        (self.state.vu_level - elapsed * 20.0).max(-90.0);
+                    self.state.vu_level = (self.state.vu_level - elapsed * 20.0).max(-90.0);
                 }
                 if audio_age > 2.0 {
                     // Relax spread toward 4 dB (typical measured steady-state for
@@ -990,12 +1044,14 @@ impl App {
 
                 self.state.peak_last_update = now;
             }
-            
+
             AppMessage::DownloadComplete { url, result } => {
                 self.download_in_flight = false;
                 match result {
                     Ok(_) => {
-                        self.state.download_statuses.insert(url, DownloadStatus::Downloaded);
+                        self.state
+                            .download_statuses
+                            .insert(url, DownloadStatus::Downloaded);
                         self.toast.resolve_spinner(
                             Severity::Success,
                             "download complete".to_string(),
@@ -1003,7 +1059,9 @@ impl App {
                         );
                     }
                     Err(e) => {
-                        self.state.download_statuses.insert(url, DownloadStatus::Failed(e.clone()));
+                        self.state
+                            .download_statuses
+                            .insert(url, DownloadStatus::Failed(e.clone()));
                         self.toast.resolve_spinner(
                             Severity::Error,
                             format!("download failed: {}", e),
@@ -1028,10 +1086,20 @@ impl App {
         let prev_file = self.state.daemon_state.current_file.clone();
 
         // Preserve NTS city overrides
-        let nts1_city = self.state.daemon_state.stations.iter()
-            .find(|s| s.name == "NTS 1").map(|s| s.city.clone());
-        let nts2_city = self.state.daemon_state.stations.iter()
-            .find(|s| s.name == "NTS 2").map(|s| s.city.clone());
+        let nts1_city = self
+            .state
+            .daemon_state
+            .stations
+            .iter()
+            .find(|s| s.name == "NTS 1")
+            .map(|s| s.city.clone());
+        let nts2_city = self
+            .state
+            .daemon_state
+            .stations
+            .iter()
+            .find(|s| s.name == "NTS 2")
+            .map(|s| s.city.clone());
 
         self.state.daemon_state = new_state;
 
@@ -1074,13 +1142,17 @@ impl App {
         }
 
         // ── Intent confirmation ───────────────────────────────────────────────
-        self.intent_pause.on_confirmed(self.state.daemon_state.is_playing);
-        self.intent_volume.on_confirmed(self.state.daemon_state.volume);
+        self.intent_pause
+            .on_confirmed(self.state.daemon_state.is_playing);
+        self.intent_volume
+            .on_confirmed(self.state.daemon_state.volume);
         // For station: any station change (including Next/Prev/Random) confirms
         if self.intent_station.is_pending() || self.intent_station.is_timed_out() {
-            self.intent_station.on_confirmed(self.state.daemon_state.current_station);
+            self.intent_station
+                .on_confirmed(self.state.daemon_state.current_station);
         } else {
-            self.intent_station.on_confirmed(self.state.daemon_state.current_station);
+            self.intent_station
+                .on_confirmed(self.state.daemon_state.current_station);
         }
         // Propagate render hints into AppState so components can read them
         self.state.pause_hint = self.intent_pause.render_state();
@@ -1088,12 +1160,24 @@ impl App {
         self.state.station_hint = self.intent_station.render_state();
 
         if let Some(city) = nts1_city {
-            if let Some(s) = self.state.daemon_state.stations.iter_mut().find(|s| s.name == "NTS 1") {
+            if let Some(s) = self
+                .state
+                .daemon_state
+                .stations
+                .iter_mut()
+                .find(|s| s.name == "NTS 1")
+            {
                 s.city = city;
             }
         }
         if let Some(city) = nts2_city {
-            if let Some(s) = self.state.daemon_state.stations.iter_mut().find(|s| s.name == "NTS 2") {
+            if let Some(s) = self
+                .state
+                .daemon_state
+                .stations
+                .iter_mut()
+                .find(|s| s.name == "NTS 2")
+            {
                 s.city = city;
             }
         }
@@ -1170,7 +1254,10 @@ impl App {
 
             // Auto-show NTS panel when switching to/from NTS 1/2
             if self.state.daemon_state.current_station != prev_station {
-                let name = self.state.daemon_state.current_station
+                let name = self
+                    .state
+                    .daemon_state
+                    .current_station
                     .and_then(|i| self.state.daemon_state.stations.get(i))
                     .map(|s| s.name.as_str());
                 // If we were showing an NTS right-pane and switched away, revert to tickers
@@ -1282,7 +1369,10 @@ impl App {
         // transient None states from the daemon.
         match title {
             Some(ref t) => {
-                let station = self.state.daemon_state.current_station
+                let station = self
+                    .state
+                    .daemon_state
+                    .current_station
                     .and_then(|i| self.state.daemon_state.stations.get(i))
                     .map(|s| s.name.clone());
                 if let Some(st) = station {
@@ -1364,11 +1454,19 @@ impl App {
                 }
                 // Seek: comma/period = 30s, shift+comma/shift+period = 5min
                 KeyCode::Char(',') => {
-                    let seek_secs = if key.modifiers.contains(KeyModifiers::SHIFT) { -300.0 } else { -30.0 };
+                    let seek_secs = if key.modifiers.contains(KeyModifiers::SHIFT) {
+                        -300.0
+                    } else {
+                        -30.0
+                    };
                     return vec![Action::SeekRelative(seek_secs)];
                 }
                 KeyCode::Char('.') => {
-                    let seek_secs = if key.modifiers.contains(KeyModifiers::SHIFT) { 300.0 } else { 30.0 };
+                    let seek_secs = if key.modifiers.contains(KeyModifiers::SHIFT) {
+                        300.0
+                    } else {
+                        30.0
+                    };
                     return vec![Action::SeekRelative(seek_secs)];
                 }
                 KeyCode::Char('f') => {
@@ -1492,7 +1590,11 @@ impl App {
             return actions;
         }
         if hit(areas.station_list, col, row) {
-            click_pane!(ComponentId::StationList, self.station_list, areas.station_list);
+            click_pane!(
+                ComponentId::StationList,
+                self.station_list,
+                areas.station_list
+            );
         }
         if hit(areas.file_list, col, row) {
             click_pane!(ComponentId::FileList, self.file_list, areas.file_list);
@@ -1518,7 +1620,11 @@ impl App {
             click_pane!(ComponentId::IcyTicker, self.icy_ticker, areas.icy_ticker);
         }
         if hit(areas.songs_ticker, col, row) {
-            click_pane!(ComponentId::SongsTicker, self.songs_ticker, areas.songs_ticker);
+            click_pane!(
+                ComponentId::SongsTicker,
+                self.songs_ticker,
+                areas.songs_ticker
+            );
         }
         if hit(areas.file_meta, col, row) {
             click_pane!(ComponentId::FileMeta, self.file_meta, areas.file_meta);
@@ -1621,7 +1727,8 @@ impl App {
             }
             Action::RandomBack => {
                 if let Some(entry) = self.state.random_history.pop() {
-                    let _ = save_random_history(&self.random_history_path, &self.state.random_history);
+                    let _ =
+                        save_random_history(&self.random_history_path, &self.state.random_history);
                     self.send_cmd(Command::PlayFileAt {
                         path: entry.path,
                         start_secs: entry.start_secs,
@@ -1637,7 +1744,8 @@ impl App {
                 self.send_cmd(Command::Volume { value: v }).await;
             }
             Action::SeekRelative(delta) => {
-                self.send_cmd(Command::SeekRelative { seconds: delta }).await;
+                self.send_cmd(Command::SeekRelative { seconds: delta })
+                    .await;
             }
             Action::SeekTo(pos) => {
                 self.send_cmd(Command::SeekTo { seconds: pos }).await;
@@ -1697,7 +1805,8 @@ impl App {
             }
             Action::HoverNts(ch) => {
                 self.state.nts_hover_channel = ch;
-                self.wm.rebuild_focus_ring_with(self.state.nts_hover_channel);
+                self.wm
+                    .rebuild_focus_ring_with(self.state.nts_hover_channel);
             }
 
             // ── Scope ─────────────────────────────────────────────────────────
@@ -1706,48 +1815,48 @@ impl App {
             }
 
             // ── Stars ─────────────────────────────────────────────────────────
-            Action::SetStar(n, ctx) => {
-                match ctx {
-                    StarContext::Station(name) => {
-                        if n == 0 {
-                            self.state.station_stars.remove(&name);
-                        } else {
-                            self.state.station_stars.insert(name.clone(), n);
-                        }
-                        let _ = save_stars(
-                            &self.stars_path,
-                            &self.state.station_stars,
-                            &self.state.file_stars,
-                        );
-                        if n == 0 {
-                            self.toast.info(format!("unstarred {}", name));
-                        } else {
-                            self.toast.success(format!("{} {}", "✹".repeat(n as usize), name));
-                        }
+            Action::SetStar(n, ctx) => match ctx {
+                StarContext::Station(name) => {
+                    if n == 0 {
+                        self.state.station_stars.remove(&name);
+                    } else {
+                        self.state.station_stars.insert(name.clone(), n);
                     }
-                    StarContext::File(path) => {
-                        let label = std::path::Path::new(&path)
-                            .file_stem()
-                            .map(|s| s.to_string_lossy().to_string())
-                            .unwrap_or_else(|| path.clone());
-                        if n == 0 {
-                            self.state.file_stars.remove(&path);
-                        } else {
-                            self.state.file_stars.insert(path, n);
-                        }
-                        let _ = save_stars(
-                            &self.stars_path,
-                            &self.state.station_stars,
-                            &self.state.file_stars,
-                        );
-                        if n == 0 {
-                            self.toast.info(format!("unstarred {}", label));
-                        } else {
-                            self.toast.success(format!("{} {}", "★".repeat(n as usize), label));
-                        }
+                    let _ = save_stars(
+                        &self.stars_path,
+                        &self.state.station_stars,
+                        &self.state.file_stars,
+                    );
+                    if n == 0 {
+                        self.toast.info(format!("unstarred {}", name));
+                    } else {
+                        self.toast
+                            .success(format!("{} {}", "✹".repeat(n as usize), name));
                     }
                 }
-            }
+                StarContext::File(path) => {
+                    let label = std::path::Path::new(&path)
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_else(|| path.clone());
+                    if n == 0 {
+                        self.state.file_stars.remove(&path);
+                    } else {
+                        self.state.file_stars.insert(path, n);
+                    }
+                    let _ = save_stars(
+                        &self.stars_path,
+                        &self.state.station_stars,
+                        &self.state.file_stars,
+                    );
+                    if n == 0 {
+                        self.toast.info(format!("unstarred {}", label));
+                    } else {
+                        self.toast
+                            .success(format!("{} {}", "★".repeat(n as usize), label));
+                    }
+                }
+            },
             Action::ToggleStar => {
                 // Handled by the component
             }
@@ -1756,11 +1865,14 @@ impl App {
             Action::RecognizeSong => {
                 info!("[app] RecognizeSong action triggered");
 
-                let station = self.state.daemon_state.current_station
+                let station = self
+                    .state
+                    .daemon_state
+                    .current_station
                     .and_then(|i| self.state.daemon_state.stations.get(i))
                     .cloned();
                 let station_name = station.as_ref().map(|s| s.name.clone());
-                let stream_url   = station.as_ref().map(|s| s.url.clone());
+                let stream_url = station.as_ref().map(|s| s.url.clone());
 
                 // Best-effort ICY resolution — three tiers, in order of freshness:
                 //
@@ -1776,18 +1888,26 @@ impl App {
                 //    recorded during this session (has station tag, unlike log-loaded
                 //    entries).  Covers the case where daemon dedup prevented a
                 //    re-broadcast but the title is in recent history.
-                let icy_title = self.state.daemon_state.icy_title.clone()
+                let icy_title = self
+                    .state
+                    .daemon_state
+                    .icy_title
+                    .clone()
                     .or_else(|| {
                         // Tier 2: last_known_icy for the current station
                         let name = station_name.as_deref()?;
-                        self.last_known_icy.as_ref()
+                        self.last_known_icy
+                            .as_ref()
                             .filter(|(st, _)| st.as_str() == name)
                             .map(|(_, t)| t.clone())
                     })
                     .or_else(|| {
                         // Tier 3: most recent icy_history entry for this station
                         let name = station_name.as_deref()?;
-                        self.state.icy_history.iter().rev()
+                        self.state
+                            .icy_history
+                            .iter()
+                            .rev()
                             .find(|e| e.station.as_deref() == Some(name))
                             .map(|e| e.raw.clone())
                     });
@@ -1798,9 +1918,25 @@ impl App {
                 );
 
                 let nts_ch = station_name.as_deref().and_then(|n| {
-                    if n.eq_ignore_ascii_case("nts 1") { Some(0) }
-                    else if n.eq_ignore_ascii_case("nts 2") { Some(1) }
-                    else { None }
+                    if n.eq_ignore_ascii_case("nts 1") {
+                        Some(0)
+                    } else if n.eq_ignore_ascii_case("nts 2") {
+                        Some(1)
+                    } else {
+                        None
+                    }
+                });
+
+                let nts_mixtape_url = station.as_ref().and_then(|s| {
+                    if !s.name.starts_with("NTS:") {
+                        return None;
+                    }
+                    let u = s.mixtape_url.trim();
+                    if u.is_empty() {
+                        None
+                    } else {
+                        Some(u.to_string())
+                    }
                 });
 
                 if station_name.is_none() && icy_title.is_none() {
@@ -1816,8 +1952,17 @@ impl App {
                     if self.recognize_in_flight {
                         // Deduplicate & cap at 3 queued jobs.
                         if self.recognize_queue.len() < 3 {
-                            self.recognize_queue.push_back((station_name, stream_url, icy_title, nts_ch));
-                            info!("[app] Recognition queued ({} in queue)", self.recognize_queue.len());
+                            self.recognize_queue.push_back((
+                                station_name,
+                                stream_url,
+                                icy_title,
+                                nts_ch,
+                                nts_mixtape_url,
+                            ));
+                            info!(
+                                "[app] Recognition queued ({} in queue)",
+                                self.recognize_queue.len()
+                            );
                         } else {
                             info!("[app] Recognition queue full (3), ignoring duplicate press");
                         }
@@ -1825,7 +1970,13 @@ impl App {
                         // Start immediately.
                         self.recognize_in_flight = true;
                         self.recognize_active_station = station_name.clone();
-                        self.spawn_recognition_job(station_name, stream_url, icy_title, nts_ch);
+                        self.spawn_recognition_job(
+                            station_name,
+                            stream_url,
+                            icy_title,
+                            nts_ch,
+                            nts_mixtape_url,
+                        );
                         self.toast.spinner("identifying…");
                     }
                 }
@@ -1885,7 +2036,7 @@ impl App {
             | Action::Render
             | Action::Resize(_, _)
             | Action::Noop => {}
-            
+
             Action::Download => {
                 // Get selected song entry and download if it has an NTS URL
                 if let Some(entry) = self.get_selected_song_entry() {
@@ -1895,7 +2046,10 @@ impl App {
                             // Queue only if this URL isn't already pending.
                             if !self.download_queue.iter().any(|(u, _)| u == &url) {
                                 self.download_queue.push_back((url, display));
-                                info!("[app] Download queued ({} in queue)", self.download_queue.len());
+                                info!(
+                                    "[app] Download queued ({} in queue)",
+                                    self.download_queue.len()
+                                );
                             } else {
                                 info!("[app] Download already queued, ignoring duplicate press");
                             }
@@ -1931,8 +2085,8 @@ impl App {
     // ── Drawing ───────────────────────────────────────────────────────────────
 
     fn draw(&mut self, frame: &mut ratatui::Frame) {
-        use ratatui::widgets::Block;
         use crate::theme::C_BG;
+        use ratatui::widgets::Block;
         let area = frame.area();
 
         // Fill the entire terminal with the base background colour so that
@@ -2000,7 +2154,8 @@ impl App {
             use ratatui::widgets::Borders;
             // Expanded: omit top border (body above has its own bottom)
             self.log_panel.borders = Borders::LEFT | Borders::BOTTOM | Borders::RIGHT;
-            self.log_panel.draw(frame, log_area, log_focused, &self.state);
+            self.log_panel
+                .draw(frame, log_area, log_focused, &self.state);
             self.pane_areas.log_panel = log_area;
         } else {
             self.pane_areas.log_panel = Rect::default();
@@ -2038,7 +2193,8 @@ impl App {
         if self.wm.radio_right_pane == RightPane::Scope {
             let station_focused = self.wm.focused() == Some(ComponentId::StationList);
             self.station_list.borders = Borders::empty();
-            self.station_list.draw(frame, area, station_focused, &self.state);
+            self.station_list
+                .draw(frame, area, station_focused, &self.state);
             self.pane_areas.station_list = area;
             self.pane_areas.nts_panel = Rect::default();
             return;
@@ -2066,12 +2222,19 @@ impl App {
         if station_collapsed {
             use crate::widgets::pane_chrome::draw_collapsed_pane;
             let summary = self.station_list.collapse_summary(&self.state);
-            draw_collapsed_pane(frame, left_area, "stations", summary.as_deref(), station_focused);
+            draw_collapsed_pane(
+                frame,
+                left_area,
+                "stations",
+                summary.as_deref(),
+                station_focused,
+            );
             self.pane_areas.station_list = left_area;
         } else {
             // Left pane: omit right border — right pane's left border is the shared divider
             self.station_list.borders = Borders::TOP | Borders::LEFT | Borders::BOTTOM;
-            self.station_list.draw(frame, left_area, station_focused, &self.state);
+            self.station_list
+                .draw(frame, left_area, station_focused, &self.state);
             self.pane_areas.station_list = left_area;
         }
 
@@ -2085,22 +2248,12 @@ impl App {
                 let rows = Layout::default()
                     .direction(Direction::Vertical)
                     .constraints(match (icy_collapsed, songs_collapsed) {
-                        (true, true) => vec![
-                            Constraint::Length(1),
-                            Constraint::Length(1),
-                        ],
-                        (true, false) => vec![
-                            Constraint::Length(1),
-                            Constraint::Min(0),
-                        ],
-                        (false, true) => vec![
-                            Constraint::Min(0),
-                            Constraint::Length(1),
-                        ],
-                        (false, false) => vec![
-                            Constraint::Percentage(50),
-                            Constraint::Percentage(50),
-                        ],
+                        (true, true) => vec![Constraint::Length(1), Constraint::Length(1)],
+                        (true, false) => vec![Constraint::Length(1), Constraint::Min(0)],
+                        (false, true) => vec![Constraint::Min(0), Constraint::Length(1)],
+                        (false, false) => {
+                            vec![Constraint::Percentage(50), Constraint::Percentage(50)]
+                        }
                     })
                     .split(right_area);
 
@@ -2113,7 +2266,8 @@ impl App {
                     draw_collapsed_pane(frame, rows[0], "icy", summary.as_deref(), icy_focused);
                 } else {
                     self.icy_ticker.borders = Borders::ALL;
-                    self.icy_ticker.draw(frame, rows[0], icy_focused, &self.state);
+                    self.icy_ticker
+                        .draw(frame, rows[0], icy_focused, &self.state);
                 }
 
                 if songs_collapsed {
@@ -2127,7 +2281,8 @@ impl App {
                     } else {
                         Borders::LEFT | Borders::BOTTOM | Borders::RIGHT
                     };
-                    self.songs_ticker.draw(frame, rows[1], songs_focused, &self.state);
+                    self.songs_ticker
+                        .draw(frame, rows[1], songs_focused, &self.state);
                 }
 
                 self.pane_areas.icy_ticker = rows[0];
@@ -2140,10 +2295,17 @@ impl App {
                 if nts_collapsed {
                     use crate::widgets::pane_chrome::draw_collapsed_pane;
                     let summary = self.nts_panel_ch1.collapse_summary(&self.state);
-                    draw_collapsed_pane(frame, right_area, "nts 1", summary.as_deref(), nts_focused);
+                    draw_collapsed_pane(
+                        frame,
+                        right_area,
+                        "nts 1",
+                        summary.as_deref(),
+                        nts_focused,
+                    );
                 } else {
                     self.nts_panel_ch1.borders = Borders::ALL;
-                    self.nts_panel_ch1.draw(frame, right_area, nts_focused, &self.state);
+                    self.nts_panel_ch1
+                        .draw(frame, right_area, nts_focused, &self.state);
                 }
                 self.pane_areas.nts_panel = right_area;
             }
@@ -2153,10 +2315,17 @@ impl App {
                 if nts_collapsed {
                     use crate::widgets::pane_chrome::draw_collapsed_pane;
                     let summary = self.nts_panel_ch2.collapse_summary(&self.state);
-                    draw_collapsed_pane(frame, right_area, "nts 2", summary.as_deref(), nts_focused);
+                    draw_collapsed_pane(
+                        frame,
+                        right_area,
+                        "nts 2",
+                        summary.as_deref(),
+                        nts_focused,
+                    );
                 } else {
                     self.nts_panel_ch2.borders = Borders::ALL;
-                    self.nts_panel_ch2.draw(frame, right_area, nts_focused, &self.state);
+                    self.nts_panel_ch2
+                        .draw(frame, right_area, nts_focused, &self.state);
                 }
                 self.pane_areas.nts_panel = right_area;
             }
@@ -2183,7 +2352,8 @@ impl App {
 
                     // Compute content height: border(2) + inner rows needed
                     let overlay_width = base.width;
-                    let content_rows = panel.compact_content_height_for_state(&self.state, overlay_width);
+                    let content_rows =
+                        panel.compact_content_height_for_state(&self.state, overlay_width);
                     // +2 for top/bottom borders, capped to available space
                     let overlay_height = (content_rows + 2).min(base.height.saturating_sub(1));
                     let overlay_y = base.y + base.height - overlay_height;
@@ -2237,7 +2407,8 @@ impl App {
             draw_collapsed_pane(frame, left_area, "files", summary.as_deref(), file_focused);
         } else {
             self.file_list.borders = Borders::TOP | Borders::LEFT | Borders::BOTTOM;
-            self.file_list.draw(frame, left_area, file_focused, &self.state);
+            self.file_list
+                .draw(frame, left_area, file_focused, &self.state);
         }
         self.pane_areas.file_list = left_area;
 
@@ -2253,9 +2424,21 @@ impl App {
         let rows = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                if meta_collapsed { Constraint::Length(1) } else { Constraint::Percentage(50) },
-                if icy_collapsed { Constraint::Length(1) } else { Constraint::Percentage(25) },
-                if songs_collapsed { Constraint::Length(1) } else { Constraint::Percentage(25) },
+                if meta_collapsed {
+                    Constraint::Length(1)
+                } else {
+                    Constraint::Percentage(50)
+                },
+                if icy_collapsed {
+                    Constraint::Length(1)
+                } else {
+                    Constraint::Percentage(25)
+                },
+                if songs_collapsed {
+                    Constraint::Length(1)
+                } else {
+                    Constraint::Percentage(25)
+                },
             ])
             .split(right_area);
 
@@ -2265,7 +2448,8 @@ impl App {
             draw_collapsed_pane(frame, rows[0], "meta", summary.as_deref(), meta_focused);
         } else {
             self.file_meta.borders = Borders::ALL;
-            self.file_meta.draw(frame, rows[0], meta_focused, &self.state);
+            self.file_meta
+                .draw(frame, rows[0], meta_focused, &self.state);
         }
 
         if icy_collapsed {
@@ -2279,7 +2463,8 @@ impl App {
             } else {
                 Borders::LEFT | Borders::BOTTOM | Borders::RIGHT
             };
-            self.icy_ticker.draw(frame, rows[1], icy_focused, &self.state);
+            self.icy_ticker
+                .draw(frame, rows[1], icy_focused, &self.state);
         }
 
         if songs_collapsed {
@@ -2293,7 +2478,8 @@ impl App {
             } else {
                 Borders::LEFT | Borders::BOTTOM | Borders::RIGHT
             };
-            self.songs_ticker.draw(frame, rows[2], songs_focused, &self.state);
+            self.songs_ticker
+                .draw(frame, rows[2], songs_focused, &self.state);
         }
 
         self.pane_areas.file_meta = rows[0];
@@ -2332,7 +2518,7 @@ impl App {
     /// 1. Immediately sends `RecognitionStarted` with initial row (job_id + station + icy).
     /// 2. Spawns three concurrent tasks:
     ///    a. ICY patch — immediate if icy_title is Some.
-    ///    b. NTS patch — async API call (NTS 1/2 only).
+    ///    b. NTS patch — async API call (NTS 1/2 or NTS Infinite Mixtape).
     ///    c. vibra patch — silent mpv 10s capture + vibra fingerprint.
     fn spawn_recognition_job(
         &mut self,
@@ -2340,6 +2526,7 @@ impl App {
         stream_url: Option<String>,
         icy_title: Option<String>,
         nts_ch: Option<usize>,
+        nts_mixtape_url: Option<String>,
     ) {
         let Some(tx) = self.recognition_tx.clone() else {
             warn!("[app] Cannot spawn recognition job: recognition_tx not initialized");
@@ -2349,8 +2536,8 @@ impl App {
         let now = chrono::Local::now();
         let job_id = make_job_id(&now, station_name.as_deref());
         info!(
-            "[app] Spawning recognition job_id={} station={:?} icy={:?} nts_ch={:?} url={:?}",
-            job_id, station_name, icy_title, nts_ch, stream_url
+            "[app] Spawning recognition job_id={} station={:?} icy={:?} nts_ch={:?} nts_mixtape_url={:?} url={:?}",
+            job_id, station_name, icy_title, nts_ch, nts_mixtape_url, stream_url
         );
 
         // Initial row — sent immediately so the UI shows something right away
@@ -2376,7 +2563,10 @@ impl App {
 
         // ── Task A: ICY patch (immediate) ─────────────────────────────────────
         if let Some(icy) = icy_title {
-            let patch = VdsPatch { icy_info: Some(icy.clone()), ..Default::default() };
+            let patch = VdsPatch {
+                icy_info: Some(icy.clone()),
+                ..Default::default()
+            };
             tokio::spawn(async move {
                 let _ = tx2.send(AppMessage::RecognitionPatch(job_id2, patch)).await;
             });
@@ -2389,13 +2579,27 @@ impl App {
                     info!("[recognition] nts ch{}: show={:?}", ch + 1, show);
                     let patch = VdsPatch {
                         nts_show: Some(show.clone()),
-                        nts_tag:  tag,
-                        nts_url:  url,
+                        nts_tag: tag,
+                        nts_url: url,
                         ..Default::default()
                     };
                     let _ = tx3.send(AppMessage::RecognitionPatch(job_id3, patch)).await;
                 } else {
                     warn!("[recognition] nts ch{}: no result", ch + 1);
+                }
+            });
+        } else if let Some(mixtape_url) = nts_mixtape_url {
+            tokio::spawn(async move {
+                if let Some((show, url)) = recognize_via_nts_mixtape(&mixtape_url).await {
+                    info!("[recognition] nts mixtape: show={:?}", show);
+                    let patch = VdsPatch {
+                        nts_show: Some(show),
+                        nts_url: url,
+                        ..Default::default()
+                    };
+                    let _ = tx3.send(AppMessage::RecognitionPatch(job_id3, patch)).await;
+                } else {
+                    info!("[recognition] nts mixtape: no announced show");
                 }
             });
         }
@@ -2413,8 +2617,12 @@ impl App {
                         vibra_rec: rec_str,
                         ..Default::default()
                     };
-                    let _ = tx4.send(AppMessage::RecognitionPatch(job_id4.clone(), patch)).await;
-                    let _ = tx4.send(AppMessage::RecognitionComplete(job_id4, display)).await;
+                    let _ = tx4
+                        .send(AppMessage::RecognitionPatch(job_id4.clone(), patch))
+                        .await;
+                    let _ = tx4
+                        .send(AppMessage::RecognitionComplete(job_id4, display))
+                        .await;
                 } else {
                     warn!("[recognition] vibra returned nothing");
                     let _ = tx4.send(AppMessage::RecognitionNoMatch).await;
@@ -2528,7 +2736,7 @@ impl App {
             }
         }
     }
-    
+
     /// Get the currently selected song entry from songs ticker
     fn get_selected_song_entry(&self) -> Option<radio_proto::songs::RecognitionResult> {
         // Get the selected index from songs_ticker
@@ -2545,7 +2753,9 @@ impl App {
         info!("[app] Starting download for: {}", url);
         self.download_in_flight = true;
         self.toast.spinner(format!("downloading {}…", display));
-        self.state.download_statuses.insert(url.clone(), DownloadStatus::Downloading(0.0));
+        self.state
+            .download_statuses
+            .insert(url.clone(), DownloadStatus::Downloading(0.0));
         let download_dir = self.state.downloads_dir.clone();
         let tx = self.recognition_tx.clone();
         tokio::spawn(async move {
@@ -2555,13 +2765,15 @@ impl App {
             }
         });
     }
-    
+
     /// Download an NTS show
-    async fn download_nts_show(url: &str, download_dir: &std::path::Path) -> Result<std::path::PathBuf, String> {
+    async fn download_nts_show(
+        url: &str,
+        download_dir: &std::path::Path,
+    ) -> Result<std::path::PathBuf, String> {
         // Find yt-dlp
-        let yt_dlp_path = radio_proto::platform::find_yt_dlp_binary()
-            .ok_or("yt-dlp not found")?;
-        
+        let yt_dlp_path = radio_proto::platform::find_yt_dlp_binary().ok_or("yt-dlp not found")?;
+
         // Use nts_download module
         crate::nts_download::download_episode(url, download_dir, &yt_dlp_path)
             .await
@@ -2690,8 +2902,6 @@ fn load_icy_log(path: &PathBuf) -> Vec<TickerEntry> {
         .collect()
 }
 
-
-
 fn load_stars(path: &PathBuf) -> (HashMap<String, u8>, HashMap<String, u8>) {
     let Ok(content) = std::fs::read_to_string(path) else {
         return (HashMap::new(), HashMap::new());
@@ -2723,10 +2933,7 @@ fn load_random_history(path: &PathBuf) -> Vec<RandomHistoryEntry> {
     serde_json::from_str(&content).unwrap_or_default()
 }
 
-fn save_random_history(
-    path: &PathBuf,
-    history: &[RandomHistoryEntry],
-) -> anyhow::Result<()> {
+fn save_random_history(path: &PathBuf, history: &[RandomHistoryEntry]) -> anyhow::Result<()> {
     std::fs::write(path, serde_json::to_string(history)?)?;
     Ok(())
 }
@@ -2830,8 +3037,21 @@ fn is_playable_audio_path(path: &std::path::Path) -> bool {
     matches!(
         ext.as_deref(),
         Some(
-            "mp3" | "flac" | "ogg" | "opus" | "m4a" | "aac" | "wav" | "aiff" | "wv" | "ape"
-                | "mka" | "webm" | "mkv" | "mp4" | "m4b"
+            "mp3"
+                | "flac"
+                | "ogg"
+                | "opus"
+                | "m4a"
+                | "aac"
+                | "wav"
+                | "aiff"
+                | "wv"
+                | "ape"
+                | "mka"
+                | "webm"
+                | "mkv"
+                | "mp4"
+                | "m4b"
         )
     )
 }
@@ -2843,8 +3063,10 @@ fn probe_file_metadata(path: &std::path::Path) -> Option<FileMetadata> {
         .unwrap_or_else(|| std::path::PathBuf::from("ffprobe"));
     let output = std::process::Command::new(ffprobe_bin)
         .args([
-            "-v", "quiet",
-            "-print_format", "json",
+            "-v",
+            "quiet",
+            "-print_format",
+            "json",
             "-show_format",
             "-show_chapters",
             path.to_str()?,
@@ -2862,7 +3084,10 @@ fn probe_file_metadata(path: &std::path::Path) -> Option<FileMetadata> {
 
     fn tag(tags: &serde_json::Value, keys: &[&str]) -> Option<String> {
         for k in keys {
-            if let Some(v) = tags[k].as_str().or_else(|| tags[&k.to_uppercase()].as_str()) {
+            if let Some(v) = tags[k]
+                .as_str()
+                .or_else(|| tags[&k.to_uppercase()].as_str())
+            {
                 let s = v.trim().to_string();
                 if !s.is_empty() {
                     return Some(s);
@@ -2886,8 +3111,12 @@ fn probe_file_metadata(path: &std::path::Path) -> Option<FileMetadata> {
         .map(|arr| {
             arr.iter()
                 .filter_map(|ch| {
-                    let start = ch["start_time"].as_str().and_then(|s| s.parse::<f64>().ok())?;
-                    let end = ch["end_time"].as_str().and_then(|s| s.parse::<f64>().ok())?;
+                    let start = ch["start_time"]
+                        .as_str()
+                        .and_then(|s| s.parse::<f64>().ok())?;
+                    let end = ch["end_time"]
+                        .as_str()
+                        .and_then(|s| s.parse::<f64>().ok())?;
                     let title = ch["tags"]["title"]
                         .as_str()
                         .unwrap_or("")
@@ -2896,7 +3125,11 @@ fn probe_file_metadata(path: &std::path::Path) -> Option<FileMetadata> {
                     if title.is_empty() {
                         return None;
                     }
-                    Some(FileChapter { title, start_secs: start, end_secs: end })
+                    Some(FileChapter {
+                        title,
+                        start_secs: start,
+                        end_secs: end,
+                    })
                 })
                 .collect()
         })
@@ -2938,9 +3171,7 @@ fn extract_tracklist_lines(text: &str) -> Vec<String> {
         // Accept lines starting with HH:MM or MM:SS timestamp or a number+dot
         let looks_like_track = trimmed.len() > 3 && {
             let first = trimmed.split_whitespace().next().unwrap_or("");
-            first.contains(':')
-                || first.ends_with('.')
-                || first.chars().all(|c| c.is_ascii_digit())
+            first.contains(':') || first.ends_with('.') || first.chars().all(|c| c.is_ascii_digit())
         };
         if looks_like_track {
             lines.push(trimmed.to_string());

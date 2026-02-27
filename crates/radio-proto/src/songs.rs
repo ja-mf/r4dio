@@ -19,6 +19,7 @@
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::sync::OnceLock;
 use tracing::{debug, info, warn};
 
 // ── Public types ──────────────────────────────────────────────────────────────
@@ -35,8 +36,8 @@ impl RecognitionSource {
     pub fn label(&self) -> &'static str {
         match self {
             Self::Vibra => "vibra",
-            Self::Icy   => "icy",
-            Self::Nts   => "nts",
+            Self::Icy => "icy",
+            Self::Nts => "nts",
         }
     }
 }
@@ -80,20 +81,39 @@ impl RecognitionResult {
     /// Which sources have contributed so far (for badge display).
     pub fn sources(&self) -> Vec<RecognitionSource> {
         let mut v = Vec::new();
-        if self.vibra_rec.as_deref().map(|s| !s.is_empty()).unwrap_or(false) {
+        if self
+            .vibra_rec
+            .as_deref()
+            .map(|s| !s.is_empty())
+            .unwrap_or(false)
+        {
             v.push(RecognitionSource::Vibra);
         }
-        if self.nts_show.as_deref().map(|s| !s.is_empty()).unwrap_or(false) {
+        if self
+            .nts_show
+            .as_deref()
+            .map(|s| !s.is_empty())
+            .unwrap_or(false)
+        {
             v.push(RecognitionSource::Nts);
         }
-        if self.icy_info.as_deref().map(|s| !s.is_empty()).unwrap_or(false) {
+        if self
+            .icy_info
+            .as_deref()
+            .map(|s| !s.is_empty())
+            .unwrap_or(false)
+        {
             v.push(RecognitionSource::Icy);
         }
         v
     }
 
     pub fn source_label(&self) -> String {
-        self.sources().iter().map(|s| s.label()).collect::<Vec<_>>().join("+")
+        self.sources()
+            .iter()
+            .map(|s| s.label())
+            .collect::<Vec<_>>()
+            .join("+")
     }
 }
 
@@ -101,11 +121,15 @@ impl RecognitionResult {
 
 /// Generate a short job ID: first 12 hex chars of a simple hash of timestamp+station.
 pub fn make_job_id(ts: &DateTime<Local>, station: Option<&str>) -> String {
-    use std::hash::{Hash, Hasher};
     use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
     let mut h = DefaultHasher::new();
-    ts.timestamp_nanos_opt().unwrap_or(ts.timestamp()).hash(&mut h);
-    if let Some(s) = station { s.hash(&mut h); }
+    ts.timestamp_nanos_opt()
+        .unwrap_or(ts.timestamp())
+        .hash(&mut h);
+    if let Some(s) = station {
+        s.hash(&mut h);
+    }
     format!("{:016x}", h.finish())
 }
 
@@ -147,12 +171,7 @@ async fn try_vibra_ffmpeg(
 
     let mut ffmpeg_proc = std::process::Command::new(ffmpeg)
         .args([
-            "-i", stream_url,
-            "-t", "10",
-            "-vn",
-            "-ar", "44100",
-            "-ac", "2",
-            "-f", "s16le",
+            "-i", stream_url, "-t", "10", "-vn", "-ar", "44100", "-ac", "2", "-f", "s16le",
             "pipe:1",
         ])
         .stdout(std::process::Stdio::piped())
@@ -162,7 +181,9 @@ async fn try_vibra_ffmpeg(
     let ffmpeg_pid = ffmpeg_proc.id();
     info!("[vibra] ffmpeg spawned with PID: {:?}", ffmpeg_pid);
 
-    let ffmpeg_stdout = ffmpeg_proc.stdout.take()
+    let ffmpeg_stdout = ffmpeg_proc
+        .stdout
+        .take()
         .ok_or_else(|| anyhow::anyhow!("ffmpeg stdout unavailable"))?;
 
     // Run vibra in a blocking thread: reads raw PCM from stdin (ffmpeg stdout), outputs JSON.
@@ -177,10 +198,14 @@ async fn try_vibra_ffmpeg(
         let result = std::process::Command::new(&vibra_path)
             .args([
                 "--recognize",
-                "--seconds", "10",
-                "--rate", "44100",
-                "--channels", "2",
-                "--bits", "16",
+                "--seconds",
+                "10",
+                "--rate",
+                "44100",
+                "--channels",
+                "2",
+                "--bits",
+                "16",
             ])
             .stdin(std::process::Stdio::from(ffmpeg_stdout))
             .stdout(std::process::Stdio::piped())
@@ -190,7 +215,8 @@ async fn try_vibra_ffmpeg(
             info!("[vibra] vibra exited with status: {:?}", out.status.code());
         }
         result
-    }).await??;
+    })
+    .await??;
 
     // Wait for ffmpeg to finish (should already be done after 10s + vibra read)
     let ffmpeg_exit = ffmpeg_proc.wait()?;
@@ -219,11 +245,17 @@ async fn try_vibra_ffmpeg(
 /// Parse vibra JSON → "Artist – Title" string (or just "Title").
 pub fn vibra_rec_string(json: &serde_json::Value) -> Option<String> {
     let track = &json["track"];
-    let title  = track["title"].as_str().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())?;
-    let artist = track["subtitle"].as_str().map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    let title = track["title"]
+        .as_str()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())?;
+    let artist = track["subtitle"]
+        .as_str()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
     Some(match artist {
         Some(a) => format!("{} \u{2013} {}", a, title),
-        None    => title,
+        None => title,
     })
 }
 
@@ -234,8 +266,15 @@ pub fn vibra_rec_string(json: &serde_json::Value) -> Option<String> {
 pub async fn recognize_via_nts(ch: usize) -> Option<(String, Option<String>, Option<String>)> {
     let url = "https://www.nts.live/api/v2/live";
     info!("[nts] Querying live API for channel {}", ch);
-    let resp = reqwest::get(url).await.map_err(|e| warn!("[nts] request error: {}", e)).ok()?;
-    let json: serde_json::Value = resp.json().await.map_err(|e| warn!("[nts] JSON error: {}", e)).ok()?;
+    let resp = reqwest::get(url)
+        .await
+        .map_err(|e| warn!("[nts] request error: {}", e))
+        .ok()?;
+    let json: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| warn!("[nts] JSON error: {}", e))
+        .ok()?;
 
     let channel = &json["results"][ch];
     if channel.is_null() {
@@ -244,12 +283,14 @@ pub async fn recognize_via_nts(ch: usize) -> Option<(String, Option<String>, Opt
     }
 
     let now = &channel["now"];
-    let show_title = now["broadcast_title"].as_str()
+    let show_title = now["broadcast_title"]
+        .as_str()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())?;
 
     // Tag summary: first few genres joined
-    let tags = now["embeds"]["details"]["genres"].as_array()
+    let tags = now["embeds"]["details"]["genres"]
+        .as_array()
         .map(|arr| {
             arr.iter()
                 .filter_map(|g| g["value"].as_str())
@@ -259,11 +300,194 @@ pub async fn recognize_via_nts(ch: usize) -> Option<(String, Option<String>, Opt
         })
         .filter(|s| !s.is_empty());
 
-    let show_url = now["embeds"]["details"]["slug"].as_str()
+    let show_url = now["embeds"]["details"]["slug"]
+        .as_str()
         .map(|slug| format!("https://www.nts.live/shows/{}", slug));
 
-    info!("[nts] Got show: {:?}, tags: {:?}, url: {:?}", show_title, tags, show_url);
+    info!(
+        "[nts] Got show: {:?}, tags: {:?}, url: {:?}",
+        show_title, tags, show_url
+    );
     Some((show_title, tags, show_url))
+}
+
+#[derive(Clone)]
+struct NtsMixtapeFirebaseConfig {
+    project_id: String,
+    api_key: String,
+}
+
+static NTS_MIXTAPE_FIREBASE: OnceLock<NtsMixtapeFirebaseConfig> = OnceLock::new();
+
+/// Query the NTS Infinite Mixtape metadata source for the currently announced show.
+///
+/// Input: full mixtape page URL, e.g. `https://www.nts.live/infinite-mixtapes/slow-focus`.
+/// Output: `(show_title, optional_episode_url)`.
+pub async fn recognize_via_nts_mixtape(mixtape_url: &str) -> Option<(String, Option<String>)> {
+    let alias = parse_mixtape_alias(mixtape_url)?;
+    let firebase = get_nts_mixtape_firebase(mixtape_url).await?;
+
+    let endpoint = format!(
+        "https://firestore.googleapis.com/v1/projects/{}/databases/(default)/documents:runQuery?key={}",
+        firebase.project_id, firebase.api_key
+    );
+
+    let payload = serde_json::json!({
+        "structuredQuery": {
+            "from": [{ "collectionId": "mixtape_titles" }],
+            "where": {
+                "fieldFilter": {
+                    "field": { "fieldPath": "mixtape_alias" },
+                    "op": "EQUAL",
+                    "value": { "stringValue": alias }
+                }
+            },
+            "orderBy": [{ "field": { "fieldPath": "started_at" }, "direction": "DESCENDING" }],
+            "limit": 1
+        }
+    });
+
+    let rows: serde_json::Value = reqwest::Client::new()
+        .post(endpoint)
+        .header("Content-Type", "application/json")
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| warn!("[nts-mixtape] firestore request error for {}: {}", alias, e))
+        .ok()?
+        .json()
+        .await
+        .map_err(|e| warn!("[nts-mixtape] firestore JSON error for {}: {}", alias, e))
+        .ok()?;
+
+    let doc = rows
+        .as_array()
+        .and_then(|arr| arr.first())
+        .and_then(|row| row.get("document"))
+        .and_then(|d| d.get("fields"))
+        .and_then(|f| f.as_object())?;
+
+    let title = firestore_string(doc, "title")?;
+    let show_alias = firestore_string(doc, "show_alias");
+    let episode_alias = firestore_string(doc, "episode_alias");
+
+    let nts_url = show_alias.map(|show| match episode_alias {
+        Some(ep) => format!("https://www.nts.live/shows/{show}/episodes/{ep}"),
+        None => format!("https://www.nts.live/shows/{show}"),
+    });
+
+    info!(
+        "[nts-mixtape] alias={} show={:?} url={:?}",
+        alias, title, nts_url
+    );
+    Some((title, nts_url))
+}
+
+fn parse_mixtape_alias(mixtape_url: &str) -> Option<String> {
+    let parsed = reqwest::Url::parse(mixtape_url)
+        .map_err(|e| warn!("[nts-mixtape] invalid URL {}: {}", mixtape_url, e))
+        .ok()?;
+    let seg: Vec<_> = parsed.path_segments()?.collect();
+    if seg.len() >= 2 && seg[0] == "infinite-mixtapes" && !seg[1].is_empty() {
+        Some(seg[1].to_string())
+    } else {
+        warn!(
+            "[nts-mixtape] URL has no infinite-mixtapes alias: {}",
+            mixtape_url
+        );
+        None
+    }
+}
+
+async fn get_nts_mixtape_firebase(bootstrap_url: &str) -> Option<NtsMixtapeFirebaseConfig> {
+    if let Some(cfg) = NTS_MIXTAPE_FIREBASE.get() {
+        return Some(cfg.clone());
+    }
+
+    let html = reqwest::get(bootstrap_url)
+        .await
+        .map_err(|e| warn!("[nts-mixtape] bootstrap request error: {}", e))
+        .ok()?
+        .text()
+        .await
+        .map_err(|e| warn!("[nts-mixtape] bootstrap HTML read error: {}", e))
+        .ok()?;
+
+    let bundle_url = extract_bundle_url(&html)?;
+    let js = reqwest::get(&bundle_url)
+        .await
+        .map_err(|e| warn!("[nts-mixtape] bundle request error: {}", e))
+        .ok()?
+        .text()
+        .await
+        .map_err(|e| warn!("[nts-mixtape] bundle JS read error: {}", e))
+        .ok()?;
+
+    let cfg = extract_firebase_config(&js)?;
+    let _ = NTS_MIXTAPE_FIREBASE.set(cfg.clone());
+    Some(cfg)
+}
+
+fn extract_bundle_url(html: &str) -> Option<String> {
+    let mut cursor = 0usize;
+    while let Some(pos) = html[cursor..].find("src=\"") {
+        let start = cursor + pos + 5;
+        let rest = &html[start..];
+        let end_rel = rest.find('"')?;
+        let src = &rest[..end_rel];
+        if src.contains("/js/app.min.") && src.ends_with(".js") {
+            if src.starts_with("http") {
+                return Some(src.to_string());
+            }
+            return Some(format!("https://www.nts.live{src}"));
+        }
+        cursor = start + end_rel + 1;
+    }
+    warn!("[nts-mixtape] app bundle URL not found in HTML");
+    None
+}
+
+fn extract_firebase_config(js: &str) -> Option<NtsMixtapeFirebaseConfig> {
+    let marker = "projectId:\"nts-ios-app\"";
+    let proj_pos = js.find(marker)?;
+
+    let scan_start = proj_pos.saturating_sub(700);
+    let scan_end = (proj_pos + 700).min(js.len());
+    let window = &js[scan_start..scan_end];
+
+    let key_prefix = "apiKey:\"";
+    let key_pos = window.find(key_prefix)?;
+    let key_start = key_pos + key_prefix.len();
+    let key_tail = &window[key_start..];
+    let key_end = key_tail.find('"')?;
+    let api_key = key_tail[..key_end].trim().to_string();
+    if !api_key.starts_with("AIza") {
+        warn!("[nts-mixtape] extracted firebase api_key has unexpected format");
+        return None;
+    }
+
+    Some(NtsMixtapeFirebaseConfig {
+        project_id: "nts-ios-app".to_string(),
+        api_key,
+    })
+}
+
+fn firestore_string(
+    fields: &serde_json::Map<String, serde_json::Value>,
+    field_name: &str,
+) -> Option<String> {
+    let v = fields.get(field_name)?.as_object()?;
+    let raw = v
+        .get("stringValue")
+        .and_then(|x| x.as_str())
+        .or_else(|| v.get("timestampValue").and_then(|x| x.as_str()))
+        .or_else(|| v.get("integerValue").and_then(|x| x.as_str()))?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
 }
 
 // ── ICY parsing ───────────────────────────────────────────────────────────────
@@ -273,7 +497,7 @@ pub fn parse_icy(icy: &str) -> (Option<String>, Option<String>) {
     let s = icy.trim();
     if let Some(pos) = s.find(" - ") {
         let artist = s[..pos].trim().to_string();
-        let title  = s[pos + 3..].trim().to_string();
+        let title = s[pos + 3..].trim().to_string();
         (
             Some(title).filter(|t| !t.is_empty()),
             Some(artist).filter(|a| !a.is_empty()),
@@ -285,7 +509,8 @@ pub fn parse_icy(icy: &str) -> (Option<String>, Option<String>) {
 
 // ── VDS persistence ───────────────────────────────────────────────────────────
 
-const VDS_HEADER: &str = "job_id\ttimestamp\tstation\ticy_info\tnts_show\tnts_tag\tnts_url\tvibra_rec\n";
+const VDS_HEADER: &str =
+    "job_id\ttimestamp\tstation\ticy_info\tnts_show\tnts_tag\tnts_url\tvibra_rec\n";
 
 /// Write an initial (possibly partial) VDS row.
 /// Called immediately on `i` press with whatever is known at that moment.
@@ -310,9 +535,12 @@ pub async fn append_to_vds(path: &PathBuf, result: &RecognitionResult) -> anyhow
 
 /// Patch an existing VDS row identified by `job_id`, updating only the
 /// columns that are `Some` in `patch`. Other columns are left unchanged.
-pub async fn patch_vds_by_job_id(path: &PathBuf, job_id: &str, patch: VdsPatch) -> anyhow::Result<()> {
-    let content = tokio::fs::read_to_string(path).await
-        .unwrap_or_default();
+pub async fn patch_vds_by_job_id(
+    path: &PathBuf,
+    job_id: &str,
+    patch: VdsPatch,
+) -> anyhow::Result<()> {
+    let content = tokio::fs::read_to_string(path).await.unwrap_or_default();
 
     let mut lines: Vec<String> = content.lines().map(|l| l.to_string()).collect();
     let mut found = false;
@@ -328,30 +556,45 @@ pub async fn patch_vds_by_job_id(path: &PathBuf, job_id: &str, patch: VdsPatch) 
             // Parse the existing row
             let get = |i: usize| cols.get(i).copied().unwrap_or("").to_string();
             let mut r = RecognitionResult {
-                job_id:    get(0),
+                job_id: get(0),
                 timestamp: parse_ts(&get(1)),
-                station:   nn(&get(2)),
-                icy_info:  nn(&get(3)),
-                nts_show:  nn(&get(4)),
-                nts_tag:   nn(&get(5)),
-                nts_url:   nn(&get(6)),
+                station: nn(&get(2)),
+                icy_info: nn(&get(3)),
+                nts_show: nn(&get(4)),
+                nts_tag: nn(&get(5)),
+                nts_url: nn(&get(6)),
                 vibra_rec: nn(&get(7)),
             };
             // Apply patch
-            if let Some(v) = patch.icy_info   { r.icy_info  = Some(v); }
-            if let Some(v) = patch.nts_show   { r.nts_show  = Some(v); }
-            if let Some(v) = patch.nts_tag    { r.nts_tag   = Some(v); }
-            if let Some(v) = patch.nts_url    { r.nts_url   = Some(v); }
-            if let Some(v) = patch.vibra_rec  { r.vibra_rec = Some(v); }
+            if let Some(v) = patch.icy_info {
+                r.icy_info = Some(v);
+            }
+            if let Some(v) = patch.nts_show {
+                r.nts_show = Some(v);
+            }
+            if let Some(v) = patch.nts_tag {
+                r.nts_tag = Some(v);
+            }
+            if let Some(v) = patch.nts_url {
+                r.nts_url = Some(v);
+            }
+            if let Some(v) = patch.vibra_rec {
+                r.vibra_rec = Some(v);
+            }
             *line = encode_row(&r).trim_end_matches('\n').to_string();
-            info!("[vds] Patched job_id={}: icy={:?} nts={:?} vibra={:?}",
-                job_id, r.icy_info, r.nts_show, r.vibra_rec);
+            info!(
+                "[vds] Patched job_id={}: icy={:?} nts={:?} vibra={:?}",
+                job_id, r.icy_info, r.nts_show, r.vibra_rec
+            );
             break;
         }
     }
 
     if !found {
-        warn!("[vds] patch_vds_by_job_id: job_id={} not found in file", job_id);
+        warn!(
+            "[vds] patch_vds_by_job_id: job_id={} not found in file",
+            job_id
+        );
         return Ok(());
     }
 
@@ -363,15 +606,16 @@ pub async fn patch_vds_by_job_id(path: &PathBuf, job_id: &str, patch: VdsPatch) 
 /// Fields that can be patched after initial write.
 #[derive(Debug, Default)]
 pub struct VdsPatch {
-    pub icy_info:  Option<String>,
-    pub nts_show:  Option<String>,
-    pub nts_tag:   Option<String>,
-    pub nts_url:   Option<String>,
+    pub icy_info: Option<String>,
+    pub nts_show: Option<String>,
+    pub nts_tag: Option<String>,
+    pub nts_url: Option<String>,
     pub vibra_rec: Option<String>,
 }
 
 fn encode_row(r: &RecognitionResult) -> String {
-    let ts = r.timestamp
+    let ts = r
+        .timestamp
         .as_ref()
         .map(|t| t.format("%Y-%m-%dT%H:%M:%S").to_string())
         .unwrap_or_default();
@@ -400,7 +644,11 @@ fn parse_ts(s: &str) -> Option<DateTime<Local>> {
 
 fn nn(s: &str) -> Option<String> {
     let t = s.trim();
-    if t.is_empty() { None } else { Some(t.to_string()) }
+    if t.is_empty() {
+        None
+    } else {
+        Some(t.to_string())
+    }
 }
 
 /// Load the last `limit` rows from songs.vds.
@@ -409,24 +657,33 @@ pub fn load_vds(path: &PathBuf, limit: usize) -> Vec<RecognitionResult> {
         return Vec::new();
     };
     let mut lines: Vec<&str> = content.lines().collect();
-    if lines.first().map(|l| l.starts_with("job_id\t")).unwrap_or(false) {
+    if lines
+        .first()
+        .map(|l| l.starts_with("job_id\t"))
+        .unwrap_or(false)
+    {
         lines.remove(0);
     }
     let start = lines.len().saturating_sub(limit);
-    lines[start..].iter().filter_map(|line| parse_vds_row(line)).collect()
+    lines[start..]
+        .iter()
+        .filter_map(|line| parse_vds_row(line))
+        .collect()
 }
 
 fn parse_vds_row(line: &str) -> Option<RecognitionResult> {
     let cols: Vec<&str> = line.splitn(9, '\t').collect();
-    if cols.len() < 3 { return None; }
+    if cols.len() < 3 {
+        return None;
+    }
     Some(RecognitionResult {
-        job_id:    cols[0].trim().to_string(),
+        job_id: cols[0].trim().to_string(),
         timestamp: cols.get(1).and_then(|s| parse_ts(s.trim())),
-        station:   cols.get(2).and_then(|s| nn(s)),
-        icy_info:  cols.get(3).and_then(|s| nn(s)),
-        nts_show:  cols.get(4).and_then(|s| nn(s)),
-        nts_tag:   cols.get(5).and_then(|s| nn(s)),
-        nts_url:   cols.get(6).and_then(|s| nn(s)),
+        station: cols.get(2).and_then(|s| nn(s)),
+        icy_info: cols.get(3).and_then(|s| nn(s)),
+        nts_show: cols.get(4).and_then(|s| nn(s)),
+        nts_tag: cols.get(5).and_then(|s| nn(s)),
+        nts_url: cols.get(6).and_then(|s| nn(s)),
         vibra_rec: cols.get(7).and_then(|s| nn(s)),
     })
 }
@@ -456,7 +713,10 @@ mod tests {
         let json = serde_json::json!({
             "track": { "title": "Hey Jude", "subtitle": "The Beatles" }
         });
-        assert_eq!(vibra_rec_string(&json).as_deref(), Some("The Beatles \u{2013} Hey Jude"));
+        assert_eq!(
+            vibra_rec_string(&json).as_deref(),
+            Some("The Beatles \u{2013} Hey Jude")
+        );
     }
 
     #[test]
@@ -490,13 +750,13 @@ mod tests {
     #[test]
     fn test_vds_encode_decode_roundtrip() {
         let r = RecognitionResult {
-            job_id:    "deadbeef".into(),
+            job_id: "deadbeef".into(),
             timestamp: None,
-            station:   Some("NTS 1".into()),
-            icy_info:  Some("Artist - Track".into()),
-            nts_show:  Some("Morning Show".into()),
-            nts_tag:   Some("Jazz, Soul".into()),
-            nts_url:   Some("https://www.nts.live/shows/morning".into()),
+            station: Some("NTS 1".into()),
+            icy_info: Some("Artist - Track".into()),
+            nts_show: Some("Morning Show".into()),
+            nts_tag: Some("Jazz, Soul".into()),
+            nts_url: Some("https://www.nts.live/shows/morning".into()),
             vibra_rec: Some("Artist \u{2013} Track".into()),
         };
         let encoded = encode_row(&r);
