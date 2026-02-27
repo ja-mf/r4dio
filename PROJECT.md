@@ -226,11 +226,35 @@ const PROXY_BROADCAST_CAPACITY: usize = 4096;  // already named, needs doc comme
 ### Passive Polling (implemented on `dev`, target v1.1+)
 - **Config**: `[polling] auto_polling=true`, `poll_interval_secs=120` in `config.toml`.
 - **Toggle**: `p` toggles background polling on/off (`P` keeps previous-station behavior).
+- **Scheduler architecture**:
+  - non-overlapping cycle guard (`auto_poll_in_flight`)
+  - one async work queue per cycle
+  - NTS tasks and non-NTS tasks run concurrently
+  - per-station results are applied immediately as they arrive (no end-of-cycle-only UI update)
 - **NTS polling path**: NTS1/2 via `/api/v2/live`, NTS Infinite Mixtapes via Firestore `mixtape_titles`.
-- **Non-NTS polling path**: lightweight ICY probe path samples up to 5 random non-NTS stations per cycle,
-  with bounded timeouts and metadata headroom (multi-block ICY read), and no overlap between cycles.
-- **UI update policy**: station list appends last polled show text; value changes only when poll result changes.
+- **Non-NTS polling path**:
+  - lightweight ICY probe workers (`NON_NTS_MAX_CONCURRENCY = 5`)
+  - per-cycle cap (`NON_NTS_MAX_JOBS_PER_CYCLE = 32`)
+  - cycle budget (`NON_NTS_CYCLE_BUDGET_SECS = 95`)
+  - SomaFM-prioritized sampling + round-robin cursor over remaining stations
+  - playlist one-hop resolve (`.m3u/.m3u8/.pls`), HLS skip, adaptive ICY metadata block reads
+- **UI update policy**:
+  - station list appends last polled show text
+  - updates only on value change
+  - currently playing station prefers daemon/mpv ICY source to stay in sync with the ICY ticker
 - **Failure policy**: soft-fail only (log warnings, no user notifications), retry on future cycles.
+
+Passive polling timings observed in dev logs (2026-02-27):
+- Cycle with 22 targets: ~8.5–9.2s end-to-end, `errors=0`
+- Cycle with 37 targets: ~7.6s, `errors=2`
+- Cycle with 49 targets (2 NTS live + 15 mixtape + 32 non-NTS): ~7.2s, `errors=2`
+- Non-NTS latency sample from recent run: p50 ~588ms, p90 ~2081ms, max ~3118ms
+
+Known improvement directions (next iteration):
+- Persist non-NTS scheduler cursor and recent-failure backoff across app restarts
+- Prioritize previously-successful ICY stations while keeping fairness
+- Add per-station cool-down after repeated timeout/error bursts
+- Consider optional mpv fallback probe for selected non-ICY endpoints (off by default)
 
 Validation harnesses (isolated from TUI runtime):
 - Bash: `tests/nts_mixtape_show_test.sh`, `tests/nts_mixtape_scan_all_test.sh`
