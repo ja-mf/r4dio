@@ -1786,6 +1786,7 @@ impl App {
                 KeyCode::Char('!') => return vec![Action::ToggleNts(0)],
                 KeyCode::Char('@') => return vec![Action::ToggleNts(1)],
                 KeyCode::Char('o') => return vec![Action::ToggleScope],
+                KeyCode::Char('v') => return vec![Action::CycleVuMeterStyle],
                 KeyCode::Char('_') | KeyCode::Char('|') => return vec![Action::ToggleFullWidth],
                 KeyCode::Char('K') => {
                     // toggle keybinding bar
@@ -2103,6 +2104,17 @@ impl App {
             // ── Scope ─────────────────────────────────────────────────────────
             Action::ToggleScope => {
                 self.wm.toggle_scope();
+            }
+
+            // ── VU Meter ───────────────────────────────────────────────────────
+            Action::CycleVuMeterStyle => {
+                let new_style = self.header.cycle_meter_style();
+                let style_name = match new_style {
+                    crate::components::vu_meter::MeterStyle::Studio => "Studio",
+                    crate::components::vu_meter::MeterStyle::Led => "LED",
+                    crate::components::vu_meter::MeterStyle::Analog => "Analog",
+                };
+                self.toast.info(format!("VU meter: {}", style_name));
             }
 
             // ── Stars ─────────────────────────────────────────────────────────

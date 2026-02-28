@@ -148,16 +148,16 @@ impl MeterChars {
         segment_width: 1,
     };
 
-    /// LED: Compact 1-char segments with hairline gap for tighter packing
+    /// LED: Dotted segments that blend together smoothly
     const LED: Self = Self {
-        bg: '▏',        // Hairline for inactive
-        fg: '▍',        // Medium block for active (compact but visible)
-        fractional: &['▏', '▎', '▍', '▌', '▋', '▊', '▉'],
-        peak: '▐',      // Right-half at peak
-        rms: &['◆', '●', '⬤'],
+        bg: '·',        // Small dot for inactive (subtle)
+        fg: '●',        // Large dot for active (connected look)
+        fractional: &['·', '·', '•', '•', '●', '●', '●'],
+        peak: '⬤',      // Largest dot at peak
+        rms: &['○', '◐', '⬤'],
         trail: &['·', '•', '●'],
-        segment_gap: Some(' '),  // Single space for separation
-        segment_width: 1,        // Single char = more compact
+        segment_gap: None,       // No gap - dots blend together
+        segment_width: 1,
     };
 
     /// LED Dense: Even tighter with half-width feel

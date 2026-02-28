@@ -103,6 +103,21 @@ impl Header {
         self.meter_style = style;
         self
     }
+
+    /// Get the current VU meter style.
+    pub fn meter_style(&self) -> MeterStyle {
+        self.meter_style
+    }
+
+    /// Cycle to the next VU meter style.
+    pub fn cycle_meter_style(&mut self) -> MeterStyle {
+        self.meter_style = match self.meter_style {
+            MeterStyle::Studio => MeterStyle::Led,
+            MeterStyle::Led => MeterStyle::Analog,
+            MeterStyle::Analog => MeterStyle::Studio,
+        };
+        self.meter_style
+    }
 }
 
 impl Default for Header {
@@ -124,8 +139,14 @@ impl Component for Header {
         vec![]
     }
 
-    fn on_action(&mut self, _action: &Action, _state: &AppState) -> Vec<Action> {
-        vec![]
+    fn on_action(&mut self, action: &Action, _state: &AppState) -> Vec<Action> {
+        match action {
+            Action::CycleVuMeterStyle => {
+                self.cycle_meter_style();
+                vec![]
+            }
+            _ => vec![],
+        }
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect, _focused: bool, state: &AppState) {
@@ -309,7 +330,7 @@ fn build_station_row(
         ));
     }
 
-    // Show title: prefer NTS show name, then ICY
+    // Show title: prefer NTS show name, then ICY, then auto-poll data
     let show_text: Option<String> = match station.name.as_str() {
         "NTS 1" => state
             .nts_ch1
@@ -321,13 +342,22 @@ fn build_station_row(
             .map(|ch| ch.now.broadcast_title.clone()),
         _ => None,
     };
-    let show_text = show_text.or_else(|| {
-        state
-            .daemon_state
-            .icy_title
-            .clone()
-            .filter(|s| !s.is_empty())
-    });
+    let show_text = show_text
+        .or_else(|| {
+            state
+                .daemon_state
+                .icy_title
+                .clone()
+                .filter(|s| !s.is_empty())
+        })
+        // Fallback to auto-poll data if ICY is empty (fixes race with fast local streams)
+        .or_else(|| {
+            state
+                .station_poll_titles
+                .get(&station.name)
+                .cloned()
+                .filter(|s| !s.is_empty())
+        });
     if let Some(text) = show_text {
         spans.push(Span::raw("  "));
         spans.push(Span::styled(text, Style::default().fg(C_NETWORK)));
