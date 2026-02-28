@@ -372,6 +372,7 @@ impl App {
             file_metadata_cache,
             file_positions: file_positions.clone(),
             icy_history: icy_history.clone(),
+            last_known_icy: None,
             songs_history: songs_history.clone(),
             nts_hover_channel: None,
             nts_ch1: None,
@@ -1389,6 +1390,7 @@ impl App {
         // ICY title will arrive via IcyUpdated once the stream connects.
         if self.state.daemon_state.current_station != prev_station {
             self.last_known_icy = None;
+            self.state.last_known_icy = None;
         }
 
         // ── mpv health transition toasts ──────────────────────────────────────
@@ -1656,7 +1658,9 @@ impl App {
                     .and_then(|i| self.state.daemon_state.stations.get(i))
                     .map(|s| s.name.clone());
                 if let Some(st) = station {
-                    self.last_known_icy = Some((st.clone(), t.clone()));
+                    let entry = (st.clone(), t.clone());
+                    self.last_known_icy = Some(entry.clone());
+                    self.state.last_known_icy = Some(entry);
                     self.state.station_poll_titles.insert(st, t.clone());
                 }
             }
@@ -1671,6 +1675,7 @@ impl App {
                     self.state.station_poll_titles.remove(&st);
                 }
                 self.last_known_icy = None;
+                self.state.last_known_icy = None;
             }
         }
     }

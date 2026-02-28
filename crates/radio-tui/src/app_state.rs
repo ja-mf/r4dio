@@ -119,6 +119,8 @@ pub struct AppState {
 
     // ── ICY / songs ticker ──────────────────────────────────────────────────
     pub icy_history: Vec<TickerEntry>,
+    /// Sticky ICY title that persists across transient None states (station_name, title).
+    pub last_known_icy: Option<(String, String)>,
     /// Songs history loaded from songs.vds (newest last).
     pub songs_history: Vec<RecognitionResult>,
     /// When the station list cursor is on an NTS station, this holds the channel

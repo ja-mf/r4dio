@@ -330,7 +330,12 @@ fn build_station_row(
         ));
     }
 
-    // Show title: prefer NTS show name, then ICY, then auto-poll data
+    // Show title: prefer NTS show name, then ICY from multiple sources
+    // ICY fallback chain (most recent first):
+    // 1. daemon_state.icy_title — live value from daemon
+    // 2. last_known_icy — sticky value that survives transient None states
+    // 3. icy_history — most recent entry for this station in session
+    // 4. station_poll_titles — auto-poll cache
     let show_text: Option<String> = match station.name.as_str() {
         "NTS 1" => state
             .nts_ch1
@@ -343,6 +348,7 @@ fn build_station_row(
         _ => None,
     };
     let show_text = show_text
+        // Tier 1: Live ICY from daemon
         .or_else(|| {
             state
                 .daemon_state
@@ -350,7 +356,24 @@ fn build_station_row(
                 .clone()
                 .filter(|s| !s.is_empty())
         })
-        // Fallback to auto-poll data if ICY is empty (fixes race with fast local streams)
+        // Tier 2: Sticky last_known_icy if it matches current station
+        .or_else(|| {
+            state
+                .last_known_icy
+                .as_ref()
+                .filter(|(st, _)| st == &station.name)
+                .map(|(_, title)| title.clone())
+        })
+        // Tier 3: Most recent ICY history entry for this station
+        .or_else(|| {
+            state
+                .icy_history
+                .iter()
+                .rev()
+                .find(|e| e.station.as_deref() == Some(&station.name))
+                .map(|e| e.raw.clone())
+        })
+        // Tier 4: Auto-poll cache
         .or_else(|| {
             state
                 .station_poll_titles
