@@ -328,7 +328,17 @@ impl DaemonCore {
                     .get("reason")
                     .and_then(|v| v.as_str())
                     .unwrap_or("unknown");
-                info!("mpv: end-file reason={}", reason);
+                // mpv provides additional error details in the "error" field
+                let error_detail = evt
+                    .raw
+                    .get("error")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                if !error_detail.is_empty() {
+                    warn!("mpv: end-file reason={} error=\"{}\"", reason, error_detail);
+                } else {
+                    info!("mpv: end-file reason={}", reason);
+                }
                 if reason == "error" || reason == "network" || reason == "quit" {
                     // If we intended to play, mark error
                     if self.intend_playing && !self.obs_pause {

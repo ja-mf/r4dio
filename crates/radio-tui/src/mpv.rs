@@ -429,7 +429,9 @@ async fn writer_task<W>(
 
 impl MpvHandle {
     pub async fn load_stream(&self, url: &str, volume: f32) -> anyhow::Result<()> {
-        self.send(json!(["loadfile", url])).await?;
+        debug!("mpv: sending loadfile command for url={}", url);
+        let resp = self.send(json!(["loadfile", url])).await?;
+        debug!("mpv: loadfile response: {:?}", resp);
         let vol_pct = (volume * 100.0).clamp(0.0, 100.0);
         let _ = self.send(json!(["set_property", "volume", vol_pct])).await;
         Ok(())

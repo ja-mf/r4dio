@@ -11,7 +11,7 @@ use axum::Router;
 use futures_util::StreamExt;
 use reqwest::Client;
 use tokio::sync::{broadcast, Mutex};
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 use radio_proto::state::StateManager;
 
@@ -60,6 +60,11 @@ impl ProxyState {
 
     async fn get_or_start_stream(&self, idx: usize) -> Result<Arc<SharedStream>, StatusCode> {
         if let Some(existing) = self.streams.lock().await.get(&idx).cloned() {
+            debug!(
+                "proxy: reusing existing shared stream for idx={}, receivers={}",
+                idx,
+                existing.tx.receiver_count()
+            );
             return Ok(existing);
         }
 
@@ -70,15 +75,22 @@ impl ProxyState {
         );
 
         let upstream = self.client.get(&url).send().await.map_err(|e| {
-            warn!("proxy: upstream connect failed for idx={}: {}", idx, e);
+            error!("proxy: upstream connect failed for idx={}: {}", idx, e);
             StatusCode::BAD_GATEWAY
         })?;
 
-        if !upstream.status().is_success() {
-            warn!(
-                "proxy: upstream returned {} for idx={}",
-                upstream.status(),
-                idx
+        let status = upstream.status();
+        debug!(
+            "proxy: upstream response for idx={}: status={}, headers={:?}",
+            idx,
+            status,
+            upstream.headers()
+        );
+
+        if !status.is_success() {
+            error!(
+                "proxy: upstream returned {} for idx={}, url={}",
+                status, idx, url
             );
             return Err(StatusCode::BAD_GATEWAY);
         }
@@ -88,29 +100,57 @@ impl ProxyState {
         let shared = Arc::new(SharedStream { headers, tx });
 
         self.streams.lock().await.insert(idx, shared.clone());
+        debug!(
+            "proxy: started shared stream for idx={}, channel capacity={}",
+            idx, PROXY_BROADCAST_CAPACITY
+        );
 
         let streams = self.streams.clone();
         let shared_for_task = shared.clone();
+        let url_for_task = url.clone();
         tokio::spawn(async move {
             let mut bytes_stream = upstream.bytes_stream();
             let mut no_receivers_since: Option<Instant> = None;
+            let mut total_bytes: u64 = 0;
+            let mut chunk_count: u64 = 0;
 
             while let Some(next) = bytes_stream.next().await {
                 let chunk = match next {
-                    Ok(c) => c,
+                    Ok(c) => {
+                        total_bytes += c.len() as u64;
+                        chunk_count += 1;
+                        if chunk_count <= 5 || chunk_count % 100 == 0 {
+                            debug!(
+                                "proxy: idx={} received chunk #{}, {} bytes (total: {}), receivers={}",
+                                idx,
+                                chunk_count,
+                                c.len(),
+                                total_bytes,
+                                shared_for_task.tx.receiver_count()
+                            );
+                        }
+                        c
+                    }
                     Err(e) => {
-                        warn!("proxy: upstream read error idx={}: {}", idx, e);
+                        error!(
+                            "proxy: upstream read error idx={}, url={}, chunks={}, bytes={}, error={}",
+                            idx, url_for_task, chunk_count, total_bytes, e
+                        );
                         break;
                     }
                 };
 
-                if shared_for_task.tx.receiver_count() == 0 {
+                let receiver_count = shared_for_task.tx.receiver_count();
+                if receiver_count == 0 {
                     if no_receivers_since
                         .get_or_insert_with(Instant::now)
                         .elapsed()
                         >= Duration::from_secs(2)
                     {
-                        debug!("proxy: no subscribers for idx={}, closing upstream", idx);
+                        debug!(
+                            "proxy: no subscribers for idx={}, closing upstream after 2s (received {} chunks, {} bytes)",
+                            idx, chunk_count, total_bytes
+                        );
                         break;
                     }
                     continue;
@@ -118,9 +158,21 @@ impl ProxyState {
                 no_receivers_since = None;
 
                 if shared_for_task.tx.send(chunk).is_err() {
+                    // All receivers dropped
+                    if chunk_count <= 10 {
+                        debug!(
+                            "proxy: idx={} broadcast send failed, no active receivers (sent {} chunks)",
+                            idx, chunk_count
+                        );
+                    }
                     continue;
                 }
             }
+
+            info!(
+                "proxy: upstream pump exiting for idx={}, url={}, total chunks={}, total bytes={}",
+                idx, url_for_task, chunk_count, total_bytes
+            );
 
             let mut map = streams.lock().await;
             if map
@@ -129,8 +181,8 @@ impl ProxyState {
                 .unwrap_or(false)
             {
                 map.remove(&idx);
+                debug!("proxy: removed idx={} from active streams map", idx);
             }
-            debug!("proxy: upstream pump exited for idx={}", idx);
         });
 
         Ok(shared)
@@ -141,9 +193,20 @@ async fn stream_station(
     Path(idx): Path<usize>,
     State(state): State<ProxyState>,
 ) -> impl IntoResponse {
+    info!("proxy: new subscriber request for idx={}", idx);
+    
     let shared = match state.get_or_start_stream(idx).await {
-        Ok(s) => s,
+        Ok(s) => {
+            debug!(
+                "proxy: stream ready for idx={}, current receivers={}, headers={:?}",
+                idx,
+                s.tx.receiver_count(),
+                s.headers
+            );
+            s
+        }
         Err(code) => {
+            warn!("proxy: failed to start stream for idx={}, status={}", idx, code);
             return Response::builder()
                 .status(code)
                 .body(Body::empty())
@@ -165,17 +228,28 @@ async fn stream_station(
     }
 
     let stream = futures_util::stream::unfold(shared.tx.subscribe(), |mut rx| async move {
+        let mut chunk_num: u64 = 0;
         loop {
             match rx.recv().await {
-                Ok(chunk) => return Some((Ok::<Bytes, std::io::Error>(chunk), rx)),
+                Ok(chunk) => {
+                    chunk_num += 1;
+                    if chunk_num <= 5 || chunk_num % 100 == 0 {
+                        debug!("proxy: subscriber received chunk #{}", chunk_num);
+                    }
+                    return Some((Ok::<Bytes, std::io::Error>(chunk), rx));
+                }
                 Err(broadcast::error::RecvError::Lagged(n)) => {
                     warn!("proxy: subscriber lagged by {} chunks", n);
                 }
-                Err(broadcast::error::RecvError::Closed) => return None,
+                Err(broadcast::error::RecvError::Closed) => {
+                    debug!("proxy: subscriber stream closed after {} chunks", chunk_num);
+                    return None;
+                }
             }
         }
     });
 
+    info!("proxy: streaming response started for idx={}", idx);
     builder.body(Body::from_stream(stream)).unwrap()
 }
 
