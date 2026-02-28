@@ -8,3 +8,4 @@ pub mod nts_panel;
 pub mod scope_panel;
 pub mod songs_ticker;
 pub mod station_list;
+pub mod vu_meter;
