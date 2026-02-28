@@ -11,6 +11,7 @@ mod intent;
 mod latency;
 mod mpv;
 mod nts_download;
+mod pipewire_viz;
 mod proxy;
 mod scope;
 mod theme;
@@ -18,6 +19,10 @@ mod widgets;
 mod workspace;
 
 use tokio::sync::{broadcast, mpsc};
+use tracing::{error, info};
+
+#[cfg(feature = "profiling")]
+use pprof::ProfilerGuard;
 
 /// Forwarded from daemon's main.rs — defines what the DaemonCore broadcasts.
 #[derive(Debug, Clone)]
@@ -36,6 +41,15 @@ pub enum BroadcastMessage {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // ── Start CPU profiling for entire session ────────────────────────────────
+    #[cfg(feature = "profiling")]
+    let mut profiler: Option<ProfilerGuard<'_>> = None;
+    #[cfg(feature = "profiling")]
+    {
+        info!("Starting CPU profiler for entire session...");
+        profiler = Some(ProfilerGuard::new(100)?);
+    }
+
     let data_dir = radio_proto::platform::data_dir();
     // Keep tui_data_dir consistent with original path for backwards compatibility.
     let tui_data_dir = dirs::data_dir()
@@ -100,6 +114,9 @@ async fn main() -> anyhow::Result<()> {
 
     // ── Load config ──────────────────────────────────────────────────────────
     let config = radio_proto::config::Config::load().unwrap_or_default();
+    
+    // Configure whether to use system dependencies or bundled ones
+    radio_proto::platform::set_use_system_deps(config.binaries.use_system_deps);
 
     // ── Broadcast channel (DaemonCore → TUI) ────────────────────────────────
     let (broadcast_tx, broadcast_rx) = broadcast::channel::<BroadcastMessage>(1024);
@@ -153,8 +170,31 @@ async fn main() -> anyhow::Result<()> {
         state_manager,
         config.polling.auto_polling,
         config.polling.poll_interval_secs,
+        config.polling.max_concurrency,
+        config.polling.max_jobs_per_cycle,
     );
     app.run(broadcast_rx).await?;
+
+    // ── Write CPU profiling flamegraph ────────────────────────────────────────
+    #[cfg(feature = "profiling")]
+    if let Some(profiler) = profiler {
+        info!("Writing CPU profiling flamegraph...");
+        match profiler.report().build() {
+            Ok(report) => {
+                let flamegraph_path = data_dir.join("flamegraph.svg");
+                match std::fs::File::create(&flamegraph_path) {
+                    Ok(file) => {
+                        match report.flamegraph(file) {
+                            Ok(_) => info!("Flamegraph written to {:?}", flamegraph_path),
+                            Err(e) => error!("Failed to write flamegraph: {}", e),
+                        }
+                    }
+                    Err(e) => error!("Failed to create flamegraph file: {}", e),
+                }
+            }
+            Err(e) => error!("Failed to build profiling report: {}", e),
+        }
+    }
 
     Ok(())
 }

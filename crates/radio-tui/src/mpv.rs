@@ -135,7 +135,22 @@ impl MpvDriver {
 
     pub fn process_alive(&mut self) -> bool {
         if let Some(ref mut child) = self.process {
-            child.try_wait().ok().flatten().is_none()
+            match child.try_wait() {
+                Ok(None) => true, // Still running
+                Ok(Some(status)) => {
+                    // Process exited - log the status
+                    if let Some(code) = status.code() {
+                        warn!("mpv process exited with code: {}", code);
+                    } else {
+                        warn!("mpv process terminated by signal");
+                    }
+                    false
+                }
+                Err(e) => {
+                    warn!("mpv process_alive check failed: {}", e);
+                    false
+                }
+            }
         } else {
             false
         }
@@ -173,15 +188,24 @@ impl MpvDriver {
         );
         let ipc_arg = radio_proto::platform::mpv_socket_arg();
 
-        let child = tokio::process::Command::new(mpv_binary)
+        // Create mpv stderr log file for debugging crashes
+        let stderr_path = radio_proto::platform::data_dir().join("mpv-stderr.log");
+        let stderr_file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&stderr_path)?;
+        info!("mpv: logging stderr to {:?}", stderr_path);
+
+        let child = tokio::process::Command::new(&mpv_binary)
             .arg("--no-video")
             .arg("--idle=yes")
             .arg(&ipc_arg)
             .arg("--quiet")
-            .arg(vol_arg)
+            .arg(&vol_arg)
             .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
+            .stderr(stderr_file)
             .spawn()?;
+        info!("mpv: spawned process with pid {:?}", child.id());
         self.process = Some(child);
 
         // Wait for socket to appear

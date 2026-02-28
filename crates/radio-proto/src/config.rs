@@ -17,6 +17,10 @@ pub struct Config {
     pub paths: PathsConfig,
     #[serde(default)]
     pub polling: PollingConfig,
+    #[serde(default)]
+    pub viz: VizConfig,
+    #[serde(default)]
+    pub binaries: BinariesConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,6 +62,52 @@ pub struct PollingConfig {
     pub auto_polling: bool,
     #[serde(default = "default_poll_interval_secs")]
     pub poll_interval_secs: u64,
+    /// Number of concurrent ICY probes for non-NTS stations per poll cycle.
+    /// Lower values reduce CPU/network load on slower machines. Default: 3
+    #[serde(default = "default_max_concurrency")]
+    pub max_concurrency: usize,
+    /// Maximum number of stations to poll per cycle. Default: 64
+    #[serde(default = "default_max_jobs_per_cycle")]
+    pub max_jobs_per_cycle: usize,
+}
+
+/// Linux-specific audio visualization configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VizConfig {
+    /// Use PipeWire/PulseAudio monitor for VU meter and oscilloscope visualization
+    /// instead of the stream's audio data. This visualizes the actual system audio output.
+    /// Only works on Linux. Default: false
+    #[serde(default = "default_pipewire_viz")]
+    pub pipewire_viz: bool,
+    /// PipeWire/PulseAudio device name to monitor. None = default monitor source
+    #[serde(default)]
+    pub pipewire_device: Option<String>,
+}
+
+/// Configuration for external binary dependencies.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BinariesConfig {
+    /// If true, use system-installed binaries from PATH instead of bundled ones.
+    /// When false (default), searches for binaries in external/ folder next to executable.
+    #[serde(default = "default_use_system_deps")]
+    pub use_system_deps: bool,
+}
+
+impl Default for VizConfig {
+    fn default() -> Self {
+        Self {
+            pipewire_viz: default_pipewire_viz(),
+            pipewire_device: None,
+        }
+    }
+}
+
+impl Default for BinariesConfig {
+    fn default() -> Self {
+        Self {
+            use_system_deps: default_use_system_deps(),
+        }
+    }
 }
 
 impl Default for PathsConfig {
@@ -73,6 +123,8 @@ impl Default for PollingConfig {
         Self {
             auto_polling: default_auto_polling(),
             poll_interval_secs: default_poll_interval_secs(),
+            max_concurrency: default_max_concurrency(),
+            max_jobs_per_cycle: default_max_jobs_per_cycle(),
         }
     }
 }
@@ -176,6 +228,22 @@ fn default_poll_interval_secs() -> u64 {
     120
 }
 
+fn default_max_concurrency() -> usize {
+    3 // Reduced from 6 for lower CPU usage
+}
+
+fn default_max_jobs_per_cycle() -> usize {
+    64
+}
+
+fn default_pipewire_viz() -> bool {
+    false
+}
+
+fn default_use_system_deps() -> bool {
+    false
+}
+
 fn default_m3u_url() -> String {
     "https://raw.githubusercontent.com/ja-mf/radio-curation/refs/heads/main/jamf_radios.m3u"
         .to_string()
@@ -237,6 +305,8 @@ impl Default for Config {
             stations: StationsConfig::default(),
             paths: PathsConfig::default(),
             polling: PollingConfig::default(),
+            viz: VizConfig::default(),
+            binaries: BinariesConfig::default(),
         }
     }
 }

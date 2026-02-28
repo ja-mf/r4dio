@@ -173,7 +173,16 @@ impl DaemonCore {
                 Some(DaemonEvent::HeartbeatTick) => {
                     // Check process liveness — if mpv died, degrade health
                     if self.mpv_handle.is_some() && !self.mpv_driver.process_alive() {
-                        warn!("DaemonCore: heartbeat: mpv process died");
+                        let state = self.state_manager.get_state().await;
+                        let current = state.current_station
+                            .and_then(|idx| state.stations.get(idx))
+                            .map(|s| s.name.as_str())
+                            .or_else(|| state.current_file.as_deref())
+                            .unwrap_or("unknown");
+                        warn!(
+                            "DaemonCore: heartbeat: mpv process died while playing '{}' (intend_playing={}, status={:?})",
+                            current, self.intend_playing, state.playback_status
+                        );
                         self.mpv_handle = None;
                         if let Some(obs) = self.audio_observer_handle.take() {
                             obs.abort();
@@ -667,18 +676,33 @@ impl DaemonCore {
                     );
                     self.audio_observer_handle = Some(obs);
 
-                    // Spawn ffmpeg PCM task for oscilloscope.
-                    // Prefer proxy URL so mpv + ffmpeg share one upstream source.
-                    let tx = self.broadcast_tx.clone();
-                    let handle = tokio::spawn(async move {
-                        loop {
-                            if let Err(e) = run_vu_ffmpeg(&stream_url, &tx).await {
-                                debug!("VU ffmpeg exited: {e}");
+                    // Spawn VU/scope PCM task.
+                    // Use PipeWire monitor on Linux if configured, otherwise use ffmpeg from stream.
+                    #[cfg(target_os = "linux")]
+                    let use_pipewire = self.config.viz.pipewire_viz;
+                    #[cfg(not(target_os = "linux"))]
+                    let use_pipewire = false;
+
+                    if use_pipewire {
+                        info!("Using PipeWire/PulseAudio monitor for visualization");
+                        self.vu_task_handle = Some(crate::pipewire_viz::spawn_pipewire_viz_task(
+                            self.config.viz.pipewire_device.clone(),
+                            self.broadcast_tx.clone(),
+                        ));
+                    } else {
+                        // Spawn ffmpeg PCM task for oscilloscope.
+                        // Prefer proxy URL so mpv + ffmpeg share one upstream source.
+                        let tx = self.broadcast_tx.clone();
+                        let handle = tokio::spawn(async move {
+                            loop {
+                                if let Err(e) = run_vu_ffmpeg(&stream_url, &tx).await {
+                                    debug!("VU ffmpeg exited: {e}");
+                                }
+                                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                             }
-                            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                        }
-                    });
-                    self.vu_task_handle = Some(handle.abort_handle());
+                        });
+                        self.vu_task_handle = Some(handle.abort_handle());
+                    }
                 }
                 None => {
                     warn!("No mpv handle available for station '{}'", station.name);

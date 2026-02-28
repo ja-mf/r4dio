@@ -20,6 +20,9 @@ Thumbs.db
 *.vds
 *.log
 
+# External binaries (downloaded at build time)
+/external/
+
 # But keep dist/ for releases
 !dist/
 
