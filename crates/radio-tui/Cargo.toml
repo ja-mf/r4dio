@@ -43,3 +43,11 @@ tokio = { version = "1.35", features = ["rt-multi-thread", "macros", "process", 
 [target.'cfg(target_os = "linux")'.dependencies]
 libpulse-binding = "2.28"
 libpulse-simple-binding = "2.28"
+
+[dependencies.pprof]
+version = "0.14"
+features = ["flamegraph", "protobuf-codec"]
+optional = true
+
+[features]
+profiling = ["pprof"]

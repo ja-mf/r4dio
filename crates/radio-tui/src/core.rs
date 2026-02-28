@@ -173,7 +173,16 @@ impl DaemonCore {
                 Some(DaemonEvent::HeartbeatTick) => {
                     // Check process liveness — if mpv died, degrade health
                     if self.mpv_handle.is_some() && !self.mpv_driver.process_alive() {
-                        warn!("DaemonCore: heartbeat: mpv process died");
+                        let state = self.state_manager.get_state().await;
+                        let current = state.current_station
+                            .and_then(|idx| state.stations.get(idx))
+                            .map(|s| s.name.as_str())
+                            .or_else(|| state.current_file.as_deref())
+                            .unwrap_or("unknown");
+                        warn!(
+                            "DaemonCore: heartbeat: mpv process died while playing '{}' (intend_playing={}, status={:?})",
+                            current, self.intend_playing, state.playback_status
+                        );
                         self.mpv_handle = None;
                         if let Some(obs) = self.audio_observer_handle.take() {
                             obs.abort();

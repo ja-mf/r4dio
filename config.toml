@@ -47,14 +47,31 @@ auto_polling = true
 # Poll interval in seconds (default 120 = 2 minutes)
 poll_interval_secs = 120
 
+# Number of concurrent ICY probes for non-NTS stations per poll cycle.
+# Lower values reduce CPU/network load on slower machines. Default: 3
+max_concurrency = 3
+
+# Maximum number of stations to poll per cycle. Default: 64
+max_jobs_per_cycle = 64
+
 [viz]
 # Use PipeWire/PulseAudio monitor for VU meter and oscilloscope visualization (Linux only)
 # When enabled, the visualizer shows the actual system audio output instead of the stream data.
 # This is useful if you want to visualize what's playing through your soundcard.
 # Default: false
-pipewire_viz = false
+pipewire_viz = true
 
 # PipeWire/PulseAudio device name to monitor (Linux only)
 # None = use default monitor source
 # Common values: "pipewire.monitor", "alsa_output.*.monitor"
-# pipewire_device = "pipewire.monitor"
+pipewire_device = "pipewire.monitor"
+
+[binaries]
+# Use system-installed binaries from PATH instead of bundled ones.
+# When false (default), r4dio searches for binaries in the following order:
+#   1. external/ folder next to the executable
+#   2. Beside the executable itself
+#   3. PATH
+# When true, r4dio skips bundled/external search and uses PATH only.
+# This is useful for development or when you want to use system packages.
+use_system_deps = false

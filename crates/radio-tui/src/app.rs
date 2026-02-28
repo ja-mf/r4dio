@@ -117,18 +117,21 @@ const PEAK_HOLD_RESET_DB: f32 = 0.35;
 const PEAK_RELEASE_TAU_SECS: f32 = 0.09;
 const PEAK_FALL_DB_PER_SEC: f32 = 28.0;
 const MIN_POLL_INTERVAL_SECS: u64 = 10;
-const NTS_POLL_TASK_TIMEOUT_SECS: u64 = 12;
-// Non-NTS ICY polling tuning:
+const NTS_POLL_TASK_TIMEOUT_SECS: u64 = 25; // Increased from 12s - mixtape lookups need more time
+const NTS_MIN_STAGGER_MS: u64 = 100; // Minimum delay between NTS requests
+const NTS_MAX_STAGGER_MS: u64 = 200; // Maximum delay between NTS requests (random to appear natural)
+
+// Non-NTS ICY polling tuning (now configurable via config.toml):
 //
-//   concurrency=6   moderate; ~6 simultaneous TCP streams, cycle completes in ~12s for 71 stations
-//   max_jobs=64     covers all ~71 non-NTS stations in a single cycle
 //   connect=4s      Cambridge Radio stalls at TCP connect and hits exactly 4s — correct ceiling
 //   request=8s      longest observed header round-trip is ~4s; 8s gives 2× headroom
 //   metadata=5s     longest observed metadata read is ~3.1s (Skid Row Radio); 5s is safe margin
 //   icy_blocks=4    needed by metaint=16000 stations (4×16KB=64KB); adaptive() reduces for large metaint
 //   cycle_budget=30s safety backstop; cycles finish well within this in practice
-const NON_NTS_MAX_CONCURRENCY: usize = 6;
-const NON_NTS_MAX_JOBS_PER_CYCLE: usize = 64;
+//
+// Defaults:
+//   max_concurrency=3  (reduced from 6 for lower CPU usage on slower machines)
+//   max_jobs_per_cycle=64
 const NON_NTS_CYCLE_BUDGET_SECS: u64 = 30;
 const NON_NTS_CONNECT_TIMEOUT_MS: u64 = 4_000;
 const NON_NTS_REQUEST_TIMEOUT_MS: u64 = 8_000;
@@ -174,6 +177,13 @@ struct NonNtsPollJob {
     ord: usize,
     station_name: String,
     stream_url: String,
+}
+
+#[derive(Debug, Clone)]
+struct MixtapePollJob {
+    ord: usize,
+    station_name: String,
+    mixtape_url: String,
 }
 
 // ── Persistence serde structs ─────────────────────────────────────────────────
@@ -328,6 +338,8 @@ pub struct App {
     auto_poll_cycle_unchanged: usize,
     auto_poll_cycle_errors: usize,
     non_nts_poll_cursor: usize,
+    poll_max_concurrency: usize,
+    poll_max_jobs_per_cycle: usize,
 }
 
 impl App {
@@ -346,6 +358,8 @@ impl App {
         state_manager: std::sync::Arc<StateManager>,
         auto_polling_enabled: bool,
         poll_interval_secs: u64,
+        poll_max_concurrency: usize,
+        poll_max_jobs_per_cycle: usize,
     ) -> Self {
         let icy_history = load_icy_log(&icy_log_path);
         let songs_history = load_vds(&songs_vds_path, 200);
@@ -493,6 +507,8 @@ impl App {
             auto_poll_cycle_unchanged: 0,
             auto_poll_cycle_errors: 0,
             non_nts_poll_cursor: 0,
+            poll_max_concurrency,
+            poll_max_jobs_per_cycle,
         };
 
         // Restore file selection in FileList component
@@ -2841,7 +2857,7 @@ impl App {
         }
 
         let stations = self.state.daemon_state.stations.clone();
-        let targets = build_station_poll_targets(&stations, &mut self.non_nts_poll_cursor);
+        let targets = build_station_poll_targets(&stations, &mut self.non_nts_poll_cursor, self.poll_max_jobs_per_cycle);
         let target_count = targets.len();
         if target_count == 0 {
             info!("[poll] skip cycle (no resolvable polling targets)");
@@ -2889,10 +2905,16 @@ impl App {
             target_labels.join(", ")
         );
 
+        let max_concurrency = self.poll_max_concurrency;
+        
+        // Small initial yield to prevent UI freeze when spawning many tasks
         tokio::spawn(async move {
+            // Yield immediately to let UI thread process events
+            tokio::task::yield_now().await;
+            
             let started = std::time::Instant::now();
             debug!("[poll] cycle #{} task spawned", cycle_id);
-            run_station_poll_cycle(targets, tx.clone(), cycle_id).await;
+            run_station_poll_cycle(targets, tx.clone(), cycle_id, max_concurrency).await;
             let elapsed_ms = started.elapsed().as_millis();
             let _ = tx
                 .send(AppMessage::PassivePollCycleDone {
@@ -3180,6 +3202,7 @@ impl App {
 fn build_station_poll_targets(
     stations: &[Station],
     non_nts_cursor: &mut usize,
+    max_jobs_per_cycle: usize,
 ) -> Vec<StationPollTarget> {
     let mut targets = Vec::new();
     let mut non_nts = Vec::new();
@@ -3219,7 +3242,7 @@ fn build_station_poll_targets(
     targets.extend(select_round_robin_non_nts(
         non_nts,
         non_nts_cursor,
-        NON_NTS_MAX_JOBS_PER_CYCLE,
+        max_jobs_per_cycle,
     ));
 
     targets
@@ -3252,13 +3275,21 @@ async fn run_station_poll_cycle(
     targets: Vec<StationPollTarget>,
     tx: mpsc::Sender<AppMessage>,
     cycle_id: u64,
+    max_concurrency: usize,
 ) {
     let total = targets.len();
-    let mut nts_join = tokio::task::JoinSet::new();
+    let mut nts_live_join = tokio::task::JoinSet::new();
     let mut non_nts_queue: VecDeque<NonNtsPollJob> = VecDeque::new();
+    let mut mixtape_queue: VecDeque<MixtapePollJob> = VecDeque::new();
 
     for (idx, target) in targets.into_iter().enumerate() {
         let ord = idx + 1;
+        
+        // Yield every 8 spawns to prevent UI freeze
+        if idx % 8 == 0 && idx > 0 {
+            tokio::task::yield_now().await;
+        }
+        
         match target {
             StationPollTarget::NonNtsIcy {
                 station_name,
@@ -3270,10 +3301,18 @@ async fn run_station_poll_cycle(
                     stream_url,
                 });
             }
-            nts_target => {
+            StationPollTarget::NtsMixtape { station_name, mixtape_url } => {
+                mixtape_queue.push_back(MixtapePollJob {
+                    ord,
+                    station_name,
+                    mixtape_url,
+                });
+            }
+            nts_live_target => {
+                // NTS Live (channel 1/2) - spawn immediately, they're fast
                 let txn = tx.clone();
-                nts_join.spawn(async move {
-                    let outcome = poll_nts_target(nts_target, ord, total).await;
+                nts_live_join.spawn(async move {
+                    let outcome = poll_nts_target(nts_live_target, ord, total).await;
                     let _ = txn
                         .send(AppMessage::PassivePollOutcome { cycle_id, outcome })
                         .await;
@@ -3283,16 +3322,92 @@ async fn run_station_poll_cycle(
     }
 
     let non_nts_total = non_nts_queue.len();
-    let nts_total = total.saturating_sub(non_nts_total);
+    let mixtape_total = mixtape_queue.len();
+    let nts_live_total = total - non_nts_total - mixtape_total;
+    
     debug!(
-        "[poll] cycle #{} scheduling: nts={} non-nts={} workers={}",
-        cycle_id,
-        nts_total,
-        non_nts_total,
-        NON_NTS_MAX_CONCURRENCY.min(non_nts_total).max(1),
+        "[poll] cycle #{} scheduling: nts-live={} mixtapes={} non-nts={}",
+        cycle_id, nts_live_total, mixtape_total, non_nts_total,
     );
 
-    // Launch non-NTS worker pool immediately so it runs concurrently with NTS polling.
+    // Launch mixtape worker pool (runs concurrently with NTS Live)
+    let mut mixtape_workers = tokio::task::JoinSet::new();
+    if mixtape_total > 0 {
+        let queue = std::sync::Arc::new(TokioMutex::new(mixtape_queue));
+        // Single worker for mixtapes to prevent CPU spike - gentle on NTS servers
+        let mixtape_concurrency = 1usize;
+        let worker_count = mixtape_concurrency.min(mixtape_total).max(1);
+        
+        debug!(
+            "[poll] cycle #{} launching {} workers for {} mixtape jobs",
+            cycle_id, worker_count, mixtape_total
+        );
+        
+        for worker_idx in 0..worker_count {
+            let queue = queue.clone();
+            let txw = tx.clone();
+            mixtape_workers.spawn(async move {
+                let mut jobs_done = 0usize;
+                loop {
+                    let job = {
+                        let mut q = queue.lock().await;
+                        q.pop_front()
+                    };
+                    let Some(job) = job else {
+                        break;
+                    };
+                    
+                    // Random stagger 100-200ms between requests
+                    let delay_ms = NTS_MIN_STAGGER_MS + (rand::random::<u64>() % (NTS_MAX_STAGGER_MS - NTS_MIN_STAGGER_MS + 1));
+                    if delay_ms > 0 {
+                        tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                    }
+                    
+                    let job_start = std::time::Instant::now();
+                    let target = StationPollTarget::NtsMixtape {
+                        station_name: job.station_name.clone(),
+                        mixtape_url: job.mixtape_url,
+                    };
+                    let outcome = poll_nts_target(target, job.ord, total).await;
+                    let job_ms = job_start.elapsed().as_millis();
+                    
+                    debug!(
+                        "[poll] mixtape-worker={} done job {}/{} '{}' elapsed={}ms",
+                        worker_idx, job.ord, total, job.station_name, job_ms
+                    );
+                    jobs_done += 1;
+                    let _ = txw
+                        .send(AppMessage::PassivePollOutcome { cycle_id, outcome })
+                        .await;
+                }
+                debug!(
+                    "[poll] mixtape-worker={} exited after {} jobs",
+                    worker_idx, jobs_done
+                );
+            });
+        }
+    }
+
+    // Wait for NTS Live + Mixtape to complete (they run concurrently)
+    let nts_pending = nts_live_join.len();
+    if nts_pending > 0 {
+        debug!("[poll] cycle #{} waiting on {} nts-live tasks", cycle_id, nts_pending);
+    }
+    while let Some(joined) = nts_live_join.join_next().await {
+        if let Err(e) = joined {
+            warn!("[poll] nts-live task join error: {}", e);
+        }
+    }
+    
+    // Wait for mixtape workers
+    while let Some(joined) = mixtape_workers.join_next().await {
+        if let Err(e) = joined {
+            warn!("[poll] mixtape worker join error: {}", e);
+        }
+    }
+    debug!("[poll] cycle #{} nts-live + mixtape tasks finished", cycle_id);
+
+    // Now launch non-NTS worker pool (runs after NTS tasks complete)
     let mut non_nts_workers = tokio::task::JoinSet::new();
     if non_nts_total > 0 {
         match reqwest::Client::builder()
@@ -3305,7 +3420,7 @@ async fn run_station_poll_cycle(
                 let queue = std::sync::Arc::new(TokioMutex::new(non_nts_queue));
                 let cycle_start = std::time::Instant::now();
                 let deadline = cycle_start + Duration::from_secs(NON_NTS_CYCLE_BUDGET_SECS);
-                let worker_count = NON_NTS_MAX_CONCURRENCY.min(non_nts_total).max(1);
+                let worker_count = max_concurrency.min(non_nts_total).max(1);
                 debug!(
                     "[poll] cycle #{} launching {} workers for {} non-nts jobs (budget={}s connect={}ms req={}ms meta={}ms)",
                     cycle_id,
@@ -3428,16 +3543,6 @@ async fn run_station_poll_cycle(
         }
     }
 
-    // Drain any remaining NTS tasks (they run concurrently with non-NTS workers above).
-    let nts_pending = nts_join.len();
-    if nts_pending > 0 {
-        debug!("[poll] cycle #{} waiting on {} remaining nts tasks", cycle_id, nts_pending);
-    }
-    while let Some(joined) = nts_join.join_next().await {
-        if let Err(e) = joined {
-            warn!("[poll] nts task join error: {}", e);
-        }
-    }
     debug!("[poll] cycle #{} all tasks finished", cycle_id);
 }
 

@@ -1,6 +1,22 @@
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub const DAEMON_TCP_PORT: u16 = 9876;
+
+/// Global flag to control whether to use system-installed binaries from PATH
+/// instead of bundled ones in external/ folder.
+/// Defaults to false (use bundled/external binaries).
+static USE_SYSTEM_DEPS: AtomicBool = AtomicBool::new(false);
+
+/// Set whether to use system dependencies (from PATH) instead of bundled ones.
+pub fn set_use_system_deps(use_system: bool) {
+    USE_SYSTEM_DEPS.store(use_system, Ordering::Relaxed);
+}
+
+/// Check whether to use system dependencies from PATH.
+pub fn should_use_system_deps() -> bool {
+    USE_SYSTEM_DEPS.load(Ordering::Relaxed)
+}
 const DAEMON_TCP_HOST: &str = "127.0.0.1";
 
 pub fn daemon_address() -> String {
@@ -195,18 +211,22 @@ fn find_on_path(names: &[&str]) -> Option<PathBuf> {
 
 /// Find the vibra binary (Shazam fingerprint CLI).
 /// Checks: beside the current exe, ~/gh/vibra/build/cli/vibra, then PATH.
+/// If use_system_deps is true, skips bundled binaries and uses PATH only.
 pub fn find_vibra_binary() -> Option<PathBuf> {
-    // 1. Beside current exe
-    if let Some(p) = find_beside_exe(vibra_binary_names()) {
-        return Some(p);
-    }
+    // If using system deps, skip bundled/external search
+    if !should_use_system_deps() {
+        // 1. Beside current exe
+        if let Some(p) = find_beside_exe(vibra_binary_names()) {
+            return Some(p);
+        }
 
-    // 2. Developer build location
-    if let Some(home) = dirs::home_dir() {
-        for name in vibra_binary_names() {
-            let dev = home.join("gh/vibra/build/cli").join(name);
-            if dev.exists() {
-                return Some(dev);
+        // 2. Developer build location
+        if let Some(home) = dirs::home_dir() {
+            for name in vibra_binary_names() {
+                let dev = home.join("gh/vibra/build/cli").join(name);
+                if dev.exists() {
+                    return Some(dev);
+                }
             }
         }
     }
@@ -220,6 +240,7 @@ pub fn find_vibra_binary() -> Option<PathBuf> {
 }
 
 /// Find ffmpeg binary for audio capture.
+/// If use_system_deps is true, skips bundled binaries and uses PATH only.
 pub fn find_ffmpeg_binary() -> Option<PathBuf> {
     // FFMPEG_PATH env override (vibra docs mention this)
     if let Ok(p) = std::env::var("FFMPEG_PATH") {
@@ -229,9 +250,12 @@ pub fn find_ffmpeg_binary() -> Option<PathBuf> {
         }
     }
 
-    // Beside current exe
-    if let Some(p) = find_beside_exe(ffmpeg_binary_names()) {
-        return Some(p);
+    // If using system deps, skip bundled/external search
+    if !should_use_system_deps() {
+        // Beside current exe
+        if let Some(p) = find_beside_exe(ffmpeg_binary_names()) {
+            return Some(p);
+        }
     }
 
     // PATH
@@ -243,25 +267,34 @@ pub fn find_ffmpeg_binary() -> Option<PathBuf> {
 }
 
 /// Find ffprobe binary for metadata probing.
+/// If use_system_deps is true, skips bundled binaries and uses PATH only.
 pub fn find_ffprobe_binary() -> Option<PathBuf> {
-    if let Some(p) = find_beside_exe(ffprobe_binary_names()) {
-        return Some(p);
+    if !should_use_system_deps() {
+        if let Some(p) = find_beside_exe(ffprobe_binary_names()) {
+            return Some(p);
+        }
     }
     find_on_path(ffprobe_binary_names())
 }
 
+/// Find mpv binary for playback.
+/// If use_system_deps is true, skips bundled binaries and uses PATH only.
 pub fn find_mpv_binary() -> Option<PathBuf> {
     let exe_name = mpv_binary_name();
 
-    if let Ok(current_exe) = std::env::current_exe() {
-        if let Some(dir) = current_exe.parent() {
-            let local_mpv = dir.join(exe_name);
-            if local_mpv.exists() {
-                return Some(local_mpv);
+    // If not using system deps, check beside the exe first
+    if !should_use_system_deps() {
+        if let Ok(current_exe) = std::env::current_exe() {
+            if let Some(dir) = current_exe.parent() {
+                let local_mpv = dir.join(exe_name);
+                if local_mpv.exists() {
+                    return Some(local_mpv);
+                }
             }
         }
     }
 
+    // Search PATH
     if let Ok(path) = std::env::var("PATH") {
         #[cfg(unix)]
         let separator = ":";
@@ -283,7 +316,7 @@ pub fn find_mpv_binary() -> Option<PathBuf> {
 ///
 /// Searches in order:
 /// 1. YT_DLP_PATH environment variable
-/// 2. Beside current executable
+/// 2. Beside current executable (unless use_system_deps is true)
 /// 3. PATH
 pub fn find_yt_dlp_binary() -> Option<PathBuf> {
     // 1. Environment variable override
@@ -294,9 +327,11 @@ pub fn find_yt_dlp_binary() -> Option<PathBuf> {
         }
     }
 
-    // 2. Beside executable
-    if let Some(p) = find_beside_exe(yt_dlp_binary_names()) {
-        return Some(p);
+    // 2. Beside executable (only if not using system deps)
+    if !should_use_system_deps() {
+        if let Some(p) = find_beside_exe(yt_dlp_binary_names()) {
+            return Some(p);
+        }
     }
 
     // 3. PATH

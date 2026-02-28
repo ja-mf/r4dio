@@ -118,7 +118,14 @@ async fn run_pipewire_capture(
         let mut buffer = vec![0i16; VU_WINDOW_SAMPLES];
 
         loop {
-            match simple.read(&mut buffer) {
+            // Convert i16 buffer to u8 slice for PulseAudio read
+            let buffer_bytes = unsafe {
+                std::slice::from_raw_parts_mut(
+                    buffer.as_mut_ptr() as *mut u8,
+                    buffer.len() * std::mem::size_of::<i16>()
+                )
+            };
+            match simple.read(buffer_bytes) {
                 Ok(()) => {
                     // Convert i16 samples to f32 (-1.0 to 1.0)
                     let pcm: Vec<f32> = buffer.iter().map(|&s| s as f32 / 32768.0).collect();
