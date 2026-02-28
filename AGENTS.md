@@ -313,3 +313,75 @@ r4dio-windows-x86_64/
 ```
 `find_beside_exe()` in `platform.rs` searches both the exe dir and `external/` subdir.
 `starred.toml` and `songs.vds` are auto-seeded from `data/` into the OS data dir on first run.
+
+---
+
+## ⚠️ CRITICAL: Branch & Documentation Management
+
+### Branch Rules
+
+**`main` branch (GitHub):**
+- Only `main` should be pushed to GitHub
+- `dev` branch is for **local development only** - NEVER push to GitHub
+- Use: `git checkout main && git merge dev` to bring changes to main
+- After merging: `git push origin main` and `git push origin --delete dev` if dev was accidentally pushed
+
+### Documentation File Rules
+
+**Main branch (GitHub) - ONLY these .md files:**
+- `README.md` - User-facing documentation
+- `architecture.md` - Architecture overview
+- `HISTORY.md` - Changelog (if exists)
+
+**Dev branch (local only) - Additional .md files:**
+- `AGENTS.md` - This developer guide (KEEP LOCAL ONLY)
+- `PROJECT.md` - Project roadmap and todos
+- `v1_plan.md`, `v1-iteration.md` - Planning docs
+- `scope-tui-integration.md` - Implementation notes
+- Any other planning/development notes
+
+**NEVER commit these files to main:**
+```bash
+# Before merging dev to main, ensure these are NOT staged:
+AGENTS.md
+PROJECT.md
+v1_plan.md
+v1-iteration.md
+scope-tui-integration.md
+migrate_songs.py  # Utility scripts
+```
+
+### Release Workflow
+
+1. **Commit to dev locally:**
+   ```bash
+   git checkout dev
+   git add <code files only>
+   git commit -m "vX.Y.Z: description"
+   ```
+
+2. **Switch to main and merge:**
+   ```bash
+   git checkout main
+   git merge dev --no-commit --no-ff
+   # Check that only code/config files are staged
+   git status
+   ```
+
+3. **Commit merge:**
+   ```bash
+   git commit -m "vX.Y.Z: merge dev into main"
+   ```
+
+4. **Push to GitHub:**
+   ```bash
+   git tag vX.Y.Z
+   git push origin main --tags
+   # GitHub Actions will auto-build and release
+   ```
+
+5. **Clean up:**
+   ```bash
+   git checkout dev
+   # dev stays local, never push it
+   ```
