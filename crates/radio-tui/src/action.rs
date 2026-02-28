@@ -81,6 +81,9 @@ pub enum Action {
 
     // ── Scope ─────────────────────────────────────────────────────────────────
     ToggleScope,
+    
+    // ── VU Meter ───────────────────────────────────────────────────────────────
+    CycleVuMeterStyle,
 
     // ── Song recognition ─────────────────────────────────────────────────────
     /// Trigger song recognition (vibra + icy + nts pipeline).

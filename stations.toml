@@ -133,7 +133,7 @@ mixtape_url = "https://www.nts.live/infinite-mixtapes/slow-focus"
 network     = "NTS"
 description = "Meditative, slow-tempo sounds — ambient, drone, minimalism"
 tags        = ["ambient", "drone", "meditation", "slow", "minimalism", "nts mixtape"]
-city        = "London"
+city        = ""
 country     = "UK"
 
 [[station]]

@@ -372,6 +372,7 @@ impl App {
             file_metadata_cache,
             file_positions: file_positions.clone(),
             icy_history: icy_history.clone(),
+            last_known_icy: None,
             songs_history: songs_history.clone(),
             nts_hover_channel: None,
             nts_ch1: None,
@@ -1389,6 +1390,7 @@ impl App {
         // ICY title will arrive via IcyUpdated once the stream connects.
         if self.state.daemon_state.current_station != prev_station {
             self.last_known_icy = None;
+            self.state.last_known_icy = None;
         }
 
         // ── mpv health transition toasts ──────────────────────────────────────
@@ -1656,21 +1658,19 @@ impl App {
                     .and_then(|i| self.state.daemon_state.stations.get(i))
                     .map(|s| s.name.clone());
                 if let Some(st) = station {
-                    self.last_known_icy = Some((st.clone(), t.clone()));
+                    let entry = (st.clone(), t.clone());
+                    self.last_known_icy = Some(entry.clone());
+                    self.state.last_known_icy = Some(entry);
                     self.state.station_poll_titles.insert(st, t.clone());
                 }
             }
             None => {
-                if let Some(st) = self
-                    .state
-                    .daemon_state
-                    .current_station
-                    .and_then(|i| self.state.daemon_state.stations.get(i))
-                    .map(|s| s.name.clone())
-                {
-                    self.state.station_poll_titles.remove(&st);
-                }
+                // Note: We do NOT remove from station_poll_titles here.
+                // The auto-poll data should persist until new ICY arrives.
+                // Otherwise, playing a station would clear its auto-poll title
+                // before the stream ICY is available (race with fast local streams).
                 self.last_known_icy = None;
+                self.state.last_known_icy = None;
             }
         }
     }
@@ -1786,6 +1786,7 @@ impl App {
                 KeyCode::Char('!') => return vec![Action::ToggleNts(0)],
                 KeyCode::Char('@') => return vec![Action::ToggleNts(1)],
                 KeyCode::Char('o') => return vec![Action::ToggleScope],
+                KeyCode::Char('v') => return vec![Action::CycleVuMeterStyle],
                 KeyCode::Char('_') | KeyCode::Char('|') => return vec![Action::ToggleFullWidth],
                 KeyCode::Char('K') => {
                     // toggle keybinding bar
@@ -2103,6 +2104,17 @@ impl App {
             // ── Scope ─────────────────────────────────────────────────────────
             Action::ToggleScope => {
                 self.wm.toggle_scope();
+            }
+
+            // ── VU Meter ───────────────────────────────────────────────────────
+            Action::CycleVuMeterStyle => {
+                let new_style = self.header.cycle_meter_style();
+                let style_name = match new_style {
+                    crate::components::vu_meter::MeterStyle::Studio => "Studio",
+                    crate::components::vu_meter::MeterStyle::Led => "LED",
+                    crate::components::vu_meter::MeterStyle::Analog => "Analog",
+                };
+                self.toast.info(format!("VU meter: {}", style_name));
             }
 
             // ── Stars ─────────────────────────────────────────────────────────

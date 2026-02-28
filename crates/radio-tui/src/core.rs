@@ -78,6 +78,10 @@ pub struct DaemonCore {
     last_icy: Option<String>,
     /// Last source context (to reset connecting timer on source change).
     last_source: (Option<usize>, Option<String>),
+    /// Track if current station was loaded via proxy (for fallback on error).
+    current_station_via_proxy: bool,
+    /// Direct URL to fallback to if proxy fails (when current_station_via_proxy is true).
+    current_station_direct_url: Option<String>,
 }
 
 impl DaemonCore {
@@ -116,6 +120,8 @@ impl DaemonCore {
             last_status: PlaybackStatus::Idle,
             last_icy: None,
             last_source: (None, None),
+            current_station_via_proxy: false,
+            current_station_direct_url: None,
         })
     }
 
@@ -288,11 +294,66 @@ impl DaemonCore {
                     .get("reason")
                     .and_then(|v| v.as_str())
                     .unwrap_or("unknown");
-                info!("mpv: end-file reason={}", reason);
+                let file_error = evt
+                    .raw
+                    .get("file_error")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("none");
+                let playlist_entry_id = evt
+                    .raw
+                    .get("playlist_entry_id")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                info!(
+                    "mpv: end-file reason={}, file_error={}, playlist_entry_id={}",
+                    reason, file_error, playlist_entry_id
+                );
                 if reason == "error" || reason == "network" || reason == "quit" {
-                    // If we intended to play, mark error
-                    if self.intend_playing && !self.obs_pause {
-                        warn!("mpv: stream ended with error/network reason, marking Error");
+                    // Check if we were playing via proxy and should fallback to direct URL
+                    if self.current_station_via_proxy && self.current_station_direct_url.is_some() {
+                        let direct_url = self.current_station_direct_url.take().unwrap();
+                        warn!(
+                            "mpv: proxy stream failed (reason={}, file_error={}), falling back to direct URL: {}",
+                            reason, file_error, direct_url
+                        );
+                        // Reset proxy flag before attempting fallback
+                        self.current_station_via_proxy = false;
+                        // Attempt to play direct URL
+                        if let Some(handle) = self.mpv_handle.clone() {
+                            let volume = self.state_manager.get_state().await.volume;
+                            if let Err(e) = handle.load_stream(&direct_url, volume).await {
+                                error!("mpv: fallback to direct URL failed: {}", e);
+                                self.intend_playing = false;
+                                self.state_manager
+                                    .set_playback_status(PlaybackStatus::Error)
+                                    .await;
+                                let _ = self.broadcast_tx.send(BroadcastMessage::StateUpdated);
+                                self.last_status = PlaybackStatus::Error;
+                            } else {
+                                info!("mpv: successfully fell back to direct URL");
+                                // Update stream_url for VU meter to use direct URL
+                                if let Some(ref mut handle) = self.vu_task_handle {
+                                    handle.abort();
+                                }
+                                let tx = self.broadcast_tx.clone();
+                                let url = direct_url.clone();
+                                let new_handle = tokio::spawn(async move {
+                                    loop {
+                                        if let Err(e) = run_vu_ffmpeg(&url, &tx).await {
+                                            debug!("VU ffmpeg exited: {e}");
+                                        }
+                                        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                                    }
+                                });
+                                self.vu_task_handle = Some(new_handle.abort_handle());
+                            }
+                        }
+                        self.connecting_since = None;
+                    } else if self.intend_playing && !self.obs_pause {
+                        error!(
+                            "mpv: stream ended with error/network reason={} file_error={}, marking Error",
+                            reason, file_error
+                        );
                         self.state_manager
                             .set_playback_status(PlaybackStatus::Error)
                             .await;
@@ -318,7 +379,12 @@ impl DaemonCore {
                 self.maybe_update_status().await;
             }
             Some("start-file") => {
-                info!("mpv: start-file");
+                let playlist_entry_id = evt
+                    .raw
+                    .get("playlist_entry_id")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                info!("mpv: start-file playlist_entry_id={}", playlist_entry_id);
                 self.connecting_since = None;
                 self.obs_core_idle = Some(true); // will flip to false when audio flows
                 self.maybe_update_status().await;
@@ -508,7 +574,7 @@ impl DaemonCore {
         };
 
         if let Some(station) = station {
-            info!("Playing station: {}", station.name);
+            info!("Playing station: {} (idx={}, url={})", station.name, idx, station.url);
 
             // Abort any running VU ffmpeg task and lavfi observer before starting a new one.
             if let Some(h) = self.vu_task_handle.take() {
@@ -529,6 +595,10 @@ impl DaemonCore {
             self.state_manager.set_playing(idx).await?;
             let _ = self.broadcast_tx.send(BroadcastMessage::StateUpdated);
 
+            // Reset proxy tracking before attempting playback
+            self.current_station_via_proxy = false;
+            self.current_station_direct_url = Some(station.url.clone());
+
             match self.ensure_mpv_handle().await {
                 Some(handle) => {
                     let mut stream_url = station.url.clone();
@@ -536,24 +606,42 @@ impl DaemonCore {
                     let mut used_proxy = false;
                     if wants_proxy {
                         let proxy_url = crate::proxy::proxy_url(idx);
-                        if let Err(e) = handle.load_stream(&proxy_url, volume).await {
-                            warn!("Failed to load proxy stream '{}': {}", station.name, e);
-                            if let Err(e2) = handle.load_stream(&stream_url, volume).await {
-                                warn!("Failed to load direct stream '{}': {}", station.name, e2);
-                                self.intend_playing = false;
-                                self.state_manager
-                                    .set_playback_status(PlaybackStatus::Error)
-                                    .await;
-                                let _ = self.broadcast_tx.send(BroadcastMessage::StateUpdated);
-                                return Ok(());
+                        info!("Attempting to load '{}' via proxy: {}", station.name, proxy_url);
+                        match handle.load_stream(&proxy_url, volume).await {
+                            Ok(()) => {
+                                info!("Successfully loaded proxy stream for '{}'", station.name);
+                                stream_url = proxy_url;
+                                used_proxy = true;
+                                // Track that we're using proxy so we can fallback if mpv fails later
+                                self.current_station_via_proxy = true;
                             }
-                        } else {
-                            stream_url = proxy_url;
-                            used_proxy = true;
+                            Err(e) => {
+                                error!(
+                                    "Failed to load proxy stream '{}': {}. Falling back to direct URL: {}",
+                                    station.name, e, station.url
+                                );
+                                if let Err(e2) = handle.load_stream(&stream_url, volume).await {
+                                    error!(
+                                        "Failed to load direct stream '{}': {}. Marking as error.",
+                                        station.name, e2
+                                    );
+                                    self.intend_playing = false;
+                                    self.current_station_via_proxy = false;
+                                    self.current_station_direct_url = None;
+                                    self.state_manager
+                                        .set_playback_status(PlaybackStatus::Error)
+                                        .await;
+                                    let _ = self.broadcast_tx.send(BroadcastMessage::StateUpdated);
+                                    return Ok(());
+                                }
+                                self.current_station_via_proxy = false;
+                            }
                         }
                     } else if let Err(e) = handle.load_stream(&stream_url, volume).await {
-                        warn!("Failed to load direct stream '{}': {}", station.name, e);
+                        error!("Failed to load direct HLS stream '{}': {}", station.name, e);
                         self.intend_playing = false;
+                        self.current_station_via_proxy = false;
+                        self.current_station_direct_url = None;
                         self.state_manager
                             .set_playback_status(PlaybackStatus::Error)
                             .await;
@@ -609,6 +697,8 @@ impl DaemonCore {
         info!("Stopping playback");
         self.intend_playing = false;
         self.connecting_since = None;
+        self.current_station_via_proxy = false;
+        self.current_station_direct_url = None;
         if let Some(h) = self.vu_task_handle.take() {
             h.abort();
         }
