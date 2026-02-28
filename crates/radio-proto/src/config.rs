@@ -17,6 +17,8 @@ pub struct Config {
     pub paths: PathsConfig,
     #[serde(default)]
     pub polling: PollingConfig,
+    #[serde(default)]
+    pub viz: VizConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,6 +60,28 @@ pub struct PollingConfig {
     pub auto_polling: bool,
     #[serde(default = "default_poll_interval_secs")]
     pub poll_interval_secs: u64,
+}
+
+/// Linux-specific audio visualization configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VizConfig {
+    /// Use PipeWire/PulseAudio monitor for VU meter and oscilloscope visualization
+    /// instead of the stream's audio data. This visualizes the actual system audio output.
+    /// Only works on Linux. Default: false
+    #[serde(default = "default_pipewire_viz")]
+    pub pipewire_viz: bool,
+    /// PipeWire/PulseAudio device name to monitor. None = default monitor source
+    #[serde(default)]
+    pub pipewire_device: Option<String>,
+}
+
+impl Default for VizConfig {
+    fn default() -> Self {
+        Self {
+            pipewire_viz: default_pipewire_viz(),
+            pipewire_device: None,
+        }
+    }
 }
 
 impl Default for PathsConfig {
@@ -176,6 +200,10 @@ fn default_poll_interval_secs() -> u64 {
     120
 }
 
+fn default_pipewire_viz() -> bool {
+    false
+}
+
 fn default_m3u_url() -> String {
     "https://raw.githubusercontent.com/ja-mf/radio-curation/refs/heads/main/jamf_radios.m3u"
         .to_string()
@@ -237,6 +265,7 @@ impl Default for Config {
             stations: StationsConfig::default(),
             paths: PathsConfig::default(),
             polling: PollingConfig::default(),
+            viz: VizConfig::default(),
         }
     }
 }

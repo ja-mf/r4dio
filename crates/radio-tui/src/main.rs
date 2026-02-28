@@ -10,6 +10,7 @@ mod http;
 mod intent;
 mod mpv;
 mod nts_download;
+mod pipewire_viz;
 mod proxy;
 mod scope;
 mod theme;

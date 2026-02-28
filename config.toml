@@ -46,3 +46,15 @@ auto_polling = true
 
 # Poll interval in seconds (default 120 = 2 minutes)
 poll_interval_secs = 120
+
+[viz]
+# Use PipeWire/PulseAudio monitor for VU meter and oscilloscope visualization (Linux only)
+# When enabled, the visualizer shows the actual system audio output instead of the stream data.
+# This is useful if you want to visualize what's playing through your soundcard.
+# Default: false
+pipewire_viz = false
+
+# PipeWire/PulseAudio device name to monitor (Linux only)
+# None = use default monitor source
+# Common values: "pipewire.monitor", "alsa_output.*.monitor"
+# pipewire_device = "pipewire.monitor"

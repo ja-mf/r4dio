@@ -664,18 +664,33 @@ impl DaemonCore {
                     );
                     self.audio_observer_handle = Some(obs);
 
-                    // Spawn ffmpeg PCM task for oscilloscope.
-                    // Prefer proxy URL so mpv + ffmpeg share one upstream source.
-                    let tx = self.broadcast_tx.clone();
-                    let handle = tokio::spawn(async move {
-                        loop {
-                            if let Err(e) = run_vu_ffmpeg(&stream_url, &tx).await {
-                                debug!("VU ffmpeg exited: {e}");
+                    // Spawn VU/scope PCM task.
+                    // Use PipeWire monitor on Linux if configured, otherwise use ffmpeg from stream.
+                    #[cfg(target_os = "linux")]
+                    let use_pipewire = self.config.viz.pipewire_viz;
+                    #[cfg(not(target_os = "linux"))]
+                    let use_pipewire = false;
+
+                    if use_pipewire {
+                        info!("Using PipeWire/PulseAudio monitor for visualization");
+                        self.vu_task_handle = Some(crate::pipewire_viz::spawn_pipewire_viz_task(
+                            self.config.viz.pipewire_device.clone(),
+                            self.broadcast_tx.clone(),
+                        ));
+                    } else {
+                        // Spawn ffmpeg PCM task for oscilloscope.
+                        // Prefer proxy URL so mpv + ffmpeg share one upstream source.
+                        let tx = self.broadcast_tx.clone();
+                        let handle = tokio::spawn(async move {
+                            loop {
+                                if let Err(e) = run_vu_ffmpeg(&stream_url, &tx).await {
+                                    debug!("VU ffmpeg exited: {e}");
+                                }
+                                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                             }
-                            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                        }
-                    });
-                    self.vu_task_handle = Some(handle.abort_handle());
+                        });
+                        self.vu_task_handle = Some(handle.abort_handle());
+                    }
                 }
                 None => {
                     warn!("No mpv handle available for station '{}'", station.name);
