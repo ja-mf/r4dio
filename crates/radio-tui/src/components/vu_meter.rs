@@ -2,6 +2,7 @@
 //!
 //! Features:
 //! - Segmented LED-strip visual style (configurable)
+//! - Physics-based inertia for smooth RMS marker movement
 //! - Adaptive dB window for optimal dynamic range visibility
 //! - Peak hold with decay trail
 //! - Three visual presets: Studio (classic), LED (discrete), Analog (needle)
@@ -17,6 +18,82 @@ use ratatui::{
 };
 
 use crate::app_state::AppState;
+use std::sync::Mutex;
+
+// ═════════════════════════════════════════════════════════════════════════════
+// PHYSICS-BASED RMS SMOOTHING (Inertia/Gravity)
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// Physics state for smooth RMS marker movement.
+struct RmsPhysics {
+    /// Current smoothed position (0..1)
+    position: f32,
+    /// Current velocity
+    velocity: f32,
+    /// Target position
+    target: f32,
+}
+
+impl RmsPhysics {
+    const fn new() -> Self {
+        Self {
+            position: 0.0,
+            velocity: 0.0,
+            target: 0.0,
+        }
+    }
+}
+
+impl RmsPhysics {
+    /// Spring constant - higher = snappier, lower = more sluggish
+    const SPRING: f32 = 0.15;
+    /// Damping factor - prevents oscillation (0..1)
+    const DAMPING: f32 = 0.75;
+    /// Maximum velocity cap
+    const MAX_VELOCITY: f32 = 0.25;
+
+    /// Update physics and return new smoothed position.
+    fn update(&mut self, target: f32) -> f32 {
+        self.target = target;
+
+        // Spring force toward target
+        let displacement = self.target - self.position;
+        let force = displacement * Self::SPRING;
+
+        // Update velocity with damping
+        self.velocity = (self.velocity + force) * Self::DAMPING;
+
+        // Cap velocity for stability
+        self.velocity = self.velocity.clamp(-Self::MAX_VELOCITY, Self::MAX_VELOCITY);
+
+        // Update position
+        self.position += self.velocity;
+
+        // Snap to target when very close (prevents micro-jitter)
+        if displacement.abs() < 0.001 && self.velocity.abs() < 0.001 {
+            self.position = self.target;
+            self.velocity = 0.0;
+        }
+
+        self.position.clamp(0.0, 1.0)
+    }
+}
+
+// Global physics state for the RMS marker (one per style to avoid jumps when switching)
+static LED_PHYSICS: Mutex<RmsPhysics> = Mutex::new(RmsPhysics::new());
+static STUDIO_PHYSICS: Mutex<RmsPhysics> = Mutex::new(RmsPhysics::new());
+static ANALOG_PHYSICS: Mutex<RmsPhysics> = Mutex::new(RmsPhysics::new());
+
+fn get_smoothed_rms_position(target_frac: f32, style: MeterStyle) -> f32 {
+    let physics = match style {
+        MeterStyle::Led => &LED_PHYSICS,
+        MeterStyle::Studio => &STUDIO_PHYSICS,
+        MeterStyle::Analog => &ANALOG_PHYSICS,
+    };
+
+    let mut phys = physics.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    phys.update(target_frac)
+}
 
 // ═════════════════════════════════════════════════════════════════════════════
 // CONFIGURATION & STYLE PRESETS
@@ -27,7 +104,7 @@ use crate::app_state::AppState;
 pub enum MeterStyle {
     /// Classic studio look: continuous bar with fractional precision
     Studio,
-    /// LED strip: discrete segments with gaps
+    /// LED strip: discrete compact segments with micro-gaps
     Led,
     /// Analog needle feel: pointed marker with tail
     Analog,
@@ -55,6 +132,8 @@ struct MeterChars {
     trail: &'static [char],
     /// Gap between LED segments (if applicable)
     segment_gap: Option<char>,
+    /// Segment width in characters
+    segment_width: usize,
 }
 
 impl MeterChars {
@@ -66,16 +145,31 @@ impl MeterChars {
         rms: &['○', '●', '⬤'],
         trail: &['·', '•', '∙'],
         segment_gap: None,
+        segment_width: 1,
     };
 
+    /// LED: Compact 1-char segments with hairline gap for tighter packing
     const LED: Self = Self {
-        bg: '┆',
-        fg: '▮',
-        fractional: &['▁', '▂', '▃', '▄', '▅', '▆', '▇'],
-        peak: '▐',
+        bg: '▏',        // Hairline for inactive
+        fg: '▍',        // Medium block for active (compact but visible)
+        fractional: &['▏', '▎', '▍', '▌', '▋', '▊', '▉'],
+        peak: '▐',      // Right-half at peak
         rms: &['◆', '●', '⬤'],
         trail: &['·', '•', '●'],
-        segment_gap: Some(' '),
+        segment_gap: Some(' '),  // Single space for separation
+        segment_width: 1,        // Single char = more compact
+    };
+
+    /// LED Dense: Even tighter with half-width feel
+    const LED_DENSE: Self = Self {
+        bg: '│',        // Thin vertical line
+        fg: '┃',        // Thick vertical line  
+        fractional: &['▏', '▎', '▍', '▌', '▋', '▊', '▉'],
+        peak: '▌',
+        rms: &['◆', '●', '⬤'],
+        trail: &['·', '•', '●'],
+        segment_gap: None,       // No gap, segments touch
+        segment_width: 1,
     };
 
     const ANALOG: Self = Self {
@@ -86,6 +180,7 @@ impl MeterChars {
         rms: &['◢', '█', '◣'],
         trail: &['·', '•', '●', '◐', '◑'],
         segment_gap: None,
+        segment_width: 1,
     };
 
     fn for_style(style: MeterStyle) -> Self {
@@ -94,32 +189,6 @@ impl MeterChars {
             MeterStyle::Led => Self::LED,
             MeterStyle::Analog => Self::ANALOG,
         }
-    }
-}
-
-/// dB scale markers for professional reference points.
-#[derive(Debug, Clone)]
-struct ScaleMarkers;
-
-impl ScaleMarkers {
-    /// Get scale marker character and position for a given dB value.
-    /// Returns (db_value, marker_char, label_opt).
-    const MARKERS: [(f32, char, Option<&'static str>); 5] = [
-        (-54.0, '│', Some("∞")),  // Silence floor
-        (-36.0, '├', None),       // -36dB (12.5%)
-        (-18.0, '┼', Some("18")), // -18dB reference (50%)
-        (-6.0, '┤', Some("6")),   // -6dB (75%)
-        (0.0, '│', Some("0")),    // 0dB clip point
-    ];
-
-    /// Check if a dB value is near a scale marker (within tolerance).
-    fn is_near_marker(db: f32, tolerance_db: f32) -> Option<(char, Option<&'static str>)> {
-        for (marker_db, ch, label) in Self::MARKERS {
-            if (db - marker_db).abs() < tolerance_db {
-                return Some((ch, label));
-            }
-        }
-        None
     }
 }
 
@@ -284,6 +353,7 @@ fn db_to_frac(db: f32) -> f32 {
 }
 
 /// Convert normalized position to dB.
+#[allow(dead_code)]
 fn frac_to_db(frac: f32) -> f32 {
     let linear = frac.powf(1.0 / GAMMA);
     DB_MIN + linear * DB_RANGE
@@ -378,11 +448,17 @@ fn build_studio_meter(vu_db: f32, peak_db: f32, instant_db: f32, width: usize) -
     let instant_frac = db_to_frac(instant_db);
     let energy = calculate_energy(vu_db);
 
-    let total_eighths = (rms_frac * width as f32 * 8.0) as usize;
+    // Apply physics smoothing to RMS position
+    let smoothed_rms_frac = get_smoothed_rms_position(rms_frac, MeterStyle::Studio);
+
+    let total_eighths = (smoothed_rms_frac * width as f32 * 8.0) as usize;
     let full_cells = total_eighths / 8;
     let partial = total_eighths % 8;
     let peak_cell = ((peak_frac * width as f32) as usize).min(width.saturating_sub(1));
-    let instant_pos = instant_frac * width as f32;
+    
+    // Instant marker also smoothed but less so
+    let smoothed_instant_frac = get_smoothed_rms_position(instant_frac, MeterStyle::Studio);
+    let instant_pos = smoothed_instant_frac * width as f32;
     let instant_cell = (instant_pos as usize).min(width.saturating_sub(1));
 
     let rms_char = select_rms_char(energy, chars.rms);
@@ -403,7 +479,7 @@ fn build_studio_meter(vu_db: f32, peak_db: f32, instant_db: f32, width: usize) -
     for i in 0..width {
         let screen_frac = (i as f32 + 0.5) / width as f32;
         let linear = screen_frac.powf(1.0 / GAMMA);
-        let db_here = DB_MIN + linear * DB_RANGE;
+        let _db_here = DB_MIN + linear * DB_RANGE;
 
         let is_peak = i == peak_cell && peak_db > DB_MIN + 1.0;
         let is_instant = i == instant_cell && instant_db > DB_MIN + 1.0;
@@ -414,7 +490,6 @@ fn build_studio_meter(vu_db: f32, peak_db: f32, instant_db: f32, width: usize) -
             1.0
         };
 
-        let zone_color = MeterColors::zone_color(screen_frac);
         let fill_color = MeterColors::fill_color(screen_frac, energy);
         let peak_color = MeterColors::peak_color(energy);
         let instant_color = MeterColors::instant_color(energy);
@@ -456,7 +531,7 @@ fn build_studio_meter(vu_db: f32, peak_db: f32, instant_db: f32, width: usize) -
     Line::from(spans)
 }
 
-/// LED-style meter: discrete segments with gaps.
+/// LED-style meter: compact discrete segments with micro-gaps.
 fn build_led_meter(vu_db: f32, peak_db: f32, instant_db: f32, width: usize) -> Line<'static> {
     let chars = MeterChars::LED;
     let rms_frac = db_to_frac(vu_db);
@@ -464,14 +539,19 @@ fn build_led_meter(vu_db: f32, peak_db: f32, instant_db: f32, width: usize) -> L
     let instant_frac = db_to_frac(instant_db);
     let energy = calculate_energy(vu_db);
 
-    // LED segment configuration
-    const SEGMENT_WIDTH: usize = 2;
-    const SEGMENT_GAP: usize = 1;
-    let total_segment_units = SEGMENT_WIDTH + SEGMENT_GAP;
-    let num_segments = width / total_segment_units;
-    let lit_segments = (rms_frac * num_segments as f32) as usize;
+    // Apply physics smoothing
+    let smoothed_rms_frac = get_smoothed_rms_position(rms_frac, MeterStyle::Led);
+    let smoothed_instant_frac = get_smoothed_rms_position(instant_frac, MeterStyle::Led);
+
+    // Compact segment configuration: 1 char + optional gap
+    let seg_width = chars.segment_width;
+    let gap_width = if chars.segment_gap.is_some() { 1 } else { 0 };
+    let unit_width = seg_width + gap_width;
+    let num_segments = width / unit_width;
+
+    let lit_segments = (smoothed_rms_frac * num_segments as f32) as usize;
     let peak_segment = ((peak_frac * num_segments as f32) as usize).min(num_segments.saturating_sub(1));
-    let instant_segment = ((instant_frac * num_segments as f32) as usize).min(num_segments.saturating_sub(1));
+    let instant_segment = ((smoothed_instant_frac * num_segments as f32) as usize).min(num_segments.saturating_sub(1));
 
     let rms_char = select_rms_char(energy, chars.rms);
 
@@ -491,17 +571,16 @@ fn build_led_meter(vu_db: f32, peak_db: f32, instant_db: f32, width: usize) -> L
         let is_peak = seg == peak_segment && peak_db > DB_MIN + 1.0;
         let is_instant = seg == instant_segment && instant_db > DB_MIN + 1.0;
 
-        let zone_color = MeterColors::zone_color(seg_frac);
         let fill_color = MeterColors::fill_color(seg_frac, energy);
         let peak_color = MeterColors::peak_color(energy);
         let instant_color = MeterColors::instant_color(energy);
         let empty_color = MeterColors::empty_color(energy);
 
-        // Draw segment
-        for seg_col in 0..SEGMENT_WIDTH {
-            let (ch, color) = if is_peak && seg_col == SEGMENT_WIDTH - 1 {
+        // Draw segment (compact single-char)
+        for seg_col in 0..seg_width {
+            let (ch, color) = if is_peak && seg_col == seg_width - 1 {
                 (chars.peak, peak_color)
-            } else if is_instant && seg_col == SEGMENT_WIDTH / 2 {
+            } else if is_instant && seg_col == seg_width / 2 {
                 (rms_char, instant_color)
             } else if is_lit {
                 (chars.fg, fill_color)
@@ -521,7 +600,7 @@ fn build_led_meter(vu_db: f32, peak_db: f32, instant_db: f32, width: usize) -> L
             }
         }
 
-        // Add gap between segments
+        // Add micro-gap between segments
         if seg < num_segments - 1 {
             if let Some(gap_char) = chars.segment_gap {
                 if current_color == Some(empty_color) {
@@ -535,6 +614,21 @@ fn build_led_meter(vu_db: f32, peak_db: f32, instant_db: f32, width: usize) -> L
                     current_str.push(gap_char);
                 }
             }
+        }
+    }
+
+    // Handle remaining width (if any)
+    let used_width = num_segments * unit_width;
+    for _ in used_width..width {
+        if current_color == Some(MeterColors::empty_color(energy)) {
+            current_str.push(chars.bg);
+        } else {
+            if let Some(c) = current_color.take() {
+                flush(&mut spans, c, current_str.clone());
+                current_str.clear();
+            }
+            current_color = Some(MeterColors::empty_color(energy));
+            current_str.push(chars.bg);
         }
     }
 
@@ -553,9 +647,13 @@ fn build_analog_meter(vu_db: f32, peak_db: f32, instant_db: f32, width: usize) -
     let instant_frac = db_to_frac(instant_db);
     let energy = calculate_energy(vu_db);
 
-    let needle_pos = (rms_frac * width as f32) as usize;
+    // Apply physics smoothing
+    let smoothed_rms_frac = get_smoothed_rms_position(rms_frac, MeterStyle::Analog);
+    let smoothed_instant_frac = get_smoothed_rms_position(instant_frac, MeterStyle::Analog);
+
+    let needle_pos = (smoothed_rms_frac * width as f32) as usize;
     let peak_pos = ((peak_frac * width as f32) as usize).min(width.saturating_sub(1));
-    let instant_pos = (instant_frac * width as f32) as usize;
+    let instant_pos = (smoothed_instant_frac * width as f32) as usize;
 
     // Trail length depends on energy
     let trail_len = ((energy * 4.0).ceil() as usize).min(needle_pos);
@@ -573,7 +671,7 @@ fn build_analog_meter(vu_db: f32, peak_db: f32, instant_db: f32, width: usize) -
     for i in 0..width {
         let screen_frac = (i as f32 + 0.5) / width as f32;
         let linear = screen_frac.powf(1.0 / GAMMA);
-        let db_here = DB_MIN + linear * DB_RANGE;
+        let _db_here = DB_MIN + linear * DB_RANGE;
 
         let is_peak = i == peak_pos && peak_db > DB_MIN + 1.0;
         let is_needle = i == needle_pos;
@@ -587,7 +685,6 @@ fn build_analog_meter(vu_db: f32, peak_db: f32, instant_db: f32, width: usize) -
             None
         };
 
-        let zone_color = MeterColors::zone_color(screen_frac);
         let fill_color = MeterColors::fill_color(screen_frac, energy);
         let peak_color = MeterColors::peak_color(energy);
         let instant_color = MeterColors::instant_color(energy);
@@ -596,12 +693,10 @@ fn build_analog_meter(vu_db: f32, peak_db: f32, instant_db: f32, width: usize) -
         let (ch, color) = if is_peak {
             (chars.peak, peak_color)
         } else if is_needle {
-            // Needle head
             let needle_idx = (energy * chars.rms.len() as f32) as usize;
             let ch = chars.rms.get(needle_idx).copied().unwrap_or('█');
             (ch, instant_color)
         } else if let Some(dist) = trail_dist {
-            // Trail fades with distance
             let trail_idx = (dist * chars.trail.len() as f32) as usize;
             let ch = chars.trail.get(trail_idx).copied().unwrap_or('·');
             let color = MeterColors::trail_color(energy, dist);
@@ -661,6 +756,7 @@ pub fn draw_vu_meter(
 }
 
 /// Get a simple meter line without full state (for testing/custom use).
+#[allow(dead_code)]
 pub fn get_meter_line(
     vu_db: f32,
     peak_db: f32,
@@ -684,7 +780,7 @@ mod tests {
     fn test_db_conversions() {
         assert_eq!(db_to_frac(-54.0), 0.0);
         assert_eq!(db_to_frac(0.0), 1.0);
-        assert!((db_to_frac(-27.0) - 0.5).abs() < 0.1); // Approx midpoint
+        assert!((db_to_frac(-27.0) - 0.5).abs() < 0.1);
     }
 
     #[test]
@@ -697,5 +793,25 @@ mod tests {
     fn test_energy_calculation() {
         assert_eq!(calculate_energy(-72.0), 0.0);
         assert_eq!(calculate_energy(0.0), 1.0);
+    }
+
+    #[test]
+    fn test_physics_smoothing() {
+        let mut phys = RmsPhysics::default();
+        
+        // Should start at 0 and move toward target
+        let pos1 = phys.update(1.0);
+        assert!(pos1 > 0.0 && pos1 < 1.0);
+        
+        // Should continue approaching target
+        let pos2 = phys.update(1.0);
+        assert!(pos2 > pos1);
+        
+        // Should eventually reach target
+        let mut pos = pos2;
+        for _ in 0..100 {
+            pos = phys.update(1.0);
+        }
+        assert!((pos - 1.0).abs() < 0.01);
     }
 }
