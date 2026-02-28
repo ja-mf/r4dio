@@ -1665,15 +1665,10 @@ impl App {
                 }
             }
             None => {
-                if let Some(st) = self
-                    .state
-                    .daemon_state
-                    .current_station
-                    .and_then(|i| self.state.daemon_state.stations.get(i))
-                    .map(|s| s.name.clone())
-                {
-                    self.state.station_poll_titles.remove(&st);
-                }
+                // Note: We do NOT remove from station_poll_titles here.
+                // The auto-poll data should persist until new ICY arrives.
+                // Otherwise, playing a station would clear its auto-poll title
+                // before the stream ICY is available (race with fast local streams).
                 self.last_known_icy = None;
                 self.state.last_known_icy = None;
             }
