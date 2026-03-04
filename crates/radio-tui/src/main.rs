@@ -51,7 +51,11 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let data_dir = radio_proto::platform::data_dir();
-    // Keep tui_data_dir consistent with original path for backwards compatibility.
+    // On Windows use data_dir() so we respect portable mode (exe_dir/data/).
+    // On Unix keep the original radio-tui subdir for backwards compatibility.
+    #[cfg(windows)]
+    let tui_data_dir = data_dir.clone();
+    #[cfg(not(windows))]
     let tui_data_dir = dirs::data_dir()
         .map(|p| p.join("radio-tui"))
         .unwrap_or_else(|| radio_proto::platform::temp_dir().join("radio-tui"));
@@ -62,13 +66,8 @@ async fn main() -> anyhow::Result<()> {
     let log_path = data_dir.join("tui.log");
     let icy_log_path = data_dir.join("icyticker.log");
 
-    let songs_csv_path = dirs::home_dir()
-        .map(|p| p.join("songs.csv"))
-        .unwrap_or_else(|| radio_proto::platform::temp_dir().join("songs.csv"));
+    let songs_csv_path = data_dir.join("songs.csv");
     let songs_vds_path = tui_data_dir.join("songs.vds");
-    let downloads_dir = dirs::home_dir()
-        .map(|p| p.join("nts-downloads"))
-        .unwrap_or_else(|| radio_proto::platform::temp_dir().join("nts-downloads"));
     let stars_path = tui_data_dir.join("starred.toml");
     // Seed starred.toml on first run from beside-exe (or data/ subdir) for bundled packages
     if !stars_path.exists() {
@@ -117,6 +116,9 @@ async fn main() -> anyhow::Result<()> {
     
     // Configure whether to use system dependencies or bundled ones
     radio_proto::platform::set_use_system_deps(config.binaries.use_system_deps);
+
+    // downloads_dir depends on config (portable path resolution done in config.rs)
+    let downloads_dir = config.paths.downloads_dir.clone();
 
     // ── Broadcast channel (DaemonCore → TUI) ────────────────────────────────
     let (broadcast_tx, broadcast_rx) = broadcast::channel::<BroadcastMessage>(1024);
