@@ -1530,9 +1530,7 @@ impl App {
                 self.initial_loaded = true;
             }
 
-            // After any selection restore / initial jump, sync the NTS hover channel
-            // so the overlay shows immediately if cursor lands on NTS 1/2.
-            self.sync_nts_hover();
+            // NTS overlay is only opened explicitly via ! / @, not on cursor hover.
 
             // Track jump_from_station (for shuffle/next/prev)
             if let Some(from) = self.jump_from_station {
@@ -2105,16 +2103,18 @@ impl App {
 
             // ── NTS ───────────────────────────────────────────────────────────
             Action::ToggleNts(ch) => {
-                if ch == 0 {
-                    self.wm.toggle_nts1();
+                // Toggle the NTS overlay for the given channel (0=NTS1, 1=NTS2).
+                // If the same channel is already shown, close it; otherwise open it.
+                if self.state.nts_hover_channel == Some(ch) {
+                    self.state.nts_hover_channel = None;
                 } else {
-                    self.wm.toggle_nts2();
+                    self.state.nts_hover_channel = Some(ch);
                 }
-            }
-            Action::HoverNts(ch) => {
-                self.state.nts_hover_channel = ch;
                 self.wm
                     .rebuild_focus_ring_with(self.state.nts_hover_channel);
+            }
+            Action::HoverNts(_ch) => {
+                // Cursor hover no longer auto-opens the NTS overlay; use ! / @ instead.
             }
 
             // ── Scope ─────────────────────────────────────────────────────────
@@ -2519,10 +2519,6 @@ impl App {
     fn draw_radio(&mut self, frame: &mut ratatui::Frame, area: Rect) {
         use ratatui::widgets::Borders;
 
-        let right_maximized = self.wm.radio_right_maximized;
-        let has_overlay = self.state.nts_hover_channel.is_some()
-            && matches!(self.wm.radio_right_pane, RightPane::Tickers);
-
         // Assign fixed pane number keys: StationList=1, Icy=2, Songs=3, NtsPanel=4
         self.icy_ticker.number_key = Some('2');
         self.songs_ticker.number_key = Some('3');
@@ -2537,177 +2533,134 @@ impl App {
                 .draw(frame, area, station_focused, &self.state);
             self.pane_areas.station_list = area;
             self.pane_areas.nts_panel = Rect::default();
+            self.pane_areas.nts_overlay = Rect::default();
             return;
         }
 
-        // Duplicate number key assignments removed (already set above).
+        // ── New 3-section layout ──────────────────────────────────────────────
+        // Top: stations (50%)
+        // Bottom-left: ICY ticker (25%)
+        // Bottom-right: Songs ticker (25%)
+        // Collapse: each bottom pane collapses to 1 line, stations expands to fill
 
-        // Split into left (station list) and right (tickers / NTS)
-        let (left_pct, right_pct) = if right_maximized { (30, 70) } else { (55, 45) };
+        let icy_collapsed = self.wm.is_collapsed(ComponentId::IcyTicker);
+        let songs_collapsed = self.wm.is_collapsed(ComponentId::SongsTicker);
 
-        let cols = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Percentage(left_pct),
-                Constraint::Percentage(right_pct),
-            ])
+        // Vertical split: stations top, bottom row below
+        let bottom_h = match (icy_collapsed, songs_collapsed) {
+            (true, true) => Constraint::Length(1),
+            _ => Constraint::Percentage(50),
+        };
+        let rows = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(0), bottom_h])
             .split(area);
 
-        let left_area = cols[0];
-        let right_area = cols[1];
+        let station_area = rows[0];
+        let bottom_area = rows[1];
 
-        let station_collapsed = self.wm.is_collapsed(ComponentId::StationList);
+        // ── Station list (top) ────────────────────────────────────────────────
         let station_focused = self.wm.focused() == Some(ComponentId::StationList);
+        self.station_list.borders = Borders::ALL;
+        self.station_list
+            .draw(frame, station_area, station_focused, &self.state);
+        self.pane_areas.station_list = station_area;
 
-        if station_collapsed {
-            use crate::widgets::pane_chrome::draw_collapsed_pane;
-            let summary = self.station_list.collapse_summary(&self.state);
-            draw_collapsed_pane(
-                frame,
-                left_area,
-                "stations",
-                summary.as_deref(),
-                station_focused,
-            );
-            self.pane_areas.station_list = left_area;
-        } else {
-            // Left pane: omit right border — right pane's left border is the shared divider
-            self.station_list.borders = Borders::TOP | Borders::LEFT | Borders::BOTTOM;
-            self.station_list
-                .draw(frame, left_area, station_focused, &self.state);
-            self.pane_areas.station_list = left_area;
-        }
+        // ── Bottom row: ICY (left) + Songs (right) ────────────────────────────
+        let icy_focused = self.wm.focused() == Some(ComponentId::IcyTicker);
+        let songs_focused = self.wm.focused() == Some(ComponentId::SongsTicker);
 
-        // Right pane
-        match self.wm.radio_right_pane {
-            RightPane::Tickers => {
-                let icy_collapsed = self.wm.is_collapsed(ComponentId::IcyTicker);
-                let songs_collapsed = self.wm.is_collapsed(ComponentId::SongsTicker);
-
-                // Compute heights: collapsed = 1 row, expanded = equal split of remaining
+        match (icy_collapsed, songs_collapsed) {
+            (true, true) => {
+                // Both collapsed: split the single bottom line horizontally
+                use crate::widgets::pane_chrome::draw_collapsed_pane;
+                let halves = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                    .split(bottom_area);
+                let icy_sum = self.icy_ticker.collapse_summary(&self.state);
+                let songs_sum = self.songs_ticker.collapse_summary(&self.state);
+                draw_collapsed_pane(frame, halves[0], "icy", icy_sum.as_deref(), icy_focused);
+                draw_collapsed_pane(frame, halves[1], "songs", songs_sum.as_deref(), songs_focused);
+                self.pane_areas.icy_ticker = halves[0];
+                self.pane_areas.songs_ticker = halves[1];
+            }
+            (true, false) => {
+                // ICY collapsed to 1-line strip at top, songs gets the rest
+                use crate::widgets::pane_chrome::draw_collapsed_pane;
                 let rows = Layout::default()
                     .direction(Direction::Vertical)
-                    .constraints(match (icy_collapsed, songs_collapsed) {
-                        (true, true) => vec![Constraint::Length(1), Constraint::Length(1)],
-                        (true, false) => vec![Constraint::Length(1), Constraint::Min(0)],
-                        (false, true) => vec![Constraint::Min(0), Constraint::Length(1)],
-                        (false, false) => {
-                            vec![Constraint::Percentage(50), Constraint::Percentage(50)]
-                        }
-                    })
-                    .split(right_area);
-
-                let icy_focused = self.wm.focused() == Some(ComponentId::IcyTicker);
-                let songs_focused = self.wm.focused() == Some(ComponentId::SongsTicker);
-
-                if icy_collapsed {
-                    use crate::widgets::pane_chrome::draw_collapsed_pane;
-                    let summary = self.icy_ticker.collapse_summary(&self.state);
-                    draw_collapsed_pane(frame, rows[0], "icy", summary.as_deref(), icy_focused);
-                } else {
-                    self.icy_ticker.borders = Borders::ALL;
-                    self.icy_ticker
-                        .draw(frame, rows[0], icy_focused, &self.state);
-                }
-
-                if songs_collapsed {
-                    use crate::widgets::pane_chrome::draw_collapsed_pane;
-                    let summary = self.songs_ticker.collapse_summary(&self.state);
-                    draw_collapsed_pane(frame, rows[1], "songs", summary.as_deref(), songs_focused);
-                } else {
-                    // Songs: omit top border only if ICY is expanded above it
-                    self.songs_ticker.borders = if icy_collapsed {
-                        Borders::ALL
-                    } else {
-                        Borders::LEFT | Borders::BOTTOM | Borders::RIGHT
-                    };
-                    self.songs_ticker
-                        .draw(frame, rows[1], songs_focused, &self.state);
-                }
-
+                    .constraints([Constraint::Length(1), Constraint::Min(0)])
+                    .split(bottom_area);
+                let icy_sum = self.icy_ticker.collapse_summary(&self.state);
+                draw_collapsed_pane(frame, rows[0], "icy", icy_sum.as_deref(), icy_focused);
+                self.songs_ticker.borders = Borders::ALL;
+                self.songs_ticker
+                    .draw(frame, rows[1], songs_focused, &self.state);
                 self.pane_areas.icy_ticker = rows[0];
                 self.pane_areas.songs_ticker = rows[1];
-                self.pane_areas.nts_panel = Rect::default();
             }
-            RightPane::Nts1 => {
-                let nts_collapsed = self.wm.is_collapsed(ComponentId::NtsPanel);
-                let nts_focused = self.wm.focused() == Some(ComponentId::NtsPanel);
-                if nts_collapsed {
-                    use crate::widgets::pane_chrome::draw_collapsed_pane;
-                    let summary = self.nts_panel_ch1.collapse_summary(&self.state);
-                    draw_collapsed_pane(
-                        frame,
-                        right_area,
-                        "nts 1",
-                        summary.as_deref(),
-                        nts_focused,
-                    );
-                } else {
-                    self.nts_panel_ch1.borders = Borders::ALL;
-                    self.nts_panel_ch1
-                        .draw(frame, right_area, nts_focused, &self.state);
-                }
-                self.pane_areas.nts_panel = right_area;
+            (false, true) => {
+                // Songs collapsed to 1-line strip at bottom, ICY gets the rest
+                use crate::widgets::pane_chrome::draw_collapsed_pane;
+                let rows = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([Constraint::Min(0), Constraint::Length(1)])
+                    .split(bottom_area);
+                self.icy_ticker.borders = Borders::ALL;
+                self.icy_ticker
+                    .draw(frame, rows[0], icy_focused, &self.state);
+                let songs_sum = self.songs_ticker.collapse_summary(&self.state);
+                draw_collapsed_pane(frame, rows[1], "songs", songs_sum.as_deref(), songs_focused);
+                self.pane_areas.icy_ticker = rows[0];
+                self.pane_areas.songs_ticker = rows[1];
             }
-            RightPane::Nts2 => {
-                let nts_collapsed = self.wm.is_collapsed(ComponentId::NtsPanel);
-                let nts_focused = self.wm.focused() == Some(ComponentId::NtsPanel);
-                if nts_collapsed {
-                    use crate::widgets::pane_chrome::draw_collapsed_pane;
-                    let summary = self.nts_panel_ch2.collapse_summary(&self.state);
-                    draw_collapsed_pane(
-                        frame,
-                        right_area,
-                        "nts 2",
-                        summary.as_deref(),
-                        nts_focused,
-                    );
-                } else {
-                    self.nts_panel_ch2.borders = Borders::ALL;
-                    self.nts_panel_ch2
-                        .draw(frame, right_area, nts_focused, &self.state);
-                }
-                self.pane_areas.nts_panel = right_area;
-            }
-            RightPane::Scope => {
-                // Handled by early-return scope layout above; unreachable here.
-                unreachable!("RightPane::Scope should have returned early")
+            (false, false) => {
+                // Both expanded: side by side, ICY left, Songs right
+                let halves = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                    .split(bottom_area);
+                // ICY: omit right border — songs' left border is the shared divider
+                self.icy_ticker.borders = Borders::TOP | Borders::LEFT | Borders::BOTTOM;
+                self.icy_ticker
+                    .draw(frame, halves[0], icy_focused, &self.state);
+                self.songs_ticker.borders = Borders::ALL;
+                self.songs_ticker
+                    .draw(frame, halves[1], songs_focused, &self.state);
+                self.pane_areas.icy_ticker = halves[0];
+                self.pane_areas.songs_ticker = halves[1];
             }
         }
 
-        // ── NTS hover overlay ─────────────────────────────────────────────────
-        // When the cursor is on an NTS row in the station list we draw a compact
-        // NTS info panel as a floating overlay covering the bottom of the left
-        // (station list) pane, sized to fit its content exactly.
-        if let Some(hover_ch) = self.state.nts_hover_channel {
-            // Only show overlay when the full NTS right-pane is NOT already open.
-            if matches!(self.wm.radio_right_pane, RightPane::Tickers) {
-                let base = self.pane_areas.station_list;
-                if base.height > 4 {
-                    let panel = if hover_ch == 0 {
-                        &mut self.nts_panel_ch1
-                    } else {
-                        &mut self.nts_panel_ch2
-                    };
+        self.pane_areas.nts_panel = Rect::default();
 
-                    // Compute content height: border(2) + inner rows needed
-                    let overlay_width = base.width;
-                    let content_rows =
-                        panel.compact_content_height_for_state(&self.state, overlay_width);
-                    // +2 for top/bottom borders, capped to available space
-                    let overlay_height = (content_rows + 2).min(base.height.saturating_sub(1));
-                    let overlay_y = base.y + base.height - overlay_height;
-                    let overlay = Rect {
-                        x: base.x,
-                        y: overlay_y,
-                        width: overlay_width,
-                        height: overlay_height,
-                    };
-                    let overlay_focused = self.wm.focused() == Some(ComponentId::NtsPanel);
-                    panel.borders = Borders::ALL;
-                    panel.draw_compact(frame, overlay, overlay_focused, &self.state);
-                    self.pane_areas.nts_overlay = overlay;
-                }
+        // ── NTS overlay (! / @ keys) ──────────────────────────────────────────
+        // Shown as a floating overlay anchored to the bottom of the station list.
+        // Only rendered when explicitly opened with ! or @.
+        if let Some(nts_ch) = self.state.nts_hover_channel {
+            let base = self.pane_areas.station_list;
+            if base.height > 4 {
+                let panel = if nts_ch == 0 {
+                    &mut self.nts_panel_ch1
+                } else {
+                    &mut self.nts_panel_ch2
+                };
+                let overlay_width = base.width;
+                let content_rows =
+                    panel.compact_content_height_for_state(&self.state, overlay_width);
+                let overlay_height = (content_rows + 2).min(base.height.saturating_sub(1));
+                let overlay_y = base.y + base.height - overlay_height;
+                let overlay = Rect {
+                    x: base.x,
+                    y: overlay_y,
+                    width: overlay_width,
+                    height: overlay_height,
+                };
+                let overlay_focused = self.wm.focused() == Some(ComponentId::NtsPanel);
+                panel.borders = Borders::ALL;
+                panel.draw_compact(frame, overlay, overlay_focused, &self.state);
+                self.pane_areas.nts_overlay = overlay;
             } else {
                 self.pane_areas.nts_overlay = Rect::default();
             }
