@@ -181,6 +181,36 @@ pub struct AppState {
     /// True once enough samples are buffered to start stable scope/VU playback.
     pub pcm_pending_started: bool,
 
+    // ── Viz synchronization ──────────────────────────────────────────────────
+    /// Which subsystem is producing the current PCM data.
+    pub viz_source: Option<crate::VizSourceKind>,
+    /// Compensating delay in samples, derived from the sink's reported latency.
+    /// Applied as a display delay so viz aligns with physical audio output.
+    pub viz_delay_samples: usize,
+    /// Delay-line ring buffer: samples sit here for `viz_delay_samples` before
+    /// entering `pcm_ring` and the RMS calculation.
+    pub viz_delay_line: VecDeque<f32>,
+
+    // ── 3-band frequency splitter ────────────────────────────────────────────
+    /// Biquad filter bank for bass/mid/treble energy extraction.
+    pub band_splitter: crate::dsp::BandSplitter,
+    /// Per-frame band energy: bass (<250 Hz) in dBFS.
+    pub bass_db: f32,
+    /// Per-frame band energy: mid (250–2 kHz) in dBFS.
+    pub mid_db: f32,
+    /// Per-frame band energy: treble (>2 kHz) in dBFS.
+    pub treble_db: f32,
+
+    // ── BPM estimator ────────────────────────────────────────────────────────
+    /// Real-time tempo estimator (ACF + comb filter + PLL).
+    pub bpm_estimator: crate::dsp::BpmEstimator,
+    /// Stable long-window tempo lock for the 4th header bulb.
+    pub tempo_lock: crate::dsp::TempoLock,
+    /// Previous frame band energies for onset strength computation.
+    pub prev_bass_db: f32,
+    pub prev_mid_db: f32,
+    pub prev_treble_db: f32,
+
     // ── Intent render hints ──────────────────────────────────────────────────
     /// How to render the pause/play icon.
     pub pause_hint: RenderHint,
@@ -237,5 +267,54 @@ impl AppState {
     /// Saved position for a file.
     pub fn file_position_for(&self, path: &str) -> f64 {
         self.file_positions.get(path).copied().unwrap_or(0.0)
+    }
+
+    // ── Adaptive jitter-buffer parameters ────────────────────────────────────
+
+    /// How many samples to buffer before starting viz playback.
+    /// PipeWire monitor is real-time (tiny buffer). Ffmpeg network decoding
+    /// is bursty (large buffer).
+    pub fn pcm_jitter_target(&self) -> usize {
+        match self.viz_source {
+            Some(crate::VizSourceKind::PipeWire) => {
+                // ~80 ms — just enough to absorb PulseAudio scheduling jitter,
+                // plus any configured delay compensation.
+                const PW_BASE: usize = 44_100 * 80 / 1000; // 3528
+                PW_BASE + self.viz_delay_samples
+            }
+            _ => {
+                // ffmpeg / unknown: keep the original 1.6 s target.
+                // STREAM_FRAME_SAMPLES * 40 = 70_560
+                1764 * 40
+            }
+        }
+    }
+
+    /// Threshold below which we pause viz until the buffer refills.
+    pub fn pcm_jitter_stop(&self) -> usize {
+        match self.viz_source {
+            Some(crate::VizSourceKind::PipeWire) => {
+                // ~20 ms — very tight, acceptable for real-time source.
+                44_100 * 20 / 1000 // 882
+            }
+            _ => {
+                // ~160 ms (original value: STREAM_FRAME_SAMPLES * 4)
+                1764 * 4
+            }
+        }
+    }
+
+    /// Hard cap on the jitter buffer before dropping old samples.
+    pub fn pcm_jitter_max(&self) -> usize {
+        match self.viz_source {
+            Some(crate::VizSourceKind::PipeWire) => {
+                // ~500 ms cap — generous for real-time source.
+                44_100 / 2
+            }
+            _ => {
+                // ~5 s (original value: STREAM_FRAME_SAMPLES * 125)
+                1764 * 125
+            }
+        }
     }
 }

@@ -83,9 +83,15 @@ enum AppMessage {
     /// Real-time audio RMS level from daemon (dBFS).
     AudioLevel(f32),
     /// Raw PCM chunk (mono f32 normalised -1..1, 44100 Hz) for scope display.
-    PcmChunk(std::sync::Arc<Vec<f32>>),
+    PcmChunk {
+        samples: std::sync::Arc<Vec<f32>>,
+        captured_at: std::time::Instant,
+        source: crate::VizSourceKind,
+    },
     /// Independent render tick — drives VU-meter animation / peak decay.
     MeterTick,
+    /// Audio-output latency reported by the viz source (microseconds).
+    VizLatencyReport { latency_us: u64 },
     /// Download completed (success or failure).
     DownloadComplete {
         url: String,
@@ -423,6 +429,18 @@ impl App {
             pcm_ring: std::collections::VecDeque::new(),
             pcm_pending: std::collections::VecDeque::new(),
             pcm_pending_started: false,
+            viz_source: None,
+            viz_delay_samples: 0,
+            viz_delay_line: std::collections::VecDeque::new(),
+            band_splitter: crate::dsp::BandSplitter::new(STREAM_PCM_RATE_HZ as f64),
+            bass_db: -90.0,
+            mid_db: -90.0,
+            treble_db: -90.0,
+            bpm_estimator: crate::dsp::BpmEstimator::new(METER_FPS as f32),
+            tempo_lock: crate::dsp::TempoLock::new(METER_FPS as f32),
+            prev_bass_db: -90.0,
+            prev_mid_db: -90.0,
+            prev_treble_db: -90.0,
             download_statuses: HashMap::new(),
         };
 
@@ -591,7 +609,12 @@ impl App {
                             BroadcastMessage::IcyUpdated(title) => AppMessage::IcyUpdated(title),
                             BroadcastMessage::Log(s) => AppMessage::Log(s),
                             BroadcastMessage::AudioLevel(rms) => AppMessage::AudioLevel(rms),
-                            BroadcastMessage::PcmChunk(chunk) => AppMessage::PcmChunk(chunk),
+                            BroadcastMessage::PcmChunk { samples, captured_at, source } => {
+                                AppMessage::PcmChunk { samples, captured_at, source }
+                            }
+                            BroadcastMessage::VizLatencyReport { latency_us } => {
+                                AppMessage::VizLatencyReport { latency_us }
+                            }
                         };
                         if bc_tx.send(app_msg).await.is_err() {
                             break;
@@ -675,8 +698,8 @@ impl App {
                         drained += 1;
                         match next {
                             AppMessage::AudioLevel(rms) => latest_audio = Some(rms),
-                            AppMessage::PcmChunk(chunk) => {
-                                let _ = self.handle_message(AppMessage::PcmChunk(chunk)).await;
+                            AppMessage::PcmChunk { samples, captured_at, source } => {
+                                let _ = self.handle_message(AppMessage::PcmChunk { samples, captured_at, source }).await;
                             }
                             other => {
                                 if let Some(rms) = latest_audio.take() {
@@ -1191,14 +1214,19 @@ impl App {
                 return false;
             }
 
-            AppMessage::PcmChunk(chunk) => {
-                // Station PCM arrives in bursts; stage it in a jitter buffer and
-                // consume it on MeterTick at steady cadence.
-                for &s in chunk.iter() {
+            AppMessage::PcmChunk { samples, captured_at: _, source } => {
+                // Track which source is active so MeterTick can adapt its
+                // jitter buffer strategy.
+                self.state.viz_source = Some(source);
+
+                // Stage samples in the jitter buffer for steady MeterTick consumption.
+                for &s in samples.iter() {
                     self.state.pcm_pending.push_back(s);
                 }
-                if self.state.pcm_pending.len() > PCM_JITTER_MAX {
-                    let keep = (PCM_JITTER_TARGET + STREAM_FRAME_SAMPLES * 8)
+                let jitter_max = self.state.pcm_jitter_max();
+                let jitter_target = self.state.pcm_jitter_target();
+                if self.state.pcm_pending.len() > jitter_max {
+                    let keep = (jitter_target + STREAM_FRAME_SAMPLES * 8)
                         .min(self.state.pcm_pending.len());
                     let drop_n = self.state.pcm_pending.len().saturating_sub(keep);
                     for _ in 0..drop_n {
@@ -1208,17 +1236,32 @@ impl App {
                 return false;
             }
 
+            AppMessage::VizLatencyReport { latency_us } => {
+                let new_samples =
+                    ((latency_us as f64 / 1_000_000.0) * STREAM_PCM_RATE_HZ as f64) as usize;
+                self.state.viz_delay_samples = new_samples;
+                tracing::debug!(
+                    latency_us,
+                    delay_samples = new_samples,
+                    "Updated viz delay from sink latency"
+                );
+                return false;
+            }
+
             AppMessage::MeterTick => {
-                // Smooth station scope/VU by consuming PCM at fixed 50 Hz cadence.
+                // Smooth station scope/VU by consuming PCM at fixed 25 Hz cadence.
                 if self.state.daemon_state.current_station.is_some()
                     && self.state.daemon_state.current_file.is_none()
                 {
+                    let jitter_target = self.state.pcm_jitter_target();
+                    let jitter_stop = self.state.pcm_jitter_stop();
+
                     if !self.state.pcm_pending_started
-                        && self.state.pcm_pending.len() >= PCM_JITTER_TARGET
+                        && self.state.pcm_pending.len() >= jitter_target
                     {
                         self.state.pcm_pending_started = true;
                     } else if self.state.pcm_pending_started
-                        && self.state.pcm_pending.len() < PCM_JITTER_STOP
+                        && self.state.pcm_pending.len() < jitter_stop
                     {
                         self.state.pcm_pending_started = false;
                     }
@@ -1226,21 +1269,37 @@ impl App {
                     if self.state.pcm_pending_started {
                         let available = self.state.pcm_pending.len();
                         let mut take = STREAM_FRAME_SAMPLES;
-                        if available > PCM_JITTER_TARGET + STREAM_FRAME_SAMPLES {
-                            let catch_up = (available - PCM_JITTER_TARGET) / 2;
+                        if available > jitter_target + STREAM_FRAME_SAMPLES {
+                            let catch_up = (available - jitter_target) / 2;
                             take = (STREAM_FRAME_SAMPLES + catch_up).min(STREAM_FRAME_SAMPLES * 5);
                         }
                         let mut consumed = 0usize;
                         let mut sum_sq = 0.0_f64;
+                        let mut band_energy = crate::dsp::BandEnergy::default();
                         let mut hold = *self.state.pcm_ring.back().unwrap_or(&0.0);
+                        let delay = self.state.viz_delay_samples;
 
                         for i in 0..take {
                             if let Some(s) = self.state.pcm_pending.pop_front() {
                                 hold = s;
                                 consumed += 1;
-                                let sf = s as f64;
+
+                                // Route through delay line when compensating
+                                // for monitor-before-speaker latency.
+                                let out = if delay > 0 {
+                                    self.state.viz_delay_line.push_back(s);
+                                    if self.state.viz_delay_line.len() > delay {
+                                        self.state.viz_delay_line.pop_front().unwrap_or(0.0)
+                                    } else {
+                                        continue; // still filling delay line
+                                    }
+                                } else {
+                                    s
+                                };
+                                let sf = out as f64;
                                 sum_sq += sf * sf;
-                                self.state.pcm_ring.push_back(s);
+                                band_energy.push(&mut self.state.band_splitter, out);
+                                self.state.pcm_ring.push_back(out);
                                 continue;
                             }
                             if i < STREAM_FRAME_SAMPLES {
@@ -1265,11 +1324,36 @@ impl App {
                                 (20.0 * rms.log10()) as f32
                             };
                             self.update_audio_trackers(rms_db);
+                            let (bass, mid, treble) = band_energy.to_db();
+                            // Multi-band onset strength: half-wave-rectified frame-to-frame
+                            // energy increase, weighted by perceptual importance to beat detection.
+                            // Approximates spectral flux without FFT (à la BTrack energy difference).
+                            let onset = (bass  - self.state.prev_bass_db).max(0.0) * 0.50
+                                      + (mid   - self.state.prev_mid_db).max(0.0)  * 0.30
+                                      + (treble - self.state.prev_treble_db).max(0.0) * 0.20;
+                            self.state.prev_bass_db   = bass;
+                            self.state.prev_mid_db    = mid;
+                            self.state.prev_treble_db = treble;
+                            self.state.bass_db   = bass;
+                            self.state.mid_db    = mid;
+                            self.state.treble_db = treble;
+                            self.state.bpm_estimator.push_onset(onset);
+                            self.state.tempo_lock.push_onset(onset);
                         }
                     }
                 } else {
                     self.state.pcm_pending.clear();
                     self.state.pcm_pending_started = false;
+                    self.state.viz_delay_line.clear();
+                    self.state.band_splitter.reset();
+                    self.state.bass_db = -90.0;
+                    self.state.mid_db = -90.0;
+                    self.state.treble_db = -90.0;
+                    self.state.prev_bass_db = -90.0;
+                    self.state.prev_mid_db = -90.0;
+                    self.state.prev_treble_db = -90.0;
+                    self.state.bpm_estimator.reset();
+                    self.state.tempo_lock.reset();
                 }
 
                 let now = std::time::Instant::now();
@@ -1404,6 +1488,8 @@ impl App {
             self.state.pcm_ring.clear();
             self.state.pcm_pending.clear();
             self.state.pcm_pending_started = false;
+            self.state.viz_delay_line.clear();
+            self.state.viz_source = None;
         }
 
         // Clear last_known_icy when the station changes — the new station's
@@ -2537,13 +2623,12 @@ impl App {
             self.pane_areas.scope = Rect::default();
         }
 
-        // Status bar is always visible
+        // Status bar — bulbs have moved to the header; only mode + keys here.
         status_bar::draw_keys_bar(
             frame,
             status_area,
             self.state.input_mode,
             self.wm.workspace,
-            self.state.mpv_audio_level,
             self.auto_polling_enabled,
         );
 
