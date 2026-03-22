@@ -144,7 +144,8 @@ impl Component for SongsTicker {
                     self.selected = 0;
                     return vec![Action::CloseFilter];
                 }
-                FilterAction::Confirmed | FilterAction::None => return vec![],
+                FilterAction::Confirmed => return vec![Action::CloseFilter],
+                FilterAction::None => return vec![],
             }
         }
 
@@ -242,7 +243,13 @@ impl Component for SongsTicker {
             return;
         }
 
-        let block = pane_chrome_borders("songs", self.number_key, focused, None, self.borders);
+        let block = pane_chrome_borders(
+            "logged mixtapes/songs",
+            self.number_key,
+            focused,
+            None,
+            self.borders,
+        );
         let inner = block.inner(area);
         frame.render_widget(block, area);
 

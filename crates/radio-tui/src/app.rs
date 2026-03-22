@@ -274,6 +274,9 @@ pub struct App {
     last_file_pos: f64,
     pending_resume_file: Option<(String, f64)>,
     jump_from_station: Option<Option<usize>>,
+    /// In-session station play history — stack of station indices, most-recent last.
+    /// Populated on every explicit `Action::Play`; `L` pops and replays.
+    station_play_history: Vec<usize>,
 
     /// Whether to quit on next iteration.
     should_quit: bool,
@@ -483,6 +486,7 @@ impl App {
                 .clone()
                 .map(|p| (p, ui_state.last_file_pos.max(0.0))),
             jump_from_station: None,
+            station_play_history: Vec::new(),
             should_quit: false,
             pane_areas: PaneAreas::default(),
             toast: ToastManager::new(),
@@ -1705,7 +1709,10 @@ impl App {
             KeyCode::Char('?') if self.state.input_mode == InputMode::Normal => {
                 return vec![Action::ToggleHelp];
             }
-            KeyCode::Char('L') if self.state.input_mode == InputMode::Normal => {
+            KeyCode::Char('l') if self.state.input_mode == InputMode::Normal && key.modifiers == KeyModifiers::NONE => {
+                return vec![Action::PlayLast];
+            }
+            KeyCode::Char('l') if key.modifiers == KeyModifiers::CONTROL => {
                 return vec![Action::ToggleLogs];
             }
             _ => {}
@@ -1786,11 +1793,27 @@ impl App {
                     return vec![];
                 }
                 KeyCode::Char('2') => {
-                    self.wm.focus_nth(1);
+                    if self.wm.is_collapsed(ComponentId::IcyTicker) {
+                        // Expand and focus
+                        self.wm.toggle_collapse(ComponentId::IcyTicker);
+                        self.wm.focus_nth(1);
+                    } else {
+                        // Collapse → return focus to station list
+                        self.wm.toggle_collapse(ComponentId::IcyTicker);
+                        self.wm.focus_nth(0);
+                    }
                     return vec![];
                 }
                 KeyCode::Char('3') => {
-                    self.wm.focus_nth(2);
+                    if self.wm.is_collapsed(ComponentId::SongsTicker) {
+                        // Expand and focus
+                        self.wm.toggle_collapse(ComponentId::SongsTicker);
+                        self.wm.focus_nth(2);
+                    } else {
+                        // Collapse → return focus to station list
+                        self.wm.toggle_collapse(ComponentId::SongsTicker);
+                        self.wm.focus_nth(0);
+                    }
                     return vec![];
                 }
                 KeyCode::Char('4') => {
@@ -1806,8 +1829,9 @@ impl App {
                     // toggle keybinding bar
                     return vec![Action::ToggleKeys];
                 }
-                KeyCode::Char('J') => return vec![Action::JumpToCurrent],
-                KeyCode::Char('c') => return vec![Action::ToggleCollapse],
+                KeyCode::Char('J') | KeyCode::Char('c') => return vec![Action::JumpToCurrent],
+                KeyCode::Char('C') => return vec![Action::ToggleCollapse],
+                KeyCode::Char('`') => return vec![Action::SelectPrevPlayed],
                 // Song recognition — global, works from any pane
                 KeyCode::Char('i') | KeyCode::Char('I') => return vec![Action::RecognizeSong],
                 _ => {}
@@ -1979,6 +2003,16 @@ impl App {
         match action {
             // ── Playback ──────────────────────────────────────────────────────
             Action::Play(idx) => {
+                // Push current station to history before switching
+                if let Some(current) = self.state.daemon_state.current_station {
+                    if Some(current) != Some(idx) {
+                        self.station_play_history.push(current);
+                        // Cap history at 50 entries
+                        if self.station_play_history.len() > 50 {
+                            self.station_play_history.remove(0);
+                        }
+                    }
+                }
                 self.jump_from_station = Some(self.state.daemon_state.current_station);
                 self.intent_station.set_intent(Some(idx));
                 self.send_cmd(Command::Play { station_idx: idx }).await;
@@ -2040,6 +2074,33 @@ impl App {
                         start_secs: entry.start_secs,
                     })
                     .await;
+                }
+            }
+            Action::PlayLast => {
+                if let Some(idx) = self.station_play_history.pop() {
+                    // Validate index is still in range
+                    if idx < self.state.daemon_state.stations.len() {
+                        self.intent_station.set_intent(Some(idx));
+                        self.send_cmd(Command::Play { station_idx: idx }).await;
+                        let name = self.state.daemon_state.stations[idx].name.clone();
+                        self.toast.info(format!("last: {}", name));
+                    }
+                } else {
+                    self.toast.info("no station history".to_string());
+                }
+            }
+            Action::SelectPrevPlayed => {
+                // Peek the top of the play history and scroll the list to it (no play)
+                if let Some(&idx) = self.station_play_history.last() {
+                    if idx < self.state.daemon_state.stations.len() {
+                        self.station_list.select_by_station_idx(idx);
+                        // Switch to radio workspace if needed
+                        if self.wm.workspace != crate::action::Workspace::Radio {
+                            self.wm.set_workspace(crate::action::Workspace::Radio);
+                            self.state.workspace = crate::action::Workspace::Radio;
+                        }
+                        self.wm.focus_set(ComponentId::StationList);
+                    }
                 }
             }
             Action::Volume(v) => {
@@ -2438,7 +2499,7 @@ impl App {
 
         // ── Outer layout: header | body | (log) | (statusbar) ────────────────
         let header_h = 2u16;
-        let status_h = if self.wm.show_keys_bar { 1u16 } else { 0 };
+        let status_h = 1u16;
         let log_h = if self.wm.show_log_panel { 10u16 } else { 0 }; // 0 = fully hidden
 
         let outer = Layout::default()
@@ -2476,17 +2537,15 @@ impl App {
             self.pane_areas.scope = Rect::default();
         }
 
-        // ── Status bar ────────────────────────────────────────────────────────
-        if self.wm.show_keys_bar {
-            status_bar::draw_keys_bar(
-                frame,
-                status_area,
-                self.state.input_mode,
-                self.wm.workspace,
-                self.state.mpv_audio_level,
-                self.auto_polling_enabled,
-            );
-        }
+        // Status bar is always visible
+        status_bar::draw_keys_bar(
+            frame,
+            status_area,
+            self.state.input_mode,
+            self.wm.workspace,
+            self.state.mpv_audio_level,
+            self.auto_polling_enabled,
+        );
 
         // ── Log panel ─────────────────────────────────────────────────────────
         if self.wm.show_log_panel {
@@ -2580,8 +2639,8 @@ impl App {
                     .split(bottom_area);
                 let icy_sum = self.icy_ticker.collapse_summary(&self.state);
                 let songs_sum = self.songs_ticker.collapse_summary(&self.state);
-                draw_collapsed_pane(frame, halves[0], "icy", icy_sum.as_deref(), icy_focused);
-                draw_collapsed_pane(frame, halves[1], "songs", songs_sum.as_deref(), songs_focused);
+                draw_collapsed_pane(frame, halves[0], "icy history", Some('2'), icy_sum.as_deref(), icy_focused);
+                draw_collapsed_pane(frame, halves[1], "logged mixtapes/songs", Some('3'), songs_sum.as_deref(), songs_focused);
                 self.pane_areas.icy_ticker = halves[0];
                 self.pane_areas.songs_ticker = halves[1];
             }
@@ -2593,7 +2652,7 @@ impl App {
                     .constraints([Constraint::Length(1), Constraint::Min(0)])
                     .split(bottom_area);
                 let icy_sum = self.icy_ticker.collapse_summary(&self.state);
-                draw_collapsed_pane(frame, rows[0], "icy", icy_sum.as_deref(), icy_focused);
+                draw_collapsed_pane(frame, rows[0], "icy history", Some('2'), icy_sum.as_deref(), icy_focused);
                 self.songs_ticker.borders = Borders::ALL;
                 self.songs_ticker
                     .draw(frame, rows[1], songs_focused, &self.state);
@@ -2611,18 +2670,18 @@ impl App {
                 self.icy_ticker
                     .draw(frame, rows[0], icy_focused, &self.state);
                 let songs_sum = self.songs_ticker.collapse_summary(&self.state);
-                draw_collapsed_pane(frame, rows[1], "songs", songs_sum.as_deref(), songs_focused);
+                draw_collapsed_pane(frame, rows[1], "logged mixtapes/songs", Some('3'), songs_sum.as_deref(), songs_focused);
                 self.pane_areas.icy_ticker = rows[0];
                 self.pane_areas.songs_ticker = rows[1];
             }
             (false, false) => {
-                // Both expanded: side by side, ICY left, Songs right
+                // Both expanded: stacked vertically, ICY top, Songs bottom
                 let halves = Layout::default()
-                    .direction(Direction::Horizontal)
+                    .direction(Direction::Vertical)
                     .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
                     .split(bottom_area);
-                // ICY: omit right border — songs' left border is the shared divider
-                self.icy_ticker.borders = Borders::TOP | Borders::LEFT | Borders::BOTTOM;
+                // ICY: omit bottom border — songs' top border is the shared divider
+                self.icy_ticker.borders = Borders::TOP | Borders::LEFT | Borders::RIGHT;
                 self.icy_ticker
                     .draw(frame, halves[0], icy_focused, &self.state);
                 self.songs_ticker.borders = Borders::ALL;
@@ -2697,7 +2756,7 @@ impl App {
         if file_collapsed {
             use crate::widgets::pane_chrome::draw_collapsed_pane;
             let summary = self.file_list.collapse_summary(&self.state);
-            draw_collapsed_pane(frame, left_area, "files", summary.as_deref(), file_focused);
+            draw_collapsed_pane(frame, left_area, "files", None, summary.as_deref(), file_focused);
         } else {
             self.file_list.borders = Borders::TOP | Borders::LEFT | Borders::BOTTOM;
             self.file_list
@@ -2738,7 +2797,7 @@ impl App {
         if meta_collapsed {
             use crate::widgets::pane_chrome::draw_collapsed_pane;
             let summary = self.file_meta.collapse_summary(&self.state);
-            draw_collapsed_pane(frame, rows[0], "meta", summary.as_deref(), meta_focused);
+            draw_collapsed_pane(frame, rows[0], "meta", None, summary.as_deref(), meta_focused);
         } else {
             self.file_meta.borders = Borders::ALL;
             self.file_meta
@@ -2748,7 +2807,7 @@ impl App {
         if icy_collapsed {
             use crate::widgets::pane_chrome::draw_collapsed_pane;
             let summary = self.icy_ticker.collapse_summary(&self.state);
-            draw_collapsed_pane(frame, rows[1], "icy", summary.as_deref(), icy_focused);
+            draw_collapsed_pane(frame, rows[1], "icy history", Some('2'), summary.as_deref(), icy_focused);
         } else {
             // Omit top border if meta is expanded above (shares bottom/top edge)
             self.icy_ticker.borders = if meta_collapsed {
@@ -2763,7 +2822,7 @@ impl App {
         if songs_collapsed {
             use crate::widgets::pane_chrome::draw_collapsed_pane;
             let summary = self.songs_ticker.collapse_summary(&self.state);
-            draw_collapsed_pane(frame, rows[2], "songs", summary.as_deref(), songs_focused);
+            draw_collapsed_pane(frame, rows[2], "logged mixtapes/songs", Some('3'), summary.as_deref(), songs_focused);
         } else {
             // Omit top border if icy is expanded above
             self.songs_ticker.borders = if icy_collapsed {

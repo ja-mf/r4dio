@@ -398,7 +398,8 @@ impl Component for StationList {
                     return vec![];
                 }
                 FilterAction::Confirmed => {
-                    return vec![];
+                    // Keep filter applied, close bar, return to normal mode
+                    return vec![Action::CloseFilter];
                 }
                 FilterAction::Cancelled => {
                     self.list.set_filter("");

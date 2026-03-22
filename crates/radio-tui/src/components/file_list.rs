@@ -306,7 +306,7 @@ impl Component for FileList {
                     self.list.filter = q;
                     return vec![];
                 }
-                FilterAction::Confirmed => return vec![],
+                FilterAction::Confirmed => return vec![Action::CloseFilter],
                 FilterAction::Cancelled => {
                     self.list.set_filter("");
                     return vec![Action::CloseFilter];

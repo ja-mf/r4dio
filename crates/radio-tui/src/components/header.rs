@@ -23,8 +23,7 @@ use crate::{
     components::vu_meter::{self, MeterStyle},
     intent::RenderHint,
     theme::{
-        C_ACCENT, C_BADGE_ERR, C_BADGE_PENDING, C_CONNECTING, C_MUTED, C_NETWORK, C_PLAYING,
-        C_TAG,
+        C_ACCENT, C_BADGE_ERR, C_BADGE_PENDING, C_CONNECTING, C_MUTED, C_NETWORK, C_PLAYING, C_TAG,
     },
 };
 
