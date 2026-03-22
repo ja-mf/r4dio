@@ -883,10 +883,12 @@ impl DaemonCore {
     // ── helpers ───────────────────────────────────────────────────────────────
 
     async fn cleanup(&mut self) -> anyhow::Result<()> {
-        info!("DaemonCore: cleanup — killing mpv");
+        info!("DaemonCore: cleanup — quitting mpv");
         if let Some(handle) = self.mpv_handle.take() {
-            let _ = handle.stop().await;
+            // Use quit (not stop) so mpv exits rather than going idle
+            let _ = handle.quit().await;
         }
+        // Also kill by PID in case the IPC quit was not received (e.g. reconnect path)
         self.mpv_driver.kill().await;
         Ok(())
     }

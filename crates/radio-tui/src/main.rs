@@ -51,7 +51,11 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let data_dir = radio_proto::platform::data_dir();
-    // Keep tui_data_dir consistent with original path for backwards compatibility.
+    // On Windows use data_dir() so we respect portable mode (exe_dir/data/).
+    // On Unix keep the original radio-tui subdir for backwards compatibility.
+    #[cfg(windows)]
+    let tui_data_dir = data_dir.clone();
+    #[cfg(not(windows))]
     let tui_data_dir = dirs::data_dir()
         .map(|p| p.join("radio-tui"))
         .unwrap_or_else(|| radio_proto::platform::temp_dir().join("radio-tui"));
@@ -59,16 +63,10 @@ async fn main() -> anyhow::Result<()> {
     std::fs::create_dir_all(&data_dir)?;
     std::fs::create_dir_all(&tui_data_dir)?;
 
-    let log_path = data_dir.join("tui.log");
     let icy_log_path = data_dir.join("icyticker.log");
 
-    let songs_csv_path = dirs::home_dir()
-        .map(|p| p.join("songs.csv"))
-        .unwrap_or_else(|| radio_proto::platform::temp_dir().join("songs.csv"));
+    let songs_csv_path = data_dir.join("songs.csv");
     let songs_vds_path = tui_data_dir.join("songs.vds");
-    let downloads_dir = dirs::home_dir()
-        .map(|p| p.join("nts-downloads"))
-        .unwrap_or_else(|| radio_proto::platform::temp_dir().join("nts-downloads"));
     let stars_path = tui_data_dir.join("starred.toml");
     // Seed starred.toml on first run from beside-exe (or data/ subdir) for bundled packages
     if !stars_path.exists() {
@@ -92,17 +90,27 @@ async fn main() -> anyhow::Result<()> {
     let file_positions_path = tui_data_dir.join("file_positions.toml");
     let ui_state_path = tui_data_dir.join("ui_state.json");
 
-    let log_file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_path)?;
+    // ── Rolling log setup ─────────────────────────────────────────────────────
+    // Rotate daily; keep 7 days of logs. tracing-appender produces files like:
+    //   tui.log.2026-03-22
+    // On startup delete any logs older than 7 days.
+    cleanup_old_logs(&data_dir, 7);
+
+    let file_appender = tracing_appender::rolling::daily(&data_dir, "tui.log");
+    let (non_blocking, _log_guard) = tracing_appender::non_blocking(file_appender);
+
+    // Current day's log path, passed to the log panel for tailing.
+    let log_path = {
+        let today = chrono::Local::now().format("%Y-%m-%d");
+        data_dir.join(format!("tui.log.{}", today))
+    };
 
     // Allow RUST_LOG override; default to debug for app code but suppress noisy
     // connection-level DEBUG from HTTP client internals (hyper_util, reqwest).
     let log_filter = std::env::var("RUST_LOG")
         .unwrap_or_else(|_| "debug,hyper_util=warn,reqwest=warn,hyper=warn".to_string());
     tracing_subscriber::fmt()
-        .with_writer(log_file)
+        .with_writer(non_blocking)
         .with_env_filter(log_filter.as_str())
         .with_ansi(false)
         .init();
@@ -117,6 +125,9 @@ async fn main() -> anyhow::Result<()> {
     
     // Configure whether to use system dependencies or bundled ones
     radio_proto::platform::set_use_system_deps(config.binaries.use_system_deps);
+
+    // downloads_dir depends on config (portable path resolution done in config.rs)
+    let downloads_dir = config.paths.downloads_dir.clone();
 
     // ── Broadcast channel (DaemonCore → TUI) ────────────────────────────────
     let (broadcast_tx, broadcast_rx) = broadcast::channel::<BroadcastMessage>(1024);
@@ -197,4 +208,26 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+/// Delete `tui.log.<date>` files in `dir` whose date suffix is older than `keep_days` days.
+fn cleanup_old_logs(dir: &std::path::Path, keep_days: i64) {
+    let cutoff = chrono::Local::now() - chrono::Duration::days(keep_days);
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        // tracing-appender names files "tui.log.YYYY-MM-DD"
+        if let Some(date_str) = name.strip_prefix("tui.log.") {
+            if let Ok(date) = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+                let file_dt = date.and_hms_opt(0, 0, 0)
+                    .and_then(|dt| dt.and_local_timezone(chrono::Local).single());
+                if let Some(file_dt) = file_dt {
+                    if file_dt < cutoff {
+                        let _ = std::fs::remove_file(entry.path());
+                    }
+                }
+            }
+        }
+    }
 }

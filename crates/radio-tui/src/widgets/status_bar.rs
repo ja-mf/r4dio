@@ -127,13 +127,13 @@ pub fn draw_keys_bar(
     let keys = match mode {
         InputMode::Normal => match workspace {
             crate::action::Workspace::Radio => {
-                " ↑↓/jk select  Enter play/stop  Space pause  ←→ vol  n/P/r/R playback  p polling  !/@ NTS  o scope  Tab/1-4 panes  / filter  K keys  L logs  ? help  q quit"
+                " ↵ ▶/■  spc ⏸  ←→ vol  n⏭  P⏮  r⇀  l⏴last  c cur  ` prev  p poll  !/@ NTS  2/3 panes  / filter  ? help  q quit"
             }
             crate::action::Workspace::Files => {
-                " ↑↓/jk select  Enter play/stop  Space pause  ,/. seek (Shift=±5m)  ←→ vol  n/P/r/R playback  p polling  Tab/1-4 panes  / filter  K keys  L logs  ? help  q quit"
+                " ↵ ▶/■  spc ⏸  ←→ vol  ,/. seek  n⏭  P⏮  / filter  ? help  q quit"
             }
         },
-        InputMode::Filter => " type to filter  Up/Down move  Enter keep  Esc clear+close  Tab next pane",
+        InputMode::Filter => " type to filter  ↑↓ move  Enter apply+close  Esc clear+close",
         InputMode::Command => " type command  Esc cancel  Enter execute",
     };
 

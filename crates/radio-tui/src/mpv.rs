@@ -121,6 +121,9 @@ impl MpvHandle {
 pub struct MpvDriver {
     pub socket_name: String,
     process: Option<tokio::process::Child>,
+    /// PID stored at spawn time so we can kill by PID on the reconnect path
+    /// (where `process` is None because we connected to an existing mpv).
+    mpv_pid: Option<u32>,
     pub last_volume: f32,
 }
 
@@ -129,6 +132,7 @@ impl MpvDriver {
         Self {
             socket_name: radio_proto::platform::mpv_socket_name(),
             process: None,
+            mpv_pid: None,
             last_volume: 0.5,
         }
     }
@@ -152,15 +156,33 @@ impl MpvDriver {
                 }
             }
         } else {
-            false
+            // No child handle — we connected to an existing mpv via try_reconnect().
+            // Assume it is alive; the IPC connection will fail if it is not.
+            true
         }
     }
 
-    /// Kill the process if running.
+    /// Kill the process if running.  Falls back to PID-based kill when
+    /// `process` is None (reconnect path where we never owned the child).
     pub async fn kill(&mut self) {
         if let Some(mut p) = self.process.take() {
             let _ = p.kill().await;
+        } else if let Some(pid) = self.mpv_pid.take() {
+            // PID fallback — needed on the reconnect path
+            #[cfg(windows)]
+            {
+                let _ = std::process::Command::new("taskkill")
+                    .args(["/F", "/PID", &pid.to_string()])
+                    .output();
+            }
+            #[cfg(unix)]
+            {
+                let _ = std::process::Command::new("kill")
+                    .args(["-9", &pid.to_string()])
+                    .output();
+            }
         }
+        self.mpv_pid = None;
     }
 
     // ── spawn / reconnect ─────────────────────────────────────────────────────
@@ -196,17 +218,19 @@ impl MpvDriver {
             .open(&stderr_path)?;
         info!("mpv: logging stderr to {:?}", stderr_path);
 
-        let child = tokio::process::Command::new(&mpv_binary)
-            .arg("--no-video")
-            .arg("--idle=yes")
-            .arg(&ipc_arg)
-            .arg("--quiet")
-            .arg(&vol_arg)
-            .stdout(std::process::Stdio::null())
-            .stderr(stderr_file)
-            .spawn()?;
-        info!("mpv: spawned process with pid {:?}", child.id());
-        self.process = Some(child);
+          let child = tokio::process::Command::new(&mpv_binary)
+              .arg("--no-video")
+              .arg("--idle=yes")
+              .arg(&ipc_arg)
+              .arg("--quiet")
+              .arg(&vol_arg)
+              .stdout(std::process::Stdio::null())
+              .stderr(stderr_file)
+              .spawn()?;
+          let pid = child.id();
+          info!("mpv: spawned process with pid {:?}", pid);
+          self.mpv_pid = pid;
+          self.process = Some(child);
 
         // Wait for socket to appear
         for _ in 0..50 {
@@ -276,26 +300,38 @@ impl MpvDriver {
             let _ = p.kill().await;
         }
 
-        info!("mpv: spawning new process");
-        let mpv_binary = radio_proto::platform::find_mpv_binary()
-            .ok_or_else(|| anyhow::anyhow!("mpv binary not found"))?;
+          info!("mpv: spawning new process");
+          let mpv_binary = radio_proto::platform::find_mpv_binary()
+              .ok_or_else(|| anyhow::anyhow!("mpv binary not found"))?;
+          info!("mpv: using binary {:?}", mpv_binary);
 
-        let vol_arg = format!(
-            "--volume={}",
-            (self.last_volume * 100.0).clamp(0.0, 100.0).round() as i64
-        );
-        let ipc_arg = radio_proto::platform::mpv_socket_arg();
+          let vol_arg = format!(
+              "--volume={}",
+              (self.last_volume * 100.0).clamp(0.0, 100.0).round() as i64
+          );
+          let ipc_arg = radio_proto::platform::mpv_socket_arg();
 
-        let child = tokio::process::Command::new(mpv_binary)
-            .arg("--no-video")
-            .arg("--idle=yes")
-            .arg(&ipc_arg)
-            .arg("--quiet")
-            .arg(vol_arg)
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn()?;
-        self.process = Some(child);
+          // Redirect mpv stderr to a log file for debugging on Windows
+          let stderr_path = radio_proto::platform::data_dir().join("mpv-stderr.log");
+          let stderr_file = std::fs::OpenOptions::new()
+              .create(true)
+              .append(true)
+              .open(&stderr_path)?;
+          info!("mpv: logging stderr to {:?}", stderr_path);
+
+          let child = tokio::process::Command::new(mpv_binary)
+              .arg("--no-video")
+              .arg("--idle=yes")
+              .arg(&ipc_arg)
+              .arg("--quiet")
+              .arg(vol_arg)
+              .stdout(std::process::Stdio::null())
+              .stderr(stderr_file)
+              .spawn()?;
+          let pid = child.id();
+          info!("mpv: spawned process with pid {:?}", pid);
+          self.mpv_pid = pid;
+          self.process = Some(child);
 
         let pipe_path = format!(r"\\.\pipe\{}", self.socket_name);
         for _ in 0..50 {
@@ -463,6 +499,12 @@ impl MpvHandle {
 
     pub async fn stop(&self) -> anyhow::Result<()> {
         let _ = self.send(json!(["stop"])).await;
+        Ok(())
+    }
+
+    /// Send the `quit` command to make mpv exit cleanly.
+    pub async fn quit(&self) -> anyhow::Result<()> {
+        let _ = self.send(json!(["quit"])).await;
         Ok(())
     }
 

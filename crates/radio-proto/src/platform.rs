@@ -280,36 +280,20 @@ pub fn find_ffprobe_binary() -> Option<PathBuf> {
 /// Find mpv binary for playback.
 /// If use_system_deps is true, skips bundled binaries and uses PATH only.
 pub fn find_mpv_binary() -> Option<PathBuf> {
-    let exe_name = mpv_binary_name();
+    #[cfg(unix)]
+    let names: &[&str] = &["mpv"];
+    #[cfg(windows)]
+    let names: &[&str] = &["mpv.exe", "mpv"];
 
-    // If not using system deps, check beside the exe first
+    // If not using system deps, check beside the exe and external/ subdir first
     if !should_use_system_deps() {
-        if let Ok(current_exe) = std::env::current_exe() {
-            if let Some(dir) = current_exe.parent() {
-                let local_mpv = dir.join(exe_name);
-                if local_mpv.exists() {
-                    return Some(local_mpv);
-                }
-            }
+        if let Some(p) = find_beside_exe(names) {
+            return Some(p);
         }
     }
 
-    // Search PATH
-    if let Ok(path) = std::env::var("PATH") {
-        #[cfg(unix)]
-        let separator = ":";
-        #[cfg(windows)]
-        let separator = ";";
-
-        for dir in path.split(separator) {
-            let mpv_path = PathBuf::from(dir).join(exe_name);
-            if mpv_path.exists() {
-                return Some(mpv_path);
-            }
-        }
-    }
-
-    None
+    // Fall back to PATH
+    find_on_path(names)
 }
 
 /// Find yt-dlp binary for downloading audio.

@@ -61,7 +61,7 @@ impl WorkspaceManager {
             show_log_panel: false,
             show_help: false,
             show_keys_bar: true,
-            collapsed: HashSet::new(),
+            collapsed: HashSet::from([ComponentId::IcyTicker, ComponentId::SongsTicker]),
             focus: FocusRing::new(Vec::new()),
         };
         wm.rebuild_focus_ring();
@@ -76,9 +76,13 @@ impl WorkspaceManager {
     pub fn rebuild_focus_ring_with(&mut self, nts_hover: Option<usize>) {
         let items = match self.workspace {
             Workspace::Radio => match self.radio_right_pane {
-                RightPane::Tickers => {
+                RightPane::Scope => {
+                    vec![ComponentId::StationList, ComponentId::ScopePanel]
+                }
+                _ => {
+                    // Standard 3-section layout: StationList top, ICY + Songs bottom.
+                    // NtsPanel is included only when the overlay is open (nts_hover is Some).
                     if nts_hover.is_some() {
-                        // Overlay is visible: StationList → IcyTicker → SongsTicker → NtsPanel(overlay)
                         vec![
                             ComponentId::StationList,
                             ComponentId::IcyTicker,
@@ -86,25 +90,12 @@ impl WorkspaceManager {
                             ComponentId::NtsPanel,
                         ]
                     } else {
-                        // NtsPanel not visible but keep it at position 3 so key '4' is consistent
                         vec![
                             ComponentId::StationList,
                             ComponentId::IcyTicker,
                             ComponentId::SongsTicker,
-                            ComponentId::NtsPanel,
                         ]
                     }
-                }
-                RightPane::Nts1 | RightPane::Nts2 => {
-                    vec![
-                        ComponentId::StationList,
-                        ComponentId::IcyTicker,
-                        ComponentId::SongsTicker,
-                        ComponentId::NtsPanel,
-                    ]
-                }
-                RightPane::Scope => {
-                    vec![ComponentId::StationList, ComponentId::ScopePanel]
                 }
             },
             Workspace::Files => vec![

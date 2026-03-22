@@ -81,13 +81,15 @@ pub fn pane_chrome_borders<'a>(
 }
 
 /// Draw a collapsed pane as a single horizontal strip showing:
-///   " ▶ title  summary… "
+///   " [N] title  summary… "
 ///
+/// `number_key` — if `Some('2')`, prepends `[2] ` as a hint to expand.
 /// The strip uses the same focused/unfocused colour scheme as `pane_chrome`.
 pub fn draw_collapsed_pane(
     frame: &mut Frame,
     area: Rect,
     title: &str,
+    number_key: Option<char>,
     summary: Option<&str>,
     focused: bool,
 ) {
@@ -103,10 +105,16 @@ pub fn draw_collapsed_pane(
     let summary_style = Style::default().fg(C_SECONDARY);
     let dim_style = Style::default().fg(C_PANEL_BORDER);
 
-    let mut spans = vec![
-        Span::styled(" ▸ ", dim_style),
-        Span::styled(title, title_style),
-    ];
+    let mut spans = vec![Span::styled(" ", Style::default())];
+
+    if let Some(key) = number_key {
+        spans.push(Span::styled(
+            format!("[{}] ", key),
+            Style::default().fg(C_NUMBER_HINT),
+        ));
+    }
+
+    spans.push(Span::styled(title, title_style));
 
     if let Some(s) = summary {
         if !s.is_empty() {
