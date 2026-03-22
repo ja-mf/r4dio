@@ -114,7 +114,8 @@ impl Component for IcyTicker {
                     self.selected = 0;
                     return vec![Action::CloseFilter];
                 }
-                FilterAction::Confirmed | FilterAction::None => return vec![],
+                FilterAction::Confirmed => return vec![Action::CloseFilter],
+                FilterAction::None => return vec![],
             }
         }
 
@@ -191,8 +192,8 @@ impl Component for IcyTicker {
         vec![]
     }
 
-    fn collapse_summary(&self, state: &AppState) -> Option<String> {
-        state.icy_history.last().map(|e| e.raw.clone())
+    fn collapse_summary(&self, _state: &AppState) -> Option<String> {
+        None
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect, focused: bool, state: &AppState) {
@@ -200,7 +201,8 @@ impl Component for IcyTicker {
             return;
         }
 
-        let block = pane_chrome_borders("icy", self.number_key, focused, None, self.borders);
+        let block =
+            pane_chrome_borders("icy history", self.number_key, focused, None, self.borders);
         let inner = block.inner(area);
         frame.render_widget(block, area);
 

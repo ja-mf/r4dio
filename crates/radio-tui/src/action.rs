@@ -38,6 +38,7 @@ pub enum Action {
     Prev,
     Random,
     RandomBack,
+    PlayLast, // play the previously-played station (in-session history)
     Volume(f32),
     SeekRelative(f64),
     SeekTo(f64),
@@ -53,7 +54,8 @@ pub enum Action {
     SelectLast,
     ScrollUp(usize),
     ScrollDown(usize),
-    JumpToCurrent,
+    JumpToCurrent,    // select the currently-playing station (no play)
+    SelectPrevPlayed, // select the previously-played station from history (no play)
 
     // ── Filter/search ────────────────────────────────────────────────────────
     OpenFilter,
@@ -81,7 +83,7 @@ pub enum Action {
 
     // ── Scope ─────────────────────────────────────────────────────────────────
     ToggleScope,
-    
+
     // ── VU Meter ───────────────────────────────────────────────────────────────
     CycleVuMeterStyle,
 

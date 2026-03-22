@@ -64,21 +64,14 @@ impl FilterInput {
 
     /// Handle a key event. Returns what happened.
     ///
-    /// Esc behaviour:
-    ///   - If the input has text: clear the text, emit `Changed("")` (keeps filter open but empty)
-    ///   - If the input is already empty: deactivate and emit `Cancelled`
+    /// Enter: deactivate and emit `Confirmed` (keep filter applied, return to normal mode).
+    /// Esc:   clear text, deactivate, emit `Cancelled` (clear filter and close).
     pub fn handle_key(&mut self, key: KeyEvent) -> FilterAction {
         match key.code {
             KeyCode::Esc => {
-                if !self.input.value().is_empty() {
-                    // First Esc: just clear the text
-                    self.input = tui_input::Input::default();
-                    FilterAction::Changed(String::new())
-                } else {
-                    // Second Esc (already empty): close filter
-                    self.deactivate();
-                    FilterAction::Cancelled
-                }
+                self.input = tui_input::Input::default();
+                self.deactivate();
+                FilterAction::Cancelled
             }
             KeyCode::Enter => {
                 self.deactivate();
@@ -114,9 +107,9 @@ impl FilterInput {
             Paragraph::new(Line::from(vec![display])).style(Style::default().bg(C_FILTER_BG));
         frame.render_widget(paragraph, area);
 
-        // Show cursor when active
-        if self.active && !value.is_empty() {
-            let cursor_x = area.x + 2 + (self.input.visual_cursor() - scroll) as u16;
+        // Show cursor whenever filter is active
+        if self.active {
+            let cursor_x = area.x + 2 + (self.input.visual_cursor().saturating_sub(scroll)) as u16;
             frame.set_cursor_position((cursor_x.min(area.x + area.width - 1), area.y));
         }
     }
