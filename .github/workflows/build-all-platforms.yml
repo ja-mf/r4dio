@@ -100,9 +100,13 @@ jobs:
           echo "yt-dlp.exe downloaded successfully"
           # vibra.exe was downloaded to dist root by actions/download-artifact — move it
           mv "$DIST/vibra.exe" "$DIST/external/vibra.exe"
-          # mpv's DLLs must live beside mpv.exe so Windows finds them when mpv.exe runs
+          # DLLs must live beside the .exe files so Windows finds them at runtime.
+          # Copy from both mpv and ffmpeg dirs — they share the same build system
+          # but ffmpeg may carry extra codec DLLs that mpv doesn't.
           MPV_DIR="$(dirname "$MPV_EXE")"
+          FFMPEG_DIR="$(dirname "$FFMPEG_EXE")"
           find "$MPV_DIR" -maxdepth 1 -type f -name '*.dll' -exec cp {} "$DIST/external/" \;
+          find "$FFMPEG_DIR" -maxdepth 1 -type f -name '*.dll' -exec cp {} "$DIST/external/" \;
       - name: Add runtime files
         run: |
           DIST=dist/r4dio-windows-x86_64
@@ -181,11 +185,13 @@ jobs:
           name: vibra-linux
           path: dist/r4dio-linux-x86_64/
       - name: Bundle mpv + ffmpeg + yt-dlp
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           mkdir -p /tmp/linux-bundle
-          MPV_URL="$(curl -fsSL https://api.github.com/repos/ivan-hc/MPV-appimage/releases/latest | jq -r '.assets[] | select(.name|endswith(".AppImage")) | .browser_download_url' | head -n1)"
-          FFMPEG_URL="$(curl -fsSL https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/latest | jq -r '.assets[] | select(.name=="ffmpeg-master-latest-linux64-gpl.tar.xz") | .browser_download_url')"
+          MPV_URL="$(gh api repos/ivan-hc/MPV-appimage/releases/latest --jq '.assets[] | select(.name|endswith(".AppImage")) | .browser_download_url' | head -n1)"
+          FFMPEG_URL="$(gh api repos/BtbN/FFmpeg-Builds/releases/latest --jq '.assets[] | select(.name=="ffmpeg-master-latest-linux64-gpl.tar.xz") | .browser_download_url')"
           test -n "$MPV_URL"
           test -n "$FFMPEG_URL"
           curl -fsSL "$MPV_URL" -o dist/r4dio-linux-x86_64/mpv
@@ -293,10 +299,12 @@ jobs:
           name: vibra-macos-intel
           path: dist/r4dio-macos-x86_64/
       - name: Bundle mpv + ffmpeg
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          MPV_URL="$(curl -fsSL https://api.github.com/repos/pashynskykh/mpv-macos/releases/latest | jq -r '.assets[] | select(.name|test("x86_64\\.dmg$")) | .browser_download_url' | head -n1)"
-          FFMPEG_URL="$(curl -fsSL https://api.github.com/repos/ColorsWind/FFmpeg-macOS/releases/latest | jq -r '.assets[] | select(.name|test("OSX-x86_64\\.zip$")) | .browser_download_url' | head -n1)"
+          MPV_URL="$(gh api repos/pashynskykh/mpv-macos/releases/latest --jq '.assets[] | select(.name|test("x86_64\\.dmg$")) | .browser_download_url' | head -n1)"
+          FFMPEG_URL="$(gh api repos/ColorsWind/FFmpeg-macOS/releases/latest --jq '.assets[] | select(.name|test("OSX-x86_64\\.zip$")) | .browser_download_url' | head -n1)"
           test -n "$MPV_URL"
           test -n "$FFMPEG_URL"
           curl -fsSL "$MPV_URL" -o /tmp/mpv-macos-intel.dmg
@@ -459,10 +467,12 @@ jobs:
           name: vibra-macos-arm
           path: dist/r4dio-macos-arm64/
       - name: Bundle mpv + ffmpeg
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          MPV_URL="$(curl -fsSL https://api.github.com/repos/pashynskykh/mpv-macos/releases/latest | jq -r '.assets[] | select(.name|test("arm64\\.dmg$")) | .browser_download_url' | head -n1)"
-          FFMPEG_URL="$(curl -fsSL https://api.github.com/repos/ColorsWind/FFmpeg-macOS/releases/latest | jq -r '.assets[] | select(.name|test("OSX-arm64\\.zip$")) | .browser_download_url' | head -n1)"
+          MPV_URL="$(gh api repos/pashynskykh/mpv-macos/releases/latest --jq '.assets[] | select(.name|test("arm64\\.dmg$")) | .browser_download_url' | head -n1)"
+          FFMPEG_URL="$(gh api repos/ColorsWind/FFmpeg-macOS/releases/latest --jq '.assets[] | select(.name|test("OSX-arm64\\.zip$")) | .browser_download_url' | head -n1)"
           test -n "$MPV_URL"
           test -n "$FFMPEG_URL"
           curl -fsSL "$MPV_URL" -o /tmp/mpv-macos-arm.dmg
