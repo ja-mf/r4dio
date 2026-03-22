@@ -61,7 +61,7 @@ impl WorkspaceManager {
             show_log_panel: false,
             show_help: false,
             show_keys_bar: true,
-            collapsed: HashSet::new(),
+            collapsed: HashSet::from([ComponentId::IcyTicker, ComponentId::SongsTicker]),
             focus: FocusRing::new(Vec::new()),
         };
         wm.rebuild_focus_ring();
