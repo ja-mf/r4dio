@@ -1,0 +1,745 @@
+# Argentinian Radio Stations - Stream URLs
+# Format: TOML
+# Source: radio-browser.info API
+# Generated: 2026-02-28
+
+[metadata]
+description = "Argentinian radio stations compiled from radio-browser.info"
+total_stations = 69
+country = "Argentina"
+country_code = "AR"
+
+# ============================================================
+# MAJOR NATIONAL NETWORKS - BUENOS AIRES
+# ============================================================
+
+[[stations]]
+name = "Radio Rivadavia"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/RIVADAVIA.mp3"
+format = "MP3"
+bitrate = 96
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Variada"
+
+[[stations]]
+name = "Rock And Pop FM 95.9 (Rock & Pop) Ciudad de Buenos Aires"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/ROCKANDPOPAAC.aac"
+format = "AAC+"
+bitrate = 64
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Rock"
+homepage = "https://fmrockandpop.com/"
+
+[[stations]]
+name = "Radio Latina FM 101.1"
+stream_url = "http://streaming.latina101.com.ar:9000/Repetidoras"
+format = "MP3"
+bitrate = 0
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Noticias"
+homepage = "http://www.latina101.com.ar/"
+tags = "local news,music"
+
+[[stations]]
+name = "Mitre AM 790. AAC Alta. Ciudad de Buenos Aires"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/AM790_56AAC.aac"
+format = "AAC+"
+bitrate = 64
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Variada"
+homepage = "https://radiomitre.cienradios.com/"
+
+[[stations]]
+name = "Radio Rivadavia AM 630. Ciudad de Buenos Aires"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/RIVADAVIAAAC.aac"
+format = "AAC+"
+bitrate = 64
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Variada"
+homepage = "https://rivadavia.com.ar/"
+
+[[stations]]
+name = "La 100 - 99.9 FM - Grupo Clarín - Buenos Aires, Argentina"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/FM999_56.mp3"
+format = "MP3"
+bitrate = 96
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Variada"
+homepage = "https://la100.cienradios.com/"
+tags = "99.9 fm,argentina,buenos aires,entretenimiento,español,estación,fm,grupo clarín,la 100,latinoamérica..."
+
+[[stations]]
+name = "Blue FM 100.7. Ciudad de Buenos Aires"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/BLUE_FM_100_7AAC.aac"
+format = "AAC+"
+bitrate = 64
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Variada"
+homepage = "https://bluefm.com.ar/"
+
+[[stations]]
+name = "Radio 10"
+stream_url = "https://radio10.stweb.tv/radio10/live/playlist.m3u8"
+format = "AAC"
+bitrate = 65
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Variada"
+homepage = "http://www.radio10.com.ar/"
+
+[[stations]]
+name = "El Destape Radio"
+stream_url = "https://ipanel.instream.audio/8004/stream"
+format = "AAC"
+bitrate = 48
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Noticias"
+homepage = "https://www.eldestapeweb.com/eldestaperadio"
+tags = "actualidad,debate,economia,noticias,politica"
+
+[[stations]]
+name = "Radio Con Vos 89.9"
+stream_url = "https://server1.stweb.tv/rcvos/live/playlist.m3u8"
+format = "AAC"
+bitrate = 49
+city = "Capitál Federal"
+region = "Capitál Federal"
+category = "Rock"
+homepage = "https://www.radioconvos.com.ar/"
+tags = "news,pop,rock"
+
+[[stations]]
+name = "Radio La Red AM 910. Ciudad de Buenos Aires"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/LA_RED_AM910AAC.aac"
+format = "AAC+"
+bitrate = 64
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Variada"
+homepage = "https://www.lared.am/"
+
+[[stations]]
+name = "Radio Nacional Folklorica 98.7"
+stream_url = "http://sa.mp3.icecast.magma.edge-access.net:7200/sc_rad38"
+format = "MP3"
+bitrate = 160
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Folklore"
+homepage = "http://www.nacionalfolklorica.com.ar/"
+tags = "buenos aires,folk,public radio"
+
+[[stations]]
+name = "Radio Mitre"
+stream_url = "http://playerservices.streamtheworld.com/api/livestream-redirect/AM790_56AAC_SC"
+format = "AAC+"
+bitrate = 64
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Noticias"
+homepage = "https://radiomitre.cienradios.com/espectaculos/de-que-murio-rodrigo-ruiz-el-actor-que-perdio-la-vida-a-los-49-anos/"
+tags = "news"
+
+[[stations]]
+name = "Radio Recuerdos 106.7"
+stream_url = "http://198.204.234.10:8580/stream"
+format = "AAC"
+bitrate = 32
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Variada"
+tags = "decades"
+
+[[stations]]
+name = "Radio Nacional Rock 93.7"
+stream_url = "http://sa.mp3.icecast.magma.edge-access.net:7200/sc_rad39"
+format = "MP3"
+bitrate = 160
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Rock"
+homepage = "http://www.nacionalrock.com/"
+tags = "public,pública,rock"
+
+[[stations]]
+name = "Feeling 91.9 FM"
+stream_url = "http://turadioenvivo.com:8430/stream"
+format = "AAC+"
+bitrate = 80
+city = "Corrientes"
+region = "Corrientes"
+category = "Rock Clasico"
+homepage = "http://fmfeeling.com/"
+tags = "aor,classic hits,classic pop,classic rock"
+
+[[stations]]
+name = "Radio nacional AM 870"
+stream_url = "http://sa.mp3.icecast.magma.edge-access.net:7200/sc_rad1"
+format = "MP3"
+bitrate = 75
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Noticias"
+homepage = "http://www.radionacional.com.ar/"
+tags = "am,argentina,cultura,noticias"
+
+[[stations]]
+name = "Fm Cumbiambera"
+stream_url = "https://streaming1.locucionar.com/proxy/fmcumbiambera?mp=/stream"
+format = "AAC+"
+bitrate = 32
+city = "Salta"
+region = "Salta"
+category = "Cumbia"
+homepage = "https://www.fmcumbiambera.com/"
+tags = "cumbia"
+
+[[stations]]
+name = "Cadena 3 Cordoba"
+stream_url = "https://liveradio.mediainbox.net/radio3.mp3"
+format = "MP3"
+bitrate = 0
+city = "Córdoba(Argentina)"
+region = "Córdoba(Argentina)"
+category = "Pop"
+homepage = "https://www.cadena3.com/radio-en-vivo/cadena-3"
+tags = "folk popular am noticias musica"
+
+[[stations]]
+name = "AM 530 Somos radio"
+stream_url = "https://ipanel.instream.audio:7000/stream"
+format = "AAC"
+bitrate = 48
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Variada"
+homepage = "https://www.am530somosradio.com/"
+
+[[stations]]
+name = "Vale 97.1"
+stream_url = "http://vale.stweb.tv:1935/vale/live/playlist.m3u8"
+format = "AAC"
+bitrate = 98
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Pop"
+homepage = "https://www.minutouno.com/radio-vale"
+tags = "pop"
+
+[[stations]]
+name = "The Musical Box Radio"
+stream_url = "http://albireo.shoutca.st:9740/stream"
+format = "MP3"
+bitrate = 128
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Rock"
+homepage = "http://www.themusicalbox.com.ar/"
+tags = "progressive rock"
+
+[[stations]]
+name = "Radio Disney Argentina 94.3. Ciudad de Buenos Aires"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/DISNEY_ARG_BA.mp3"
+format = "MP3"
+bitrate = 128
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Variada"
+homepage = "http://radiodisney.disneylatino.com/argentina"
+
+[[stations]]
+name = "107.9 El Observador"
+stream_url = "https://s8.stweb.tv/observador/live/playlist.m3u8"
+format = "AAC"
+bitrate = 98
+city = "Ciudad Autonoma de Buenos Aires"
+region = "Buenos Aires"
+category = "Variada"
+homepage = "https://elobservador1079.com.ar/"
+
+[[stations]]
+name = "Urbana Play 104.3"
+stream_url = "https://vmf.edge-apps.net/playlist/urbana.m3u8/play.m3u8"
+format = "UNKNOWN"
+bitrate = 250
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Variada"
+homepage = "https://urbanaplayfm.com/"
+
+[[stations]]
+name = "FutuRock"
+stream_url = "https://mdstrm.com/audio/5d9d019112cbbb45d6a50960/live.m3u8"
+format = "AAC"
+bitrate = 149
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Rock"
+homepage = "https://futurock.live/"
+tags = "feminist,local news,philosophy"
+
+[[stations]]
+name = "Metro 95.1"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/METRO.mp3"
+format = "MP3"
+bitrate = 96
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Electronica"
+homepage = "https://www.metro951.com/"
+tags = "95.1,95.1 fm,argentina,buenos aires,ciudad de buenos aires,dance,electronic,entertainment,estación,f..."
+
+[[stations]]
+name = "Pop Radio 101.5"
+stream_url = "https://popradio.stweb.tv/popradio/live/playlist.m3u8"
+format = "AAC"
+bitrate = 98
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Pop"
+homepage = "https://www.radiopop.fm/"
+
+[[stations]]
+name = "FM Millenium 106.7"
+stream_url = "https://sonicpanel.hostradios.com/8002/stream"
+format = "AAC"
+bitrate = 32
+city = "CABA"
+region = "Buenos Aires"
+category = "Noticias"
+homepage = "https://www.fmmilenium.com.ar/"
+tags = "magazine,music,news"
+
+[[stations]]
+name = "Pobre Johnny"
+stream_url = "https://stream4.suenas.net/pobrejohnny"
+format = "AAC"
+bitrate = 64
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Rock"
+homepage = "https://www.pobrejohnny.com.ar/"
+tags = "rock argentino,rock en español"
+
+[[stations]]
+name = "Nacional Clásica fm 96.7"
+stream_url = "http://sa.mp3.icecast.magma.edge-access.net:7200/sc_rad37"
+format = "MP3"
+bitrate = 160
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Variada"
+homepage = "http://www.radionacional.com.ar/nacional-clasica/"
+
+[[stations]]
+name = "RADIO MARIA ARGENTINA"
+stream_url = "http://dreamsiteradiocp.com:8004/stream"
+format = "AAC+"
+bitrate = 64
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Religiosa"
+homepage = "https://radiomaria.org.ar/"
+tags = "catholic,religion,talk"
+
+[[stations]]
+name = "La Popu"
+stream_url = "https://liveradio.mediainbox.net/popular.mp3"
+format = "MP3"
+bitrate = 0
+city = "Córdoba"
+region = "Córdoba"
+category = "Pop"
+homepage = "https://www.lapopu.com.ar/"
+tags = "cuarteto,local news,music"
+
+[[stations]]
+name = "Metro FM 95.1. Ciudad de Buenos Aires"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/METROAAC.aac"
+format = "AAC+"
+bitrate = 64
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Variada"
+homepage = "https://www.metro951.com/"
+
+[[stations]]
+name = "Radio Argentina - AM 570"
+stream_url = "http://server.laradio.online:25224/live.mp3"
+format = "MP3"
+bitrate = 128
+city = "Ciudad Autonoma de Buenos Aires"
+region = "Buenos Aires"
+category = "Variada"
+homepage = "http://am570radioargentina.com.ar/"
+tags = "argentina,radio argentina"
+
+[[stations]]
+name = "Radio 2 1230 AM"
+stream_url = "http://radio2.radio.rosario3.com:8000/prueba2"
+format = "AAC+"
+bitrate = 64
+city = "Rosario"
+region = "Santa Fe"
+category = "Noticias"
+homepage = "https://www.rosario3.com/"
+tags = "news,rosario,talk"
+
+[[stations]]
+name = "Delta 90.3"
+stream_url = "https://cdn.instream.audio//:9069//stream"
+format = "AAC"
+bitrate = 96
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Pop"
+homepage = "https://fmdelta903.com/"
+tags = "argentina,dance,news,pop"
+
+[[stations]]
+name = "Fm Latina 92.5 Salta"
+stream_url = "http://streaming.radiosenlinea.com.ar:9640/;"
+format = "MP3"
+bitrate = 96
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Pop"
+tags = "pop"
+
+[[stations]]
+name = "Radio Belgrano - AM 650"
+stream_url = "http://server.laradio.online:25223/live.mp3"
+format = "MP3"
+bitrate = 128
+city = "Ciudad Autonoma de Buenos Aires"
+region = "Buenos Aires"
+category = "Variada"
+homepage = "http://am570radioargentina.com.ar/radio-belgrano-a650-2/"
+tags = "belgrano"
+
+[[stations]]
+name = "Aspen 102.3"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/ASPEN.mp3"
+format = "MP3"
+bitrate = 96
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Variada"
+homepage = "https://fmaspen.com/#"
+
+[[stations]]
+name = "Tropibox FM 107.1"
+stream_url = "http://69.64.46.123:8015/stream?1571687077817,"
+format = "MP3"
+bitrate = 128
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Cumbia"
+homepage = "http://www.tropibox.com.ar/"
+tags = "cumbia"
+
+[[stations]]
+name = "HIT RADIO FFH. 128K AAC. Argentina"
+stream_url = "http://mp3.ffh.de/radioffh/hqlivestream.aac"
+format = "AAC+"
+bitrate = 128
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Variada"
+homepage = "http://ffh.de/"
+
+[[stations]]
+name = "FM La Patriada"
+stream_url = "https://server.laradio.online/proxy/fm_la_patriada?mp=/stream"
+format = "MP3"
+bitrate = 128
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Rock"
+homepage = "https://www.fmlapatriada.com.ar/"
+tags = "actualidad,musica,noticias locales,política,reports,rock"
+
+[[stations]]
+name = "Plus 93.1 FM"
+stream_url = "http://fmplus.radio.rosario3.com:8006/fmplus"
+format = "AAC+"
+bitrate = 64
+city = "Rosario"
+region = "Santa Fe"
+category = "Pop"
+homepage = "https://www.rosario3.com/"
+tags = "90s,classic hits,pop,rosario,spanish pop"
+
+[[stations]]
+name = "Radio Rebelde AM 740"
+stream_url = "http://stream.radiojar.com/qkxht62hy8hvv"
+format = "MP3"
+bitrate = 0
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Hablada"
+homepage = "https://radiorebelde.ar/"
+tags = "talk"
+
+[[stations]]
+name = "Radio Con Vos 89.9 FM"
+stream_url = "https://server1.stweb.tv/rcvos/live/playlist.m3u8"
+format = "AAC"
+bitrate = 49
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Variada"
+homepage = "https://www.radioconvos.com.ar/"
+
+[[stations]]
+name = "d-Sports radio"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/DSPORTSRADIOAAC.aac"
+format = "AAC+"
+bitrate = 64
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Variada"
+homepage = "https://www.dsportsradio.com/"
+
+[[stations]]
+name = "M90 89.9 FM"
+stream_url = "http://23.111.184.195:8030/m90.mp3"
+format = "MP3"
+bitrate = 128
+city = "Rosario"
+region = "Santa Fe"
+category = "Rock"
+homepage = "http://m90radio.com/"
+tags = "rock,rosario"
+
+[[stations]]
+name = "Radio Disney 94.3 - Buenos Aires, Argentina"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/DISNEY_ARG_BA_ADP.aac"
+format = "AAC+"
+bitrate = 128
+city = "Ciudad de Buenos Aires"
+region = "Buenos Aires"
+category = "Rock"
+homepage = "https://ar.radiodisney.com/"
+tags = "94.3 fm,américa,argentina,buenos aires,disney,entretenimiento,español,estación,familia,family,fm,juv..."
+
+[[stations]]
+name = "Radio Shopping"
+stream_url = "https://stream4.suenas.net/shoppingclassics"
+format = "AAC"
+bitrate = 64
+city = "Córdoba"
+region = "Córdoba"
+category = "Rock Clasico"
+homepage = "https://www.radioshopping.com.ar/"
+tags = "classic hits,classic rock,eighties,nineties,oldies"
+
+[[stations]]
+name = "La Radio 104.7 FM. Resistencia Chaco. Julio Wajcman"
+stream_url = "https://server.laradio.online/proxy/laradio1047"
+format = "AAC+"
+bitrate = 64
+city = "Chaco"
+region = "Chaco"
+category = "Variada"
+homepage = "https://laradio1047.com.ar/"
+tags = "julio wajcman,la radio 104.7,resistencia chaco"
+
+[[stations]]
+name = "Radio del Plata"
+stream_url = "https://streaming01.shockmedia.com.ar:10217/stream"
+format = "MP3"
+bitrate = 40
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Variada"
+homepage = "https://amdelplata.com/"
+
+[[stations]]
+name = "Feeling FM 97.1 - Corrientes, Argentina"
+stream_url = "http://turadioenvivo.com:8430/stream"
+format = "AAC+"
+bitrate = 80
+city = "Corrientes"
+region = "Corrientes"
+category = "Pop"
+homepage = "http://fmfeeling.com/"
+tags = "adult contemporary,américa,argentina,corrientes,estación,fm,latinoamérica,moi merino,music,música,mú..."
+
+[[stations]]
+name = "MEGA 98.3"
+stream_url = "https://mega.stweb.tv/mega983/live/playlist.m3u8"
+format = "AAC"
+bitrate = 98
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Rock"
+homepage = "https://www.radiomega.fm/"
+tags = "rock argentino,rock nacional"
+
+[[stations]]
+name = "El Destape"
+stream_url = "https://ipanel.instream.audio/8004/stream"
+format = "AAC"
+bitrate = 48
+city = "Ciudad Autonoma de Buenos Aires"
+region = "Buenos Aires"
+category = "Noticias"
+homepage = "https://www.eldestapeweb.com/eldestaperadio"
+tags = "noticias locales"
+
+[[stations]]
+name = "Radio Onda | Tigre Argentina"
+stream_url = "http://149.202.235.235:8011/live"
+format = "MP3"
+bitrate = 64
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Variada"
+homepage = "http://www.radioonda.com.ar/"
+tags = "radio onda,rincon,rincon de mielberg"
+
+[[stations]]
+name = "Concepto FM 95.5 MHz"
+stream_url = "http://radios.solumedia.com:6002/stream"
+format = "MP3"
+bitrate = 64
+city = "Ciudad Autonoma de Buenos Aires"
+region = "Buenos Aires"
+category = "Noticias"
+homepage = "http://www.conceptofm.com.ar/"
+tags = "música,noticias"
+
+[[stations]]
+name = "FutuRÖck"
+stream_url = "https://mdstrm.com/audio/5d9d019112cbbb45d6a50960/live.m3u8"
+format = "AAC"
+bitrate = 149
+city = "Ciudad Autonoma de Buenos Aires"
+region = "Buenos Aires"
+category = "Variada"
+homepage = "https://futurock.live/"
+
+[[stations]]
+name = "Radio Sudamericana 100.5 - Corrientes Capital"
+stream_url = "http://turadioenvivo.com:8530/stream?1562165478826"
+format = "AAC+"
+bitrate = 48
+city = "Corrientes"
+region = "Corrientes"
+category = "Noticias"
+homepage = "http://www.radiosudamericana.com/"
+tags = "argentina,corrientes,litoral,musica,news,noticias,radio,sudamericana"
+
+[[stations]]
+name = "Radio AM 750 Objetivos, pero no imparciales"
+stream_url = "https://27433.live.streamtheworld.com/AM750AAC.aac?dist=triton-widget&amp;tdsdk=js-2.9&amp;swm=false&amp;pname=tdwidgets&amp;pversion=2.9&amp;banners=none&amp;burst-time=15&amp;sbmid=00ed0060-c497-4bc2-c0b8-3c8bf91188ab"
+format = "AAC+"
+bitrate = 64
+city = "Buenos Aires CABA"
+region = "Buenos Aires"
+category = "Noticias"
+homepage = "https://www.pagina12.com.ar/am750/radio-en-vivo"
+tags = "actualidad,am,cultural,norteamérica,política,radio argentina"
+
+[[stations]]
+name = "D Sports Radio"
+stream_url = "http://24413.live.streamtheworld.com/DSPORTSRADIO_SC"
+format = "MP3"
+bitrate = 96
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Variada"
+homepage = "https://www.dsportsradio.com/"
+
+[[stations]]
+name = "Urbana Play 104.4"
+stream_url = "https://cdn.instream.audio:9660/stream"
+format = "AAC+"
+bitrate = 128
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Variada"
+homepage = "https://urbanaplayfm.com/"
+
+[[stations]]
+name = "el destape sin fin"
+stream_url = "https://ipanel.instream.audio/8004/stream"
+format = "AAC"
+bitrate = 48
+city = "Ciudad Autonoma de Buenos Aires"
+region = "Buenos Aires"
+category = "Variada"
+homepage = "https://eldestapeweb.com/eldestaperadio"
+
+[[stations]]
+name = "Radio Cristiana 95.7"
+stream_url = "http://genexservicios.com:8098/stream"
+format = "AAC+"
+bitrate = 48
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Variada"
+homepage = "https://www.radiocristiana957.com.ar/"
+
+[[stations]]
+name = "LRA1 Radio Nacional Argentina"
+stream_url = "https://sa.mp3.icecast.magma.edge-access.net/sc_rad1"
+format = "MP3"
+bitrate = 75
+city = "Ciudad Autonoma de Buenos Aires"
+region = "Buenos Aires"
+category = "Noticias"
+homepage = "https://www.radionacional.com.ar/"
+tags = "argentina,buenos aires,ciudad de buenos aires,news,public radio,radio pública,talk"
+
+# Total stations included: 69
+# ============================================================
+# ADDITIONAL MAJOR NETWORKS
+# ============================================================
+
+[[stations]]
+name = "Radio Continental AM 590"
+stream_url = "https://frontend.radiohdvivo.com/continental/live"
+format = "MP3"
+bitrate = 109
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Noticias"
+homepage = "https://www.continental.com.ar/"
+
+[[stations]]
+name = "Radio Splendid AM 990"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/AM990.mp3"
+format = "MP3"
+bitrate = 128
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Variada"
+homepage = "https://www.splendid990.com.ar/"
+
+[[stations]]
+name = "Milenium 106.7 FM"
+stream_url = "https://sonicpanel.hostradios.com/8002/stream"
+format = "MP3"
+bitrate = 128
+city = "Buenos Aires"
+region = "Buenos Aires"
+category = "Variada"
+
+[[stations]]
+name = "Los 40 Santa Fe 97.7"
+stream_url = "https://radios.solumedia.com:6158/stream?icy=http"
+format = "MP3"
+bitrate = 320
+city = "Santa Fe"
+region = "Santa Fe"
+category = "Pop"

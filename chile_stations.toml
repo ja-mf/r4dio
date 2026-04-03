@@ -1,0 +1,637 @@
+# Chilean Radio Stations - Stream URLs
+# Format: TOML
+# Source: Multiple radio aggregation services (radio-browser.info, etc.)
+# Generated: 2026-02-28
+
+[metadata]
+description = "Chilean radio stations compiled from aggregation services"
+total_stations = 56
+country = "Chile"
+country_code = "CL"
+
+# ============================================================
+# REQUESTED STATIONS
+# ============================================================
+
+[[stations]]
+name = "Radio Futuro"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/FUTUROAAC.aac"
+format = "AAC+"
+bitrate = 56
+city = "Santiago"
+region = "Metropolitana"
+category = "Rock"
+
+[[stations]]
+name = "Radio Futuro (MP3 Fallback)"
+stream_url = "http://19253.live.streamtheworld.com/FUTUROAAC_SC"
+format = "MP3"
+bitrate = 192
+city = "Santiago"
+region = "Metropolitana"
+category = "Rock"
+
+[[stations]]
+name = "Radio Carabineros de Chile"
+stream_url = "https://streaming.prositel.cl/8374/stream"
+format = "AAC+"
+bitrate = 128
+city = "Santiago"
+region = "Metropolitana"
+category = "Variada"
+homepage = "https://www.carabineros.cl/radio/"
+
+[[stations]]
+name = "Radio Corazon"
+stream_url = "http://27413.live.streamtheworld.com/CORAZON_SC"
+format = "MP3"
+bitrate = 128
+city = "Santiago"
+region = "Metropolitana"
+category = "Romantica"
+
+[[stations]]
+name = "Radio Quillota 101.5 FM"
+stream_url = "http://archi-us.digitalproserver.com/quillota-fm.aac"
+format = "MP3"
+bitrate = 320
+city = "Quillota"
+region = "Valparaiso"
+category = "Local"
+
+[[stations]]
+name = "Carnaval Quillota"
+stream_url = "http://sonando.us.digitalproserver.com/carnaval_quillota.aac"
+format = "MP3"
+bitrate = 128
+city = "Quillota"
+region = "Valparaiso"
+category = "Local"
+
+# ============================================================
+# RADIO BIOBIO NETWORK (Multiple Cities)
+# ============================================================
+
+[[stations]]
+name = "Radio BioBio Santiago"
+stream_url = "https://unlimited3-cl.dps.live/biobiosantiago/aac/icecast.audio"
+format = "AAC+"
+bitrate = 0
+city = "Santiago"
+region = "Metropolitana"
+category = "Noticias"
+notes = "Variable bitrate"
+
+[[stations]]
+name = "Radio BioBio Santiago (MP3)"
+stream_url = "https://unlimited3-cl.dps.live/biobiosantiago/mp3/icecast.audio"
+format = "MP3"
+bitrate = 0
+city = "Santiago"
+region = "Metropolitana"
+category = "Noticias"
+
+[[stations]]
+name = "Radio BioBio Valparaiso"
+stream_url = "http://unlimited11-cl.dps.live/biobiovalparaiso/aac/icecast.audio"
+format = "AAC+"
+bitrate = 0
+city = "Valparaiso"
+region = "Valparaiso"
+category = "Noticias"
+frequency = "94.5 FM"
+
+[[stations]]
+name = "Radio BioBio Valparaiso (MP3)"
+stream_url = "http://unlimited3-cl.dps.live/biobiovalparaiso/mp3/icecast.audio"
+format = "MP3"
+bitrate = 0
+city = "Valparaiso"
+region = "Valparaiso"
+category = "Noticias"
+
+[[stations]]
+name = "Radio BioBio Concepcion"
+stream_url = "https://unlimited3-cl.dps.live/biobioconcepcion/aac/icecast.audio"
+format = "AAC+"
+bitrate = 0
+city = "Concepcion"
+region = "Biobio"
+category = "Noticias"
+frequency = "98.1 FM"
+
+[[stations]]
+name = "Radio BioBio Los Angeles"
+stream_url = "https://unlimited11-cl.dps.live/biobiolosangeles/aac/icecast.audio"
+format = "AAC+"
+bitrate = 0
+city = "Los Angeles"
+region = "Biobio"
+category = "Noticias"
+frequency = "96.7 FM"
+
+[[stations]]
+name = "Radio BioBio Valdivia"
+stream_url = "https://unlimited3-cl.dps.live/biobiovaldivia/aac/icecast.audio"
+format = "AAC+"
+bitrate = 0
+city = "Valdivia"
+region = "Los Rios"
+category = "Noticias"
+frequency = "88.9 FM"
+
+[[stations]]
+name = "Radio BioBio Temuco"
+stream_url = "https://unlimited3-cl.dps.live/biobiotemuco/aac/icecast.audio"
+format = "AAC+"
+bitrate = 0
+city = "Temuco"
+region = "Araucania"
+category = "Noticias"
+frequency = "88.1 FM"
+
+[[stations]]
+name = "Radio BioBio Puerto Montt"
+stream_url = "https://unlimited3-cl.dps.live/biobiopuertomontt/mp3/icecast.audio"
+format = "MP3"
+bitrate = 0
+city = "Puerto Montt"
+region = "Los Lagos"
+category = "Noticias"
+
+# ============================================================
+# MAJOR NATIONAL NETWORKS - SANTIAGO
+# ============================================================
+
+[[stations]]
+name = "ADN Radio"
+stream_url = "https://27413.live.streamtheworld.com/ADNAAC.aac"
+format = "AAC+"
+bitrate = 56
+city = "Santiago"
+region = "Metropolitana"
+category = "Noticias"
+
+[[stations]]
+name = "Radio Cooperativa"
+stream_url = "https://unlimited3-cl.dps.live/cooperativafm/mp3/icecast.audio"
+format = "MP3"
+bitrate = 48
+city = "Santiago"
+region = "Metropolitana"
+category = "Noticias"
+
+[[stations]]
+name = "Radio Agricultura"
+stream_url = "https://unlimited4-us.dps.live/agricultura/gotardis/audio/now/livestream1.m3u8"
+format = "AAC (HLS)"
+bitrate = 128
+city = "Santiago"
+region = "Metropolitana"
+category = "Noticias"
+
+[[stations]]
+name = "Radio Concierto"
+stream_url = "http://26643.live.streamtheworld.com/CONCIERTO_SC"
+format = "MP3"
+bitrate = 128
+city = "Santiago"
+region = "Metropolitana"
+category = "Electronica"
+
+[[stations]]
+name = "Radio Duna"
+stream_url = "https://hls-audio-cl-1-isp.dps.live/duna/gotardis/audio/now/livestream1.m3u8"
+format = "AAC (HLS)"
+bitrate = 128
+city = "Santiago"
+region = "Metropolitana"
+category = "Clasica"
+
+[[stations]]
+name = "Los 40 Principales Chile"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/LOS40_CHILEAAC.aac"
+format = "AAC+"
+bitrate = 0
+city = "Santiago"
+region = "Metropolitana"
+category = "Pop"
+
+[[stations]]
+name = "Radio Pudahuel"
+stream_url = "http://26593.live.streamtheworld.com:3690/PUDAHUEL_SC"
+format = "MP3"
+bitrate = 128
+city = "Santiago"
+region = "Metropolitana"
+category = "Contemporanea"
+
+[[stations]]
+name = "Rock & Pop"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/ROCK_AND_POPAAC_SC"
+format = "AAC+"
+bitrate = 0
+city = "Santiago"
+region = "Metropolitana"
+category = "Rock"
+
+[[stations]]
+name = "RadioActiva"
+stream_url = "http://24483.live.streamtheworld.com/ACTIVA_SC"
+format = "MP3"
+bitrate = 128
+city = "Santiago"
+region = "Metropolitana"
+category = "Rock"
+frequency = "92.5 FM"
+
+[[stations]]
+name = "Radio Imagina"
+stream_url = "http://24483.live.streamtheworld.com:3690/IMAGINA_SC"
+format = "MP3"
+bitrate = 128
+city = "Santiago"
+region = "Metropolitana"
+category = "Años 80"
+
+[[stations]]
+name = "13C Radio"
+stream_url = "https://us-b4-p-e-qg12-audio.cdn.mdstrm.com/live-audio-aw/5c915497c6fd7c085b29169d/playlist.m3u8"
+format = "AAC (HLS)"
+bitrate = 130
+city = "Santiago"
+region = "Metropolitana"
+category = "Noticias"
+
+[[stations]]
+name = "Tele13 Radio"
+stream_url = "https://mdstrm.com/audio/5c915613519bce27671c4caa/live.m3u8"
+format = "AAC (HLS)"
+bitrate = 0
+city = "Santiago"
+region = "Metropolitana"
+category = "Noticias"
+
+# ============================================================
+# DIGITAL FM NETWORK (National)
+# ============================================================
+
+[[stations]]
+name = "Digital FM (National)"
+stream_url = "https://unlimited11-cl.dps.live/digitalfm/aac/icecast.audio"
+format = "AAC+"
+bitrate = 128
+city = "Santiago"
+region = "Metropolitana"
+category = "Contemporanea"
+
+[[stations]]
+name = "Digital FM Concepcion"
+stream_url = "https://radio.digitalfm.cl:8000/concepcion1"
+format = "MP3"
+bitrate = 128
+city = "Concepcion"
+region = "Biobio"
+category = "Contemporanea"
+frequency = "105.5 FM"
+
+[[stations]]
+name = "Digital FM Talca"
+stream_url = "https://radio.digitalfm.cl:8000/talca"
+format = "MP3"
+bitrate = 128
+city = "Talca"
+region = "Maule"
+category = "Contemporanea"
+frequency = "105.5 FM"
+
+[[stations]]
+name = "Digital FM Valparaiso"
+stream_url = "https://radio.digitalfm.cl:8000/valparaiso1"
+format = "MP3"
+bitrate = 128
+city = "Valparaiso"
+region = "Valparaiso"
+category = "Contemporanea"
+frequency = "94.9 FM"
+
+[[stations]]
+name = "Digital FM Antofagasta"
+stream_url = "https://radio.digitalfm.cl:8000/antofagasta1"
+format = "MP3"
+bitrate = 128
+city = "Antofagasta"
+region = "Antofagasta"
+category = "Contemporanea"
+frequency = "97.1 FM"
+
+[[stations]]
+name = "Digital FM La Serena"
+stream_url = "https://radio.digitalfm.cl:8000/laserena1"
+format = "MP3"
+bitrate = 128
+city = "La Serena"
+region = "Coquimbo"
+category = "Contemporanea"
+
+[[stations]]
+name = "Digital FM Iquique"
+stream_url = "https://radio.digitalfm.cl:8000/iquique1"
+format = "MP3"
+bitrate = 128
+city = "Iquique"
+region = "Tarapaca"
+category = "Contemporanea"
+frequency = "99.1 FM"
+
+[[stations]]
+name = "Digital FM Punta Arenas"
+stream_url = "https://radio.digitalfm.cl:8000/ptaarenas"
+format = "MP3"
+bitrate = 128
+city = "Punta Arenas"
+region = "Magallanes"
+category = "Contemporanea"
+frequency = "99.1 FM"
+
+[[stations]]
+name = "Digital FM Calama"
+stream_url = "https://radio.digitalfm.cl:8000/calama1"
+format = "MP3"
+bitrate = 128
+city = "Calama"
+region = "Antofagasta"
+category = "Contemporanea"
+frequency = "89.5 FM"
+
+# ============================================================
+# CARNAVAL RADIO NETWORK (Regional)
+# ============================================================
+
+[[stations]]
+name = "Carnaval Antofagasta"
+stream_url = "https://sonando-us.digitalproserver.com/carnaval_antofagasta.aac"
+format = "MP3"
+bitrate = 128
+city = "Antofagasta"
+region = "Antofagasta"
+category = "Local"
+
+[[stations]]
+name = "Carnaval Viña del Mar"
+stream_url = "https://sonando-us.digitalproserver.com/carnaval_vinadelmar.aac"
+format = "MP3"
+bitrate = 128
+city = "Viña del Mar"
+region = "Valparaiso"
+category = "Local"
+
+[[stations]]
+name = "Carnaval Aconcagua"
+stream_url = "http://sonando.us.digitalproserver.com/carnaval_aconcagua.aac"
+format = "AAC"
+bitrate = 0
+city = "San Felipe"
+region = "Valparaiso"
+category = "Local"
+
+[[stations]]
+name = "Carnaval Punta Arenas"
+stream_url = "http://sonando.us.digitalproserver.com/carnaval_puntaarenas.aac"
+format = "AAC"
+bitrate = 0
+city = "Punta Arenas"
+region = "Magallanes"
+category = "Local"
+
+[[stations]]
+name = "Carnaval San Antonio"
+stream_url = "http://sonando.us.digitalproserver.com/carnaval_sanantonio.aac"
+format = "AAC"
+bitrate = 0
+city = "San Antonio"
+region = "Valparaiso"
+category = "Local"
+
+# ============================================================
+# REGIONAL STATIONS - VALPARAISO
+# ============================================================
+
+[[stations]]
+name = "FM Okey Valparaiso"
+stream_url = "http://streaming.fmokey.cl/FmOkValpo.mp3"
+format = "AAC"
+bitrate = 160
+city = "Valparaiso"
+region = "Valparaiso"
+category = "Contemporanea"
+
+[[stations]]
+name = "UCV Radio (Universidad Catolica de Valparaiso)"
+stream_url = "http://sonando.us.digitalproserver.com/ucvradio"
+format = "MP3"
+bitrate = 128
+city = "Valparaiso"
+region = "Valparaiso"
+category = "Universitaria"
+
+# ============================================================
+# REGIONAL STATIONS - BIOBIO
+# ============================================================
+
+[[stations]]
+name = "Radio UdeC (Universidad de Concepcion)"
+stream_url = "https://audio.divalstream.com:7019/stream"
+format = "MP3"
+bitrate = 64
+city = "Concepcion"
+region = "Biobio"
+category = "Universitaria"
+
+# ============================================================
+# REGIONAL STATIONS - MAULE
+# ============================================================
+
+[[stations]]
+name = "FM+ Radio Talca"
+stream_url = "https://audio5.tustreaming.cl/8010/fmmas"
+format = "MP3"
+bitrate = 128
+city = "Talca"
+region = "Maule"
+category = "Contemporanea"
+frequency = "92.3 FM"
+
+[[stations]]
+name = "Radio Lautaro Talca"
+stream_url = "https://audio2.tustreaming.cl/7320/stream"
+format = "MP3"
+bitrate = 320
+city = "Talca"
+region = "Maule"
+category = "Local"
+
+[[stations]]
+name = "Radio Amiga Talca"
+stream_url = "http://archi-us.digitalproserver.com/amiga.aac"
+format = "MP3"
+bitrate = 128
+city = "Talca"
+region = "Maule"
+category = "Local"
+
+[[stations]]
+name = "Radio RTL Curico"
+stream_url = "https://radio.mediadev.cl/radio/8070/rtlcurico"
+format = "MP3"
+bitrate = 128
+city = "Curico"
+region = "Maule"
+category = "Local"
+
+[[stations]]
+name = "Radio UTalca Clasica"
+stream_url = "http://iradio.utalca.cl:8000/fm"
+format = "MP3"
+bitrate = 96
+city = "Talca"
+region = "Maule"
+category = "Clasica"
+
+[[stations]]
+name = "Radio UTalca Folclore"
+stream_url = "http://iradio.utalca.cl:8000/am"
+format = "MP3"
+bitrate = 96
+city = "Talca"
+region = "Maule"
+category = "Folclor"
+
+[[stations]]
+name = "Radio Marisol"
+stream_url = "https://audio0.tustreaming.cl/7620/stream"
+format = "AAC"
+bitrate = 64
+city = "Talca"
+region = "Maule"
+category = "Local"
+
+# ============================================================
+# NORTHERN CHILE
+# ============================================================
+
+[[stations]]
+name = "Radio UA Antofagasta (Universidad de Antofagasta)"
+stream_url = "https://sonicstream-puntual.grupozgh.cl/8040/radioua"
+format = "MP3"
+bitrate = 128
+city = "Antofagasta"
+region = "Antofagasta"
+category = "Universitaria"
+frequency = "99.9 FM"
+
+[[stations]]
+name = "Radio Municipal Iquique"
+stream_url = "https://audio.streaminghd.cl:2000/stream/radiomunicipaliquique/;stream.mp3"
+format = "MP3"
+bitrate = 96
+city = "Iquique"
+region = "Tarapaca"
+category = "Publica"
+frequency = "93.3 FM"
+
+# ============================================================
+# LOS LAGOS / LOS RIOS
+# ============================================================
+
+[[stations]]
+name = "Atractiva 101.3"
+stream_url = "https://sonicstream-puntual.grupozgh.cl/8126/;"
+format = "MP3"
+bitrate = 128
+city = "Valdivia"
+region = "Los Rios"
+category = "Contemporanea"
+
+[[stations]]
+name = "Radio Genoveva Valdivia"
+stream_url = "https://audio.bitsur.cl/8032/stream"
+format = "MP3"
+bitrate = 128
+city = "Valdivia"
+region = "Los Rios"
+category = "Local"
+
+[[stations]]
+name = "Radio Tornagaleones"
+stream_url = "http://tornagaleones.ddns.net:9000/stream"
+format = "AAC+"
+bitrate = 320
+city = "Valdivia"
+region = "Los Rios"
+category = "Local"
+
+[[stations]]
+name = "CQX Osorno"
+stream_url = "http://5.9.65.9:8065/stream"
+format = "AAC"
+bitrate = 80
+city = "Osorno"
+region = "Los Lagos"
+category = "Local"
+
+[[stations]]
+name = "CQX Puerto Montt"
+stream_url = "http://5.9.65.9:8083/stream"
+format = "MP3"
+bitrate = 0
+city = "Puerto Montt"
+region = "Los Lagos"
+category = "Local"
+
+# ============================================================
+# ZENO.FM STATIONS
+# ============================================================
+
+[[stations]]
+name = "Radio la Sureña"
+stream_url = "https://stream.zeno.fm/ssmz1n5vmd0uv"
+format = "MP3"
+bitrate = 0
+city = "Unknown"
+region = "Unknown"
+category = "Local"
+
+[[stations]]
+name = "Radio Activia 92.5"
+stream_url = "http://stream.zeno.fm/pvs6hqz3crtvv"
+format = "MP3"
+bitrate = 0
+city = "Unknown"
+region = "Unknown"
+category = "Local"
+
+# ============================================================
+# NOT FOUND
+# ============================================================
+
+[[stations]]
+name = "Radio Festival"
+stream_url = "https://stream.festival.cl/1"
+format = "AAC+"
+bitrate = 128
+city = "Unknown"
+region = "Unknown"
+category = "Contemporanea"
+homepage = "https://www.radiofestival.cl/"
+
+[[stations]]
+name = "Radio Nexo"
+stream_url = ""
+format = ""
+bitrate = 0
+city = ""
+region = ""
+category = "Not Found"
+notes = "Station not found in any radio aggregation database"
+status = "unavailable"

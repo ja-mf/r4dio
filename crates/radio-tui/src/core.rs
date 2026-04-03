@@ -569,6 +569,9 @@ impl DaemonCore {
             Command::GetState => {
                 // State will be broadcast automatically
             }
+            Command::EnableTelemetry | Command::PrintTelemetryReport => {
+                // Telemetry commands handled elsewhere; no-op in core
+            }
         }
         Ok(())
     }
@@ -1061,7 +1064,11 @@ async fn run_vu_ffmpeg(
             sample_buf.push(sample);
             if sample_buf.len() >= VU_WINDOW_SAMPLES {
                 let pcm: Vec<f32> = sample_buf.iter().map(|&s| s as f32 / 32768.0).collect();
-                let _ = broadcast_tx.send(BroadcastMessage::PcmChunk(std::sync::Arc::new(pcm)));
+                let _ = broadcast_tx.send(BroadcastMessage::PcmChunk {
+                    samples: std::sync::Arc::new(pcm),
+                    captured_at: std::time::Instant::now(),
+                    source: crate::VizSourceKind::Ffmpeg,
+                });
                 sample_buf.clear();
             }
         }

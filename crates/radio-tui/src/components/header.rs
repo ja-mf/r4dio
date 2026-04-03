@@ -65,6 +65,99 @@ fn title_bulb_color(state: &AppState) -> Color {
     )
 }
 
+/// Frequency-tinted bulb: bass → warm amber, mid → neutral, treble → cool blue.
+/// Uses the adaptive dB window so the full brightness range tracks the station.
+fn freq_bulb_color(state: &AppState) -> Color {
+    let spread = state.meter_spread_db.clamp(2.0, 22.0);
+    let mut floor = (state.meter_mean_db - 2.5 * spread).clamp(-90.0, -10.0);
+    let ceil = (state.meter_mean_db + 2.0 * spread).clamp(-40.0, -1.0);
+    if ceil - floor < 8.0 {
+        floor = (ceil - 8.0).max(-90.0);
+    }
+
+    let level = state.audio_level.max(-90.0);
+    let t = ((level - floor) / (ceil - floor)).clamp(0.0, 1.0);
+    let t = t * t * (3.0 - 2.0 * t); // smoothstep
+    let t = t.powf(0.72);
+
+    let b = (state.bass_db.max(-60.0) + 60.0) / 60.0;
+    let m = (state.mid_db.max(-60.0) + 60.0) / 60.0;
+    let tr = (state.treble_db.max(-60.0) + 60.0) / 60.0;
+    let total = (b + m + tr).max(0.001);
+    let (wb, wm, wt) = (b / total, m / total, tr / total);
+
+    let r_base = wb * 255.0 + wm * 240.0 + wt * 160.0;
+    let g_base = wb * 180.0 + wm * 230.0 + wt * 200.0;
+    let b_base = wb * 60.0 + wm * 200.0 + wt * 255.0;
+
+    let scale = 0.08 + 0.92 * t;
+    Color::Rgb(
+        (r_base * scale).round().min(255.0) as u8,
+        (g_base * scale).round().min(255.0) as u8,
+        (b_base * scale).round().min(255.0) as u8,
+    )
+}
+
+/// BPM-pulsing bulb: pulses with beat phase when a tempo is detected.
+/// Warm red pulse on beat, fades to dim between beats.
+/// Falls back to a dim neutral dot when no BPM is detected.
+fn bpm_bulb_color(state: &AppState) -> Color {
+    let bpm = state.bpm_estimator.bpm();
+    let confidence = state.bpm_estimator.confidence();
+
+    if bpm.is_none() || confidence < 0.3 {
+        // No reliable BPM — dim neutral dot.
+        return Color::Rgb(40, 40, 45);
+    }
+
+    let phase = state.bpm_estimator.beat_phase();
+    // Sharp pulse: bright on beat (phase=0), fast decay.
+    // Use a raised-cosine envelope for a natural "thump" feel.
+    let pulse = if phase < 0.3 {
+        // Attack + sustain: cos curve from 1.0 → 0.0 over first 30% of beat
+        let t = phase / 0.3;
+        0.5 * (1.0 + (std::f32::consts::PI * t).cos())
+    } else {
+        0.0
+    };
+
+    // Blend pulse intensity with confidence.
+    let intensity = pulse * confidence;
+    let dim = 0.12; // floor brightness
+    let scale = dim + (1.0 - dim) * intensity;
+
+    // Warm red/orange pulse color.
+    Color::Rgb(
+        (255.0 * scale).round().min(255.0) as u8,
+        (120.0 * scale).round().min(255.0) as u8,
+        (40.0 * scale).round().min(255.0) as u8,
+    )
+}
+
+/// Stable tempo-lock bulb: dim cyan when hunting, bright teal pulse when locked.
+/// Visually distinct from the warm-red fast BPM bulb — indicates long-term lock.
+fn tempo_lock_bulb_color(state: &AppState) -> Color {
+    let locked = state.tempo_lock.is_locked();
+    if !locked {
+        return Color::Rgb(15, 45, 55); // dim dark cyan — hunting
+    }
+    let phase = state.tempo_lock.beat_phase();
+    let pulse = if phase < 0.25 {
+        let t = phase / 0.25;
+        0.5 * (1.0 + (std::f32::consts::PI * t).cos())
+    } else {
+        0.0
+    };
+    let dim = 0.18_f32;
+    let scale = dim + (1.0 - dim) * pulse;
+    Color::Rgb(
+        (50.0 * scale).round().min(255.0) as u8,
+        (220.0 * scale).round().min(255.0) as u8,
+        (235.0 * scale).round().min(255.0) as u8,
+    )
+}
+
+
 /// Calculate title text color from lamp level.
 fn title_text_color(state: &AppState) -> Color {
     let level = title_lamp_level(state);
@@ -93,7 +186,7 @@ pub struct Header {
 impl Header {
     pub fn new() -> Self {
         Self {
-            meter_style: MeterStyle::Led, // Default to LED style
+            meter_style: MeterStyle::Analog, // Analog (ballistic needle) as default
         }
     }
 
@@ -262,6 +355,24 @@ fn build_file_row(
                 .fg(title_bulb_color(state))
                 .add_modifier(Modifier::BOLD),
         ),
+        Span::styled(
+            "●",
+            Style::default()
+                .fg(freq_bulb_color(state))
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            "●",
+            Style::default()
+                .fg(bpm_bulb_color(state))
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            "●",
+            Style::default()
+                .fg(tempo_lock_bulb_color(state))
+                .add_modifier(Modifier::BOLD),
+        ),
     ];
 
     if let Some(hs) = health_span {
@@ -319,9 +430,45 @@ fn build_station_row(
                 .fg(title_bulb_color(state))
                 .add_modifier(Modifier::BOLD),
         ),
+        Span::styled(
+            "●",
+            Style::default()
+                .fg(freq_bulb_color(state))
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            "●",
+            Style::default()
+                .fg(bpm_bulb_color(state))
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            "●",
+            Style::default()
+                .fg(tempo_lock_bulb_color(state))
+                .add_modifier(Modifier::BOLD),
+        ),
     ];
 
-    // City (no timezone, just label)
+    // BPM label (only when confident).
+    if let Some(bpm) = state.bpm_estimator.bpm() {
+        if state.bpm_estimator.confidence() >= 0.3 {
+            spans.push(Span::styled(
+                format!(" {:.0}", bpm),
+                Style::default().fg(C_MUTED),
+            ));
+        }
+    }
+
+    // Locked tempo label (only when TempoLock is locked).
+    if state.tempo_lock.is_locked() {
+        if let Some(locked_bpm) = state.tempo_lock.bpm() {
+            spans.push(Span::styled(
+                format!(" /{:.0}", locked_bpm),
+                Style::default().fg(Color::Rgb(35, 140, 155)),
+            ));
+        }
+    }
     if !station.city.is_empty() {
         spans.push(Span::styled(
             format!("  {}", station.city),

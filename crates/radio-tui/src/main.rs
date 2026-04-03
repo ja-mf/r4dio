@@ -5,9 +5,11 @@ mod component;
 mod components;
 mod core;
 mod download_manager;
+mod dsp;
 mod focus;
 mod http;
 mod intent;
+mod latency;
 mod mpv;
 mod nts_download;
 mod pipewire_viz;
@@ -23,6 +25,15 @@ use tracing::{error, info};
 #[cfg(feature = "profiling")]
 use pprof::ProfilerGuard;
 
+/// Which subsystem produced the PCM data — determines jitter-buffer strategy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VizSourceKind {
+    /// PipeWire/PulseAudio monitor: real-time, no network jitter.
+    PipeWire,
+    /// ffmpeg decoding a network stream: bursty, needs jitter absorption.
+    Ffmpeg,
+}
+
 /// Forwarded from daemon's main.rs — defines what the DaemonCore broadcasts.
 #[derive(Debug, Clone)]
 pub enum BroadcastMessage {
@@ -35,7 +46,14 @@ pub enum BroadcastMessage {
     /// RMS audio level (dBFS) from the lavfi astats filter.
     AudioLevel(f32),
     /// Raw PCM samples (mono f32 normalised -1..1, 44100 Hz) for scope display.
-    PcmChunk(std::sync::Arc<Vec<f32>>),
+    /// `captured_at` records the instant the samples were captured/decoded.
+    PcmChunk {
+        samples: std::sync::Arc<Vec<f32>>,
+        captured_at: std::time::Instant,
+        source: VizSourceKind,
+    },
+    /// Reported audio-output latency from the viz source (microseconds).
+    VizLatencyReport { latency_us: u64 },
 }
 
 #[tokio::main]

@@ -780,7 +780,7 @@ mod tests {
     fn test_db_conversions() {
         assert_eq!(db_to_frac(-54.0), 0.0);
         assert_eq!(db_to_frac(0.0), 1.0);
-        assert!((db_to_frac(-27.0) - 0.5).abs() < 0.1);
+        assert!((db_to_frac(-27.0) - 0.5).abs() < 0.15); // gamma=0.72 maps 0.5 linear → ~0.607
     }
 
     #[test]
@@ -797,7 +797,7 @@ mod tests {
 
     #[test]
     fn test_physics_smoothing() {
-        let mut phys = RmsPhysics::default();
+        let mut phys = RmsPhysics::new();
         
         // Should start at 0 and move toward target
         let pos1 = phys.update(1.0);

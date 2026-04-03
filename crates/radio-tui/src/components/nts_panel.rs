@@ -16,8 +16,8 @@ use crate::{
     action::{Action, ComponentId},
     app_state::{AppState, NtsChannel, NtsShow},
     component::Component,
-    theme::{C_ACCENT, C_FILTER_BG, C_LOCATION, C_MUTED, C_NETWORK, C_PRIMARY, C_SECONDARY, C_TAG},
-    widgets::pane_chrome::{pane_chrome_borders, Badge},
+    theme::{C_ACCENT, C_FILTER_BG, C_LOCATION, C_MUTED, C_PRIMARY, C_SECONDARY, C_TAG},
+    widgets::pane_chrome::pane_chrome_borders,
 };
 use ratatui::widgets::Borders;
 
@@ -397,7 +397,7 @@ impl Component for NtsPanel {
         ComponentId::NtsPanel
     }
 
-    fn handle_key(&mut self, key: KeyEvent, state: &AppState) -> Vec<Action> {
+    fn handle_key(&mut self, key: KeyEvent, _state: &AppState) -> Vec<Action> {
         if key.kind == KeyEventKind::Release {
             return vec![];
         }

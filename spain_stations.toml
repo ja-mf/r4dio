@@ -1,0 +1,815 @@
+# Spanish Radio Stations - Stream URLs
+# Format: TOML
+# Source: radio-browser.info
+# Generated: 2026-02-28
+
+[metadata]
+description = "Spanish radio stations compiled from radio-browser.info"
+total_stations = 71
+country = "Spain"
+country_code = "ES"
+
+# ============================================================
+# MAJOR NATIONAL NETWORKS
+# ============================================================
+
+# ============================================================
+# VARIADA
+# ============================================================
+
+[[stations]]
+name = "Cadena 100"
+stream_url = "http://cadena100-streamers-mp3.flumotion.com/cope/cadena100.mp3"
+format = "MP3"
+bitrate = 128
+city = "Nacional"
+region = "Nacional"
+category = "Variada"
+homepage = "http://www.cadena100.es/"
+
+[[stations]]
+name = "Cadena Dial"
+stream_url = "http://playerservices.streamtheworld.com/api/livestream-redirect/CADENADIAL.mp3"
+format = "MP3"
+bitrate = 128
+city = "Nacional"
+region = "Nacional"
+category = "Variada"
+tags = "música en español"
+homepage = "https://www.cadenadial.com/"
+
+[[stations]]
+name = "Absolute Chillout"
+stream_url = "http://edge4.peta.live365.net/b05055_128mp3"
+format = "MP3"
+bitrate = 128
+city = "Nacional"
+region = "Nacional"
+category = "Variada"
+homepage = "http://www.absolutechillout.com/"
+
+[[stations]]
+name = "Loca FM Deep Techno"
+stream_url = "http://s02.fjperezdj.com:8066/live"
+format = "MP3"
+bitrate = 128
+city = "Nacional"
+region = "Nacional"
+category = "Variada"
+homepage = "https://www.locafm.com/deep-techno/player.html"
+
+[[stations]]
+name = "Cope Sevilla"
+stream_url = "http://wecast-bl02.flumotion.com/copesedes/sevilla.mp3"
+format = "MP3"
+bitrate = 96
+city = "Nacional"
+region = "Nacional"
+category = "Variada"
+homepage = "https://www.cope.es/directos/sevilla"
+
+[[stations]]
+name = "Loca FM live"
+stream_url = "http://s3.we4stream.com:8045/liv"
+format = "MP3"
+bitrate = 160
+city = "Nacional"
+region = "Nacional"
+category = "Variada"
+homepage = "http://www.locafm.com/"
+
+[[stations]]
+name = "Hit radio"
+stream_url = "http://stm1.emiteonline.com:8004/hitelgrado"
+format = "MP3"
+bitrate = 96
+city = "Huesca"
+region = "Aragón"
+category = "Variada"
+tags = "a popular, noticias"
+homepage = "http://www.hitradiofm.es/index.html"
+
+[[stations]]
+name = "Catalunya Informació (Catinfo)"
+stream_url = "https://shoutcast.ccma.cat/ccma/catalunyainformacioHD.mp3"
+format = "AAC"
+bitrate = 56
+city = "Barcelona"
+region = "Cataluña"
+category = "Variada"
+tags = "local news, news, news talk, talk"
+homepage = "https://www.catradio.cat/catinfo"
+
+[[stations]]
+name = "Hit FM"
+stream_url = "https://adhandler.kissfmradio.cires21.com/get_link?url=https://bbhitfm.kissfmradio.cires21.com/bbhitfm.mp3"
+format = "MP3"
+bitrate = 56
+city = "Nacional"
+region = "Nacional"
+category = "Variada"
+homepage = "https://hitfm.es/"
+
+[[stations]]
+name = "Radio Nacional de España - Radio 5 Todo noticias"
+stream_url = "https://d131.rndfnk.com/star/crtve/rne5/main/mp3/128/stream.mp3?aggregator=tunein&cid=01GEP4MW5CAHPYP1EXHVKWFJ8W&sid=2OeE42hivuba6dTGvjnMGjKByQe&token=cdczXcnimVx4AY4iamqYbTMdu3cK7oBxmS2UQN9cWc0&tvf=pdPcDBxuVxdkMTMxLnJuZGZuay5jb20"
+format = "MP3"
+bitrate = 128
+city = "Nacional"
+region = "Nacional"
+category = "Variada"
+tags = "news, talk"
+homepage = "https://www.rtve.es/play/radio/radio-5/"
+
+[[stations]]
+name = "Catalunya Radio"
+stream_url = "https://shoutcast.ccma.cat/ccma/catalunyaradioHD.mp3"
+format = "AAC"
+bitrate = 56
+city = "Nacional"
+region = "Nacional"
+category = "Variada"
+tags = "talk & speech"
+
+[[stations]]
+name = "COPE Albacete"
+stream_url = "https://wecast-bl03.flumotion.com/copesedes/albacete.mp3"
+format = "MP3"
+bitrate = 96
+city = "Nacional"
+region = "Nacional"
+category = "Variada"
+tags = "albacete, cope"
+homepage = "https://www.cope.es/directos/albacete"
+
+[[stations]]
+name = "Onda Cero Gijón"
+stream_url = "https://atres-live.ondacero.es/live/delegaciones/oc/gijon/bitrate_1.m3u8"
+format = "UNKNOWN"
+bitrate = 0
+city = "Oviedo"
+region = "Asturias"
+category = "Variada"
+homepage = "https://www.ondacero.es/emisoras/asturias/gijon/directo/"
+
+[[stations]]
+name = "INFORMA RADIO"
+stream_url = "https://24x7.red:42045/informa"
+format = "MP3"
+bitrate = 128
+city = "Madrid"
+region = "Madrid"
+category = "Variada"
+tags = "albacete, almería, andalucía, aragon, bilbao"
+homepage = "https://informaradio.edatv.news/"
+
+[[stations]]
+name = "C. DIAL Baladas"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/CADENADIAL_03.mp3"
+format = "MP3"
+bitrate = 128
+city = "Nacional"
+region = "Nacional"
+category = "Variada"
+
+[[stations]]
+name = "Cadena Ser Radio Galicia"
+stream_url = "http://25543.live.streamtheworld.com/SER_GALICIA_SC"
+format = "MP3"
+bitrate = 128
+city = "Santiago de Compostela"
+region = "Galicia"
+category = "Variada"
+homepage = "http://cadenaser.com/emisora/radio_galicia"
+
+[[stations]]
+name = "Canarias Radio"
+stream_url = "https://rtvc-radio.flumotion.com/rtvc-radio/radio1-high.mp3"
+format = "MP3"
+bitrate = 56
+city = "Nacional"
+region = "Nacional"
+category = "Variada"
+homepage = "http://www.rtvc.es/inicio/home.aspx?ref=tm"
+
+[[stations]]
+name = "COPE Málaga"
+stream_url = "http://flucast28-h-cloud.flumotion.com/cope/net1.mp3"
+format = "MP3"
+bitrate = 96
+city = "Málaga"
+region = "Andalucía"
+category = "Variada"
+homepage = "https://www.cope.es/directos/malaga"
+
+[[stations]]
+name = "iCat FM"
+stream_url = "https://shoutcast.ccma.cat/ccma/icatHD.mp3"
+format = "AAC"
+bitrate = 56
+city = "Barcelona"
+region = "Cataluña"
+category = "Variada"
+homepage = "https://www.ccma.cat/catradio/directe/icat/"
+
+[[stations]]
+name = "Canal Sur Radio Andalucía"
+stream_url = "https://rtva-live-radio.flumotion.com/rtva/csr.mp3"
+format = "MP3"
+bitrate = 320
+city = "Sevilla"
+region = "Andalucía"
+category = "Variada"
+tags = "local news, talk"
+homepage = "https://www.canalsur.es/radio_directo-2014.html?directo=player_csr"
+
+[[stations]]
+name = "Europa FM Guipuzcoa"
+stream_url = "https://stream.zeno.fm/se76qau1hc9uv"
+format = "AAC"
+bitrate = 0
+city = "Nacional"
+region = "Nacional"
+category = "Variada"
+homepage = "https://stream.zeno.fm/se76qau1hc9uv"
+
+[[stations]]
+name = "Canal Sur Radio Sevilla"
+stream_url = "https://rtva-live-radio.flumotion.com/rtva/csrsev.mp3"
+format = "MP3"
+bitrate = 320
+city = "Sevilla"
+region = "Andalucía"
+category = "Variada"
+homepage = "https://www.canalsur.es/radio_directo-2014.html?directo=player_csr_sevilla"
+
+[[stations]]
+name = "Radio Galega"
+stream_url = "https://crtvg-radiogalega-hls.flumotion.cloud/playlist.m3u8"
+format = "AAC"
+bitrate = 192
+city = "Santiago de Compostela"
+region = "Galicia"
+category = "Variada"
+tags = "galicia, regional"
+homepage = "https://www.agalegaaudio.gal/videos/category/12478-directos"
+
+[[stations]]
+name = "Ondacero Granada"
+stream_url = "https://atres-live.ondacero.es/live/delegaciones/oc/granada/bitrate_1.m3u8"
+format = "UNKNOWN"
+bitrate = 0
+city = "Sevilla"
+region = "Andalucía"
+category = "Variada"
+tags = "culture, news"
+homepage = "https://www.ondacero.es/emisoras/andalucia/granada/directo/"
+
+[[stations]]
+name = "Ondacero Cartagena"
+stream_url = "https://atres-live.ondacero.es/live/delegaciones/oc/cartagena/bitrate_1.m3u8"
+format = "UNKNOWN"
+bitrate = 0
+city = "Murcia"
+region = "Murcia"
+category = "Variada"
+tags = "culture, news"
+homepage = "https://www.ondacero.es/emisoras/murcia/cartagena/"
+
+[[stations]]
+name = "Cadena Dial - Arahal"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/DIAL_ASO_MORON.mp3"
+format = "MP3"
+bitrate = 128
+city = "Sevilla"
+region = "Andalucía"
+category = "Variada"
+tags = "arahal, español, grandes éxitos"
+homepage = "https://www.arahalaldia.com/"
+
+[[stations]]
+name = "MegastarFM (stereo_aac)"
+stream_url = "https://megastar-cope.flumotion.com/chunks.m3u8"
+format = "UNKNOWN"
+bitrate = 0
+city = "Madrid"
+region = "Madrid"
+category = "Variada"
+tags = "contemporary hit radio"
+homepage = "https://www.megastar.fm/"
+
+# ============================================================
+# POP
+# ============================================================
+
+[[stations]]
+name = "LOS 40 Principales España"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/Los40.mp3"
+format = "MP3"
+bitrate = 128
+city = "Nacional"
+region = "Nacional"
+category = "Pop"
+tags = "pop, top 40"
+homepage = "https://los40.com/"
+
+[[stations]]
+name = "MegaStarFM"
+stream_url = "http://flucast-bl05.flumotion.com/cope/megastar.mp3"
+format = "MP3"
+bitrate = 128
+city = "Madrid"
+region = "Madrid"
+category = "Pop"
+tags = "pop, top 40"
+homepage = "http://www.megastar.fm/"
+
+[[stations]]
+name = "KISS FM"
+stream_url = "https://adhandler.kissfmradio.cires21.com/get_link?url=https://bbkissfm.kissfmradio.cires21.com/bbkissfm.mp3"
+format = "MP3"
+bitrate = 56
+city = "Madrid"
+region = "Madrid"
+category = "Pop"
+tags = "2000s, 80's, 80s, 90's, 90s"
+homepage = "https://www.kissfm.es/"
+
+[[stations]]
+name = "Cadena 100"
+stream_url = "https://cadena100-cope.flumotion.com/chunks.m3u8"
+format = "UNKNOWN"
+bitrate = 0
+city = "Madrid"
+region = "Madrid"
+category = "Pop"
+tags = "pop"
+homepage = "http://www.cadena100.es/"
+
+[[stations]]
+name = "Euskadi irratia"
+stream_url = "http://mp3-eitb.stream.flumotion.com/eitb/euskadiirratia.mp3"
+format = "MP3"
+bitrate = 125
+city = "Bilbao"
+region = "País Vasco"
+category = "Pop"
+tags = "m3u8, pop"
+homepage = "http://www.eitb.eus/eu/irratia/euskadi-irratia/"
+
+[[stations]]
+name = "Kiss Music FM"
+stream_url = "https://stream.zeno.fm/aq899a53rs8uv"
+format = "MP3"
+bitrate = 0
+city = "Nacional"
+region = "Nacional"
+category = "Pop"
+tags = "pop"
+
+[[stations]]
+name = "RAC105"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/RAC105.mp3"
+format = "MP3"
+bitrate = 128
+city = "Barcelona"
+region = "Cataluña"
+category = "Pop"
+tags = "pop"
+homepage = "https://www.rac105.cat/"
+
+# ============================================================
+# NOTICIAS
+# ============================================================
+
+[[stations]]
+name = "esRadio"
+stream_url = "http://livestreaming.esradio.fm/stream64.mp3"
+format = "MP3"
+bitrate = 56
+city = "Madrid"
+region = "Madrid"
+category = "Noticias"
+tags = "news, talk"
+homepage = "http://esradio.libertaddigital.com/"
+
+[[stations]]
+name = "esRadio Madrid"
+stream_url = "http://livestreaming3.esradio.fm/stream64.mp3"
+format = "MP3"
+bitrate = 56
+city = "Nacional"
+region = "Nacional"
+category = "Noticias"
+tags = "news"
+
+[[stations]]
+name = "ONDA CERO (España)"
+stream_url = "https://atres-live.ondacero.es/live/ondacero/bitrate_1.m3u8"
+format = "AAC"
+bitrate = 128
+city = "Madrid"
+region = "Madrid"
+category = "Noticias"
+tags = "noticias y música"
+homepage = "https://www.radio.es/s/onda-cero-madrid"
+
+[[stations]]
+name = "Cadena SER - Radio Valencia"
+stream_url = "http://27833.live.streamtheworld.com:3690/SER_VALENCIA_SC"
+format = "MP3"
+bitrate = 96
+city = "Valencia"
+region = "Comunidad Valenciana"
+category = "Noticias"
+tags = "local news, news, news talk, talk"
+homepage = "https://cadenaser.com/ser/emisoras/"
+
+[[stations]]
+name = "EsRadio Asturias"
+stream_url = "http://server9.emitironline.com:8822/radio"
+format = "MP3"
+bitrate = 48
+city = "Oviedo"
+region = "Asturias"
+category = "Noticias"
+tags = "información"
+homepage = "https://www.esradioasturias.fm/"
+
+[[stations]]
+name = "Cadena SER - Ràdio Barcelona"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/SER_BARCELONA.mp3"
+format = "MP3"
+bitrate = 128
+city = "Barcelona"
+region = "Cataluña"
+category = "Noticias"
+tags = "entertainment, news"
+homepage = "https://play.cadenaser.com/emisora/radio_barcelona/"
+
+[[stations]]
+name = "Onda Cero Valencia"
+stream_url = "https://atres-live.ondacero.es/live/delegaciones/oc/valencia/master.m3u8"
+format = "AAC"
+bitrate = 128
+city = "Nacional"
+region = "Nacional"
+category = "Noticias"
+tags = "general, talk"
+homepage = "https://www.ondacero.es/emisoras/comunidad-valenciana/valencia/"
+
+[[stations]]
+name = "Onda Cero Bilbao"
+stream_url = "https://atres-live.ondacero.es/live/delegaciones/oc/bilbao/bitrate_1.m3u8"
+format = "UNKNOWN"
+bitrate = 0
+city = "Bilbao"
+region = "País Vasco"
+category = "Noticias"
+tags = "spain news"
+homepage = "https://www.ondacero.es/"
+
+[[stations]]
+name = "Onda Cero Malaga"
+stream_url = "https://atres-live.ondacero.es/live/delegaciones/oc/malaga/master.m3u8"
+format = "AAC"
+bitrate = 128
+city = "Málaga"
+region = "Andalucía"
+category = "Noticias"
+tags = "local news, news, news talk, talk"
+homepage = "https://www.ondacero.es/emisoras/andalucia/malaga/directo/"
+
+[[stations]]
+name = "esRadio Granada"
+stream_url = "https://azura.abcorp.es/listen/esradio_granada/radio.mp3"
+format = "MP3"
+bitrate = 128
+city = "Sevilla"
+region = "Andalucía"
+category = "Noticias"
+tags = "culture, news"
+homepage = "https://esradiogranada.es/web/"
+
+# ============================================================
+# ELECTRONICA
+# ============================================================
+
+[[stations]]
+name = "Ibiza Global Radio"
+stream_url = "http://ibizaglobalradio.streaming-pro.com:8024/"
+format = "MP3"
+bitrate = 0
+city = "Ibiza"
+region = "Islas Baleares"
+category = "Electronica"
+tags = "dance, electronic, house"
+homepage = "http://www.ibizaglobalradio.com/"
+
+[[stations]]
+name = "Chocolate FM"
+stream_url = "http://streaming5.elitecomunicacion.es:8082/live.mp3"
+format = "MP3"
+bitrate = 192
+city = "Málaga"
+region = "Andalucía"
+category = "Electronica"
+tags = "chr, dance, español, latin, latino"
+homepage = "https://www.chocolatefm.com/"
+
+[[stations]]
+name = "1000 HITS 80s"
+stream_url = "http://c2.auracast.net:8048/stream"
+format = "MP3"
+bitrate = 128
+city = "Madrid"
+region = "Madrid"
+category = "Electronica"
+tags = "70s, 80s, 90s, italo, italo dance"
+homepage = "http://www.1000hits80s.eu/"
+
+[[stations]]
+name = "Los 40 Urban"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/LOS40_URBAN.mp3"
+format = "MP3"
+bitrate = 128
+city = "Madrid"
+region = "Madrid"
+category = "Electronica"
+tags = "dance, pop, urban"
+homepage = "https://los40.com/seccion/los40urban/"
+
+[[stations]]
+name = "Los 40 Dance"
+stream_url = "http://playerservices.streamtheworld.com/api/livestream-redirect/LOS40_DANCE_SC"
+format = "MP3"
+bitrate = 128
+city = "Nacional"
+region = "Nacional"
+category = "Electronica"
+tags = "dance, edm, electro, electronic, house"
+homepage = "https://los40.com/"
+
+[[stations]]
+name = "Pure Ibiza Radio"
+stream_url = "https://pureibizaradio.clubbingradios.com:9518/PureIbizaRadio"
+format = "MP3"
+bitrate = 256
+city = "Nacional"
+region = "Nacional"
+category = "Electronica"
+tags = "dance, electronic, ibiza club"
+homepage = "https://www.pureibizaradio.com/"
+
+[[stations]]
+name = "Chocolate FM [calidad móvil-low bandwidth]"
+stream_url = "http://streaming5.elitecomunicacion.es:8082/live32.aac"
+format = "AAC+"
+bitrate = 32
+city = "Málaga"
+region = "Andalucía"
+category = "Electronica"
+tags = "chr, dance, español, latin, latino"
+homepage = "https://www.chocolatefm.com/"
+
+[[stations]]
+name = "Radio Planeta Costa del Sol"
+stream_url = "https://radioplaneta.emitironline.com/radio"
+format = "MP3"
+bitrate = 192
+city = "Nacional"
+region = "Nacional"
+category = "Electronica"
+tags = "dance, house, pop, r&b"
+homepage = "https://www.radioplaneta.com/"
+
+[[stations]]
+name = "Flaix FM"
+stream_url = "https://stream.flaixfm.cat/icecast"
+format = "AAC"
+bitrate = 125
+city = "Nacional"
+region = "Nacional"
+category = "Electronica"
+tags = "dance, house, latin, reggaeton, urban"
+homepage = "https://flaixfm.cat/"
+
+[[stations]]
+name = "Los 40 Catalunya"
+stream_url = "http://playerservices.streamtheworld.com/api/livestream-redirect/LOS40_CAT_SC"
+format = "MP3"
+bitrate = 96
+city = "Barcelona"
+region = "Cataluña"
+category = "Electronica"
+tags = "adult contemporary, adult hits, electro, electronic, hits"
+homepage = "https://los40.com/"
+
+# ============================================================
+# ROCK
+# ============================================================
+
+[[stations]]
+name = "LOS40 Classic"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/LOS40_CLASSIC.mp3"
+format = "MP3"
+bitrate = 128
+city = "Nacional"
+region = "Nacional"
+category = "Rock"
+tags = "pop rock"
+homepage = "https://play.los40.com/emisora/los40_classic/"
+
+[[stations]]
+name = "Mariskal Rock"
+stream_url = "https://media.profesionalhosting.com:8047/stream"
+format = "MP3"
+bitrate = 128
+city = "Madrid"
+region = "Madrid"
+category = "Rock"
+tags = "alternative rock, blues rock, classic rock, hard rock, indie rock"
+homepage = "https://mariskalrock.com/"
+
+# ============================================================
+# DEPORTES
+# ============================================================
+
+[[stations]]
+name = "Cadena SER España"
+stream_url = "http://playerservices.streamtheworld.com/api/livestream-redirect/CADENASER.mp3"
+format = "MP3"
+bitrate = 128
+city = "Nacional"
+region = "Nacional"
+category = "Deportes"
+tags = "cultural news, live, news, news talk, spanish"
+homepage = "http://play.cadenaser.com/"
+
+[[stations]]
+name = "Radio Marca"
+stream_url = "https://sonic.mediatelekom.net/9316/stream"
+format = "MP3"
+bitrate = 128
+city = "Nacional"
+region = "Nacional"
+category = "Deportes"
+tags = "classical"
+
+[[stations]]
+name = "Radio Marca Barcelona"
+stream_url = "http://radioweb.radiomarcabarcelona.com:9000/stream"
+format = "MP3"
+bitrate = 96
+city = "Nacional"
+region = "Nacional"
+category = "Deportes"
+tags = "sports news"
+homepage = "http://marca.com/radio.html"
+
+[[stations]]
+name = "Radio Marca Madrid"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/RADIOMARCA_NACIONAL_SC"
+format = "MP3"
+bitrate = 128
+city = "Madrid"
+region = "Madrid"
+category = "Deportes"
+tags = "sports"
+homepage = "https://www.marca.com/radio.html"
+
+[[stations]]
+name = "RAC1"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/RAC_1.mp3"
+format = "MP3"
+bitrate = 128
+city = "Barcelona"
+region = "Cataluña"
+category = "Deportes"
+tags = "culture, humour, local news, news, sports"
+homepage = "https://www.rac1.cat/"
+
+[[stations]]
+name = "RAC1 +1"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/RAC_MES_1.mp3"
+format = "MP3"
+bitrate = 96
+city = "Barcelona"
+region = "Cataluña"
+category = "Deportes"
+tags = "cultural, live sports, local news, news, sports"
+homepage = "https://www.rac1.cat/rac-mes-1/directe"
+
+# ============================================================
+# JAZZ/LOUNGE
+# ============================================================
+
+[[stations]]
+name = "Costa Del Mar - Chillout (AAC 96kbps)"
+stream_url = "http://stream.cdm-chillout.com:8020/stream-AAC-Chill"
+format = "AAC"
+bitrate = 96
+city = "Nacional"
+region = "Nacional"
+category = "Jazz/Lounge"
+tags = "chill, chillout"
+homepage = "http://www.costadelmar-radio.com/chillout/"
+
+[[stations]]
+name = "Café del Mar"
+stream_url = "https://streams.radio.co/se1a320b47/listen"
+format = "MP3"
+bitrate = 192
+city = "Ibiza"
+region = "Islas Baleares"
+category = "Jazz/Lounge"
+tags = "chillout, ibiza, lounge"
+homepage = "https://cafedelmar.com/radio/"
+
+[[stations]]
+name = "Costa Del Mar Smooth Jazz"
+stream_url = "https://radio4.cdm-radio.com:18024/stream-mp3-Smooth"
+format = "MP3"
+bitrate = 96
+city = "Madrid"
+region = "Madrid"
+category = "Jazz/Lounge"
+tags = "smooth jazz, smooth lounge"
+homepage = "http://www.cdm-smoothsax.com/"
+
+# ============================================================
+# CLASICA
+# ============================================================
+
+[[stations]]
+name = "Catalunya Música (CatMúsica)"
+stream_url = "https://shoutcast.ccma.cat/ccma/catalunyamusicaHD.mp3"
+format = "AAC"
+bitrate = 56
+city = "Barcelona"
+region = "Cataluña"
+category = "Clasica"
+tags = "classical"
+homepage = "https://www.ccma.cat/catradio/catalunya-musica/"
+
+[[stations]]
+name = "Adagio Radio HD"
+stream_url = "https://stream.tunerplay.com/radio/8010/adagioradioHD.mp3"
+format = "MP3"
+bitrate = 256
+city = "Nacional"
+region = "Nacional"
+category = "Clasica"
+tags = "classical"
+homepage = "http://www.adagioradio.es/"
+
+# ============================================================
+# FLAMENCO
+# ============================================================
+
+[[stations]]
+name = "Radio Sevillanas"
+stream_url = "http://radio.wesped.com:8000/stream"
+format = "MP3"
+bitrate = 128
+city = "Sevilla"
+region = "Andalucía"
+category = "Flamenco"
+tags = "flamenco"
+homepage = "https://www.radiosevillanas.com/"
+
+# ============================================================
+# ADDITIONAL MAJOR STATIONS
+# ============================================================
+
+[[stations]]
+name = "Onda Cero Madrid"
+stream_url = "https://atres-live.ondacero.es/live/ondacero/bitrate_1.m3u8"
+format = "AAC"
+bitrate = 128
+city = "Madrid"
+region = "Madrid"
+category = "Noticias"
+homepage = "https://www.ondacero.es/"
+
+[[stations]]
+name = "Radio Exterior de España"
+stream_url = "https://dispatcher.rndfnk.com/crtve/rneree/main/mp3/high"
+format = "MP3"
+bitrate = 128
+city = "Madrid"
+region = "Nacional"
+category = "Noticias"
+tags = "international news, news"
+homepage = "https://www.rtve.es/radio/radio-exterior/"
+
+[[stations]]
+name = "Cadena SER + Madrid"
+stream_url = "https://25453.live.streamtheworld.com/SER_MAS_MADRID_SC"
+format = "MP3"
+bitrate = 96
+city = "Madrid"
+region = "Madrid"
+category = "Noticias"
+tags = "deportes, noticias"
+homepage = "https://cadenaser.com/ser-madrid-sur/"

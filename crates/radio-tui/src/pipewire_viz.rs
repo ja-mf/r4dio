@@ -147,7 +147,11 @@ async fn run_pipewire_capture(
 
     // Receive PCM data and broadcast it — async recv yields between chunks.
     while let Some(pcm) = pcm_rx.recv().await {
-        let _ = broadcast_tx.send(BroadcastMessage::PcmChunk(Arc::new(pcm)));
+        let _ = broadcast_tx.send(BroadcastMessage::PcmChunk {
+            samples: Arc::new(pcm),
+            captured_at: std::time::Instant::now(),
+            source: crate::VizSourceKind::PipeWire,
+        });
     }
 
     // Channel closed — capture thread exited.

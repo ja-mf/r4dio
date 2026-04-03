@@ -1,16 +1,16 @@
 //! FilterInput — wraps tui-input for use as a filter bar in panes.
 
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     layout::Rect,
-    style::{Modifier, Style},
+    style::Style,
     text::{Line, Span},
     widgets::Paragraph,
     Frame,
 };
 use tui_input::{backend::crossterm::EventHandler, Input};
 
-use crate::theme::{C_FILTER_BG, C_FILTER_FG, C_MUTED, C_SECONDARY};
+use crate::theme::{C_FILTER_BG, C_FILTER_FG, C_MUTED};
 
 pub enum FilterAction {
     Changed(String),

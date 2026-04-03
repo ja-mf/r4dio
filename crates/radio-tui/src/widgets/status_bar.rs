@@ -1,7 +1,7 @@
 //! Status bar — bottom line with connection state, mode, and keybindings.
 
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::Paragraph,

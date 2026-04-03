@@ -1,0 +1,632 @@
+# Brazilian Radio Stations - Stream URLs
+# Format: TOML
+# Source: radio-browser.info
+# Generated: 2026-02-28
+
+[metadata]
+description = "Brazilian radio stations compiled from radio-browser.info"
+total_stations = 58
+country = "Brazil"
+country_code = "BR"
+
+# ============================================================
+# MAJOR NATIONAL NETWORKS - SÃO PAULO
+# ============================================================
+
+[[stations]]
+name = "Radio Bandeirantes - São Paulo"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/RadioBandeirantesAAC.m3u8"
+format = "AAC+"
+bitrate = 64
+city = "São Paulo"
+region = "São Paulo"
+category = "Noticias"
+homepage = "https://www.band.uol.com.br/radios/radio-bandeirantes/sao-paulo"
+
+[[stations]]
+name = "Radio Globo 98.1 FM - Rio de Janeiro"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/RADIO_GLOBO_RJAAC.aac"
+format = "AAC+"
+bitrate = 128
+city = "Rio de Janeiro"
+region = "Rio de Janeiro"
+category = "Esportes"
+homepage = "https://radioglobo.globo.com/"
+
+[[stations]]
+name = "Radio BandNews FM - São Paulo"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/BANDNEWSFM_SPAAC.m3u8"
+format = "AAC+"
+bitrate = 64
+city = "São Paulo"
+region = "São Paulo"
+category = "Noticias"
+homepage = "https://www.band.uol.com.br/radios/bandnews-fm/sao-paulo"
+
+[[stations]]
+name = "Radio CBN São Paulo"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/CBN_SPAAC.aac"
+format = "AAC+"
+bitrate = 128
+city = "São Paulo"
+region = "São Paulo"
+category = "Noticias"
+homepage = "https://cbn.globoradio.globo.com/programas/cbn-sao-paulo/CBN-SAO-PAULO.htm"
+
+[[stations]]
+name = "Radio Mix FM - São Paulo"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/MIXFM_SAOPAULOAAC.aac"
+format = "AAC+"
+bitrate = 64
+city = "São Paulo"
+region = "São Paulo"
+category = "Pop"
+homepage = "https://radiomixfm.com.br/"
+
+[[stations]]
+name = "Radio Band FM 96.1 - São Paulo"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/BANDFM_SPAAC.aac"
+format = "AAC+"
+bitrate = 64
+city = "São Paulo"
+region = "São Paulo"
+category = "Pop"
+homepage = "https://www.band.uol.com.br/band-fm"
+
+[[stations]]
+name = "89 FM A Radio Rock - São Paulo"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/RADIO_89FM_ADP.aac"
+format = "AAC+"
+bitrate = 128
+city = "São Paulo"
+region = "São Paulo"
+category = "Rock"
+homepage = "https://www.radiorock.com.br/"
+
+[[stations]]
+name = "Antena 1 São Paulo 94.7 FM"
+stream_url = "https://antenaone.crossradio.com.br/stream/1"
+format = "AAC+"
+bitrate = 64
+city = "São Paulo"
+region = "São Paulo"
+category = "Adult Contemporary"
+homepage = "https://www.antena1.com.br/"
+
+[[stations]]
+name = "Radio Metropolitana 98.5 FM Pop - São Paulo"
+stream_url = "https://ice.fabricahost.com.br/metrosppop"
+format = "AAC+"
+bitrate = 48
+city = "São Paulo"
+region = "São Paulo"
+category = "Pop"
+homepage = "https://metropolitanafm.com.br/"
+
+[[stations]]
+name = "Radio Metropolitana 98.5 FM Sertanejo - São Paulo"
+stream_url = "https://ice.fabricahost.com.br/metrospsertanejo"
+format = "AAC+"
+bitrate = 48
+city = "São Paulo"
+region = "São Paulo"
+category = "Sertanejo"
+homepage = "https://metropolitanafm.com.br/"
+
+[[stations]]
+name = "Kiss FM São Paulo"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/RADIO_KISSFMAAC.aac"
+format = "AAC+"
+bitrate = 64
+city = "São Paulo"
+region = "São Paulo"
+category = "Rock"
+homepage = "https://kissfm.com.br/"
+
+[[stations]]
+name = "Alpha FM 101.7 - São Paulo"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/RADIO_ALPHAFM_ADP.aac"
+format = "AAC+"
+bitrate = 128
+city = "São Paulo"
+region = "São Paulo"
+category = "Adult Contemporary"
+homepage = "https://www.alphafm.com.br/"
+
+[[stations]]
+name = "Nova Brasil FM - São Paulo"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/NOVABRASIL_SPAAC.aac"
+format = "AAC+"
+bitrate = 48
+city = "São Paulo"
+region = "São Paulo"
+category = "MPB"
+homepage = "https://novabrasilfm.com.br/"
+
+[[stations]]
+name = "Radio Saudade FM 99.7 - Santos"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/SAUDADE_FMAAC.aac"
+format = "AAC+"
+bitrate = 64
+city = "Santos"
+region = "São Paulo"
+category = "Flashback"
+homepage = "https://www.saudadefm.com.br/"
+
+# ============================================================
+# RIO DE JANEIRO
+# ============================================================
+
+[[stations]]
+name = "Radio Cidade 102.9 FM - Rio de Janeiro"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/RADIOCIDADEAAC.aac"
+format = "AAC+"
+bitrate = 48
+city = "Rio de Janeiro"
+region = "Rio de Janeiro"
+category = "Rock"
+homepage = "https://radiocidade.fm/"
+
+[[stations]]
+name = "Mix Rio 102.1 FM - Rio de Janeiro"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/MIXRIOAAC.aac"
+format = "AAC+"
+bitrate = 48
+city = "Rio de Janeiro"
+region = "Rio de Janeiro"
+category = "Pop"
+homepage = "http://mixriofm.uol.com.br/"
+
+[[stations]]
+name = "JB FM - Rio de Janeiro"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/JBFMAAC.aac"
+format = "AAC+"
+bitrate = 48
+city = "Rio de Janeiro"
+region = "Rio de Janeiro"
+category = "Adult Contemporary"
+homepage = "https://jb.fm/"
+
+[[stations]]
+name = "Antena 1 Rio de Janeiro 103.7 FM"
+stream_url = "http://a1rj.streams.com.br:7801/stream"
+format = "AAC+"
+bitrate = 64
+city = "Rio de Janeiro"
+region = "Rio de Janeiro"
+category = "Adult Contemporary"
+homepage = "https://www.antena1rio.com.br/"
+
+[[stations]]
+name = "Radio CBN Rio de Janeiro 92.5 FM"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/CBN_RJ_ADP.m3u8"
+format = "AAC+"
+bitrate = 128
+city = "Rio de Janeiro"
+region = "Rio de Janeiro"
+category = "Noticias"
+homepage = "https://m.cbn.globoradio.globo.com/"
+
+[[stations]]
+name = "FM O Dia 100.5 - Rio de Janeiro"
+stream_url = "http://streaming.livespanel.com:20000/live"
+format = "MP3"
+bitrate = 128
+city = "Rio de Janeiro"
+region = "Rio de Janeiro"
+category = "Samba"
+homepage = "http://www.fmodia.com.br/"
+
+# ============================================================
+# JOVEM PAN NETWORK (Multiple Cities)
+# ============================================================
+
+[[stations]]
+name = "Jovem Pan FM - São Paulo"
+stream_url = "https://stream.zeno.fm/c45wbq2us3buv"
+format = "MP3"
+bitrate = 128
+city = "São Paulo"
+region = "São Paulo"
+category = "Pop"
+homepage = "https://jovempan.com.br/"
+
+[[stations]]
+name = "Jovem Pan FM - Belo Horizonte 99.1"
+stream_url = "https://8062.brasilstream.com.br/stream"
+format = "AAC"
+bitrate = 64
+city = "Belo Horizonte"
+region = "Minas Gerais"
+category = "Pop"
+homepage = "https://jovempan.com.br/afiliada/bh-fm"
+
+[[stations]]
+name = "Jovem Pan FM - Florianópolis"
+stream_url = "https://live.paineldj.com.br/proxy/jfloripa?mp=/stream"
+format = "AAC+"
+bitrate = 128
+city = "Florianópolis"
+region = "Santa Catarina"
+category = "Pop"
+homepage = "https://jovempan.com.br/afiliada/floripa-fm"
+
+[[stations]]
+name = "Jovem Pan FM - Campinas 89.9"
+stream_url = "https://paineldj5.com.br:20028/stream"
+format = "MP3"
+bitrate = 128
+city = "Campinas"
+region = "São Paulo"
+category = "Pop"
+homepage = "https://jovempan.com.br/afiliada/campinas-fm"
+
+[[stations]]
+name = "Jovem Pan FM - Porto Alegre"
+stream_url = "http://centova6.ciclanohost.com.br:9256/stream"
+format = "AAC+"
+bitrate = 64
+city = "Porto Alegre"
+region = "Rio Grande do Sul"
+category = "Pop"
+homepage = "https://jovempan.uol.com.br/afiliada/grandepoa-fm"
+
+[[stations]]
+name = "Jovem Pan FM - Brasília 106.3"
+stream_url = "https://shout25.crossradio.com.br:18022/1"
+format = "AAC+"
+bitrate = 128
+city = "Brasília"
+region = "Distrito Federal"
+category = "Pop"
+homepage = "https://jovempan.com.br/afiliada/brasilia-fm"
+
+# ============================================================
+# RIO GRANDE DO SUL
+# ============================================================
+
+[[stations]]
+name = "Radio Gaúcha 93.7 FM - Porto Alegre"
+stream_url = "https://liverdgaupoa.rbsdirect.com.br/primary/gaucha_rbs.sdp/playlist.m3u8"
+format = "AAC (HLS)"
+bitrate = 1000
+city = "Porto Alegre"
+region = "Rio Grande do Sul"
+category = "Noticias"
+homepage = "https://radiogauchafm.com/"
+
+[[stations]]
+name = "Radio Pampa FM 97.5 - Porto Alegre"
+stream_url = "http://cast4.audiostream.com.br:8653/aac"
+format = "AAC+"
+bitrate = 32
+city = "Porto Alegre"
+region = "Rio Grande do Sul"
+category = "Noticias"
+homepage = "http://www.radiopampa.com.br/"
+
+[[stations]]
+name = "Itapema FM 102.3 - Porto Alegre"
+stream_url = "https://liverd102fm.rbsdirect.com.br/primary/ita_poa.sdp/playlist.m3u8"
+format = "AAC (HLS)"
+bitrate = 1000
+city = "Porto Alegre"
+region = "Rio Grande do Sul"
+category = "Classic Rock"
+homepage = "https://1023.clicrbs.com.br/"
+
+[[stations]]
+name = "Radio Mix FM - Porto Alegre"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/MIXFM_POAAAC.aac"
+format = "AAC+"
+bitrate = 64
+city = "Porto Alegre"
+region = "Rio Grande do Sul"
+category = "Pop"
+homepage = "http://www.mixfmpoa.com.br/"
+
+[[stations]]
+name = "Nativa FM - Santa Maria"
+stream_url = "http://centova17.ciclanohost.com.br:8085/stream.mp3"
+format = "MP3"
+bitrate = 128
+city = "Santa Maria"
+region = "Rio Grande do Sul"
+category = "Local"
+homepage = "http://www.nativafmsantamaria.com.br/"
+
+[[stations]]
+name = "Radio Grenal"
+stream_url = "https://grenal.audiostream.com.br:20000/aac"
+format = "AAC+"
+bitrate = 48
+city = "Porto Alegre"
+region = "Rio Grande do Sul"
+category = "Esportes"
+homepage = "https://www.radiogrenal.com.br/"
+
+# ============================================================
+# MINAS GERAIS
+# ============================================================
+
+[[stations]]
+name = "Radio Itatiaia 95.7 FM - Belo Horizonte"
+stream_url = "https://8903.brasilstream.com.br/stream"
+format = "AAC"
+bitrate = 64
+city = "Belo Horizonte"
+region = "Minas Gerais"
+category = "Noticias"
+homepage = "https://www.itatiaia.com.br/"
+
+[[stations]]
+name = "Radio Alvorada 94.9 FM - Belo Horizonte"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/RADIO_ALVORADAAAC.aac"
+format = "AAC+"
+bitrate = 96
+city = "Belo Horizonte"
+region = "Minas Gerais"
+category = "Flashback"
+homepage = "http://www.alvoradafm.com.br/"
+
+[[stations]]
+name = "BH FM 102.1 - Belo Horizonte"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/BHFMAAC.aac"
+format = "AAC+"
+bitrate = 128
+city = "Belo Horizonte"
+region = "Minas Gerais"
+category = "Pop"
+homepage = "https://bhfm.globo.com/"
+
+[[stations]]
+name = "CBN Belo Horizonte"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/CBN_BHAAC.aac"
+format = "AAC+"
+bitrate = 128
+city = "Belo Horizonte"
+region = "Minas Gerais"
+category = "Noticias"
+homepage = "https://m.cbn.globoradio.globo.com/programas/cbn-bh/CBN-BH.htm"
+
+[[stations]]
+name = "BandNews FM Belo Horizonte"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/BANDNEWSFM_BHAAC.aac"
+format = "AAC+"
+bitrate = 64
+city = "Belo Horizonte"
+region = "Minas Gerais"
+category = "Noticias"
+homepage = "https://www.band.uol.com.br/radios/bandnews-fm/belo-horizonte"
+
+[[stations]]
+name = "Radio Mix FM 88.9 - Juiz de Fora"
+stream_url = "https://stream02.ouveai.com.br:8034/stream"
+format = "MP3"
+bitrate = 128
+city = "Juiz de Fora"
+region = "Minas Gerais"
+category = "Pop"
+homepage = "https://tribunademinas.com.br/mixjf-ao-vivo.html"
+
+# ============================================================
+# NORTHEAST BRAZIL
+# ============================================================
+
+[[stations]]
+name = "Radio Mix FM Recife 97.1"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/MIXFM_RECIFE971AAC.aac"
+format = "AAC+"
+bitrate = 64
+city = "Recife"
+region = "Pernambuco"
+category = "Pop"
+homepage = "https://radiomixfm.com.br/"
+
+[[stations]]
+name = "CBN Recife"
+stream_url = "https://video09.logicahost.com.br/cbnrecife/cbnrecife/playlist.m3u8"
+format = "MP3"
+bitrate = 191
+city = "Recife"
+region = "Pernambuco"
+category = "Noticias"
+homepage = "https://www.cbnrecife.com/"
+
+[[stations]]
+name = "Clube FM 99.1 - Recife"
+stream_url = "https://radio.saopaulo01.com.br:10913/stream"
+format = "MP3"
+bitrate = 128
+city = "Recife"
+region = "Pernambuco"
+category = "Pop"
+homepage = "http://www.clubepe.fm/"
+
+[[stations]]
+name = "Radio Sociedade - Salvador"
+stream_url = "https://painel.sintonizar.tv.br/stream/sociedadeaudio/stream"
+format = "AAC+"
+bitrate = 64
+city = "Salvador"
+region = "Bahia"
+category = "Noticias"
+homepage = "https://sociedadeonline.com/"
+
+[[stations]]
+name = "Jovem Pan FM - Salvador 91.3"
+stream_url = "https://shout25.crossradio.com.br:18022/1"
+format = "AAC+"
+bitrate = 128
+city = "Salvador"
+region = "Bahia"
+category = "Pop"
+homepage = "https://jovempan.com.br/afiliada/salvador-fm"
+
+[[stations]]
+name = "Radio Flashback FM"
+stream_url = "http://hd.matutos.com.br:8008/stream.mp3"
+format = "MP3"
+bitrate = 128
+city = "Recife"
+region = "Pernambuco"
+category = "Flashback"
+homepage = "http://flashbackfmst.com.br/"
+
+# ============================================================
+# SPECIALTY AND DIGITAL STATIONS
+# ============================================================
+
+[[stations]]
+name = "Radio Cultura FM 103.3 - São Paulo"
+stream_url = "https://player-culturafm.stream.uol.com.br/live/culturafm.m3u8"
+format = "AAC (HLS)"
+bitrate = 128
+city = "São Paulo"
+region = "São Paulo"
+category = "Classica"
+homepage = "https://cultura.uol.com.br/radio/"
+
+[[stations]]
+name = "Radio Cultura Brasil AM 1200 - São Paulo"
+stream_url = "https://player-culturaam.stream.uol.com.br/live/culturaam.m3u8"
+format = "AAC (HLS)"
+bitrate = 128
+city = "São Paulo"
+region = "São Paulo"
+category = "Cultural"
+homepage = "https://cultura.uol.com.br/radio/"
+
+[[stations]]
+name = "Radio MEC FM - Rio de Janeiro"
+stream_url = "https://radiomecfm-stream.ebc.com.br/ebc/radiomecfm/playlist.m3u8"
+format = "AAC (HLS)"
+bitrate = 128
+city = "Rio de Janeiro"
+region = "Rio de Janeiro"
+category = "Classica"
+homepage = "https://radios.ebc.com.br/aovivo?emissora=radio-mec-fm---rio-de-janeiro"
+
+[[stations]]
+name = "Radio Difusora 96.9 FM - Manaus"
+stream_url = "http://69.16.236.247:9300/stream"
+format = "MP3"
+bitrate = 128
+city = "Manaus"
+region = "Amazonas"
+category = "Noticias"
+homepage = "http://www.difusora24h.com/"
+
+[[stations]]
+name = "Radio Cultura FM 100.9 - Brasília"
+stream_url = "https://ssl1.transmissaodigital.com:20028/live"
+format = "MP3"
+bitrate = 128
+city = "Brasília"
+region = "Distrito Federal"
+category = "Cultural"
+homepage = "https://www.cultura.df.gov.br/radio-cultura-1009-fm/"
+
+[[stations]]
+name = "Radio Energia 97 FM - São Paulo"
+stream_url = "https://streaming.inweb.com.br/energia"
+format = "AAC"
+bitrate = 48
+city = "São Paulo"
+region = "São Paulo"
+category = "Pop"
+homepage = "https://www.97fm.com.br/"
+
+[[stations]]
+name = "Radio 105 FM - São Paulo"
+stream_url = "http://www.appradio.app:8010/live"
+format = "MP3"
+bitrate = 96
+city = "São Paulo"
+region = "São Paulo"
+category = "Rap"
+homepage = "https://radio105fm.com.br/"
+
+[[stations]]
+name = "Radio FM Okey - Curitiba"
+stream_url = "http://streaming.fmokey.cl/FmOkValpo.mp3"
+format = "AAC"
+bitrate = 160
+city = "Curitiba"
+region = "Paraná"
+category = "Contemporanea"
+homepage = "https://fmokey.com.br/"
+
+[[stations]]
+name = "Radio 91 Rock - Curitiba"
+stream_url = "http://servidor40.brlogic.com:8044/live"
+format = "MP3"
+bitrate = 128
+city = "Curitiba"
+region = "Paraná"
+category = "Rock"
+homepage = "https://91rock.com.br/"
+
+[[stations]]
+name = "Radio 104 FM - Porto Alegre"
+stream_url = "http://cast4.audiostream.com.br:8651/mp3"
+format = "MP3"
+bitrate = 96
+city = "Porto Alegre"
+region = "Rio Grande do Sul"
+category = "Pop"
+homepage = "http://radio104.com.br/"
+
+[[stations]]
+name = "Radio Catedral FM 106.7 - Rio de Janeiro"
+stream_url = "https://hts04.brascast.com:13728/live"
+format = "AAC"
+bitrate = 128
+city = "Rio de Janeiro"
+region = "Rio de Janeiro"
+category = "Religious"
+homepage = "https://radiocatedral.com.br/"
+
+# ============================================================
+# MUSIC GENRE STATIONS (DIGITAL)
+# ============================================================
+
+[[stations]]
+name = "Radio Bossa Nova Brazil"
+stream_url = "http://54.38.43.201:8009/stream-128kmp3-BossaNovaBrazil"
+format = "MP3"
+bitrate = 128
+city = "Internet"
+region = "Nacional"
+category = "Bossa Nova"
+homepage = "http://www.vip-radios.fm/station/bossa-nova-brazil/"
+
+[[stations]]
+name = "Radio Disco Funk BR"
+stream_url = "http://streaming12.hstbr.net:8084/live"
+format = "AAC+"
+bitrate = 64
+city = "Internet"
+region = "Nacional"
+category = "Disco"
+homepage = "http://discofunk.com.br/"
+
+[[stations]]
+name = "Bossa Jazz Brasil"
+stream_url = "https://centova5.transmissaodigital.com:20104/live"
+format = "AAC+"
+bitrate = 64
+city = "Internet"
+region = "Nacional"
+category = "Jazz"
+homepage = "https://bossajazzbrasil.com/"
+
+[[stations]]
+name = "Radio Reggae Brasil"
+stream_url = "https://casthttps.suaradionanet.net/13805/stream"
+format = "AAC"
+bitrate = 128
+city = "Internet"
+region = "Nacional"
+category = "Reggae"
+homepage = "https://radioreggaebrasil.com.br/"

@@ -1,0 +1,548 @@
+# Mexican Radio Stations - Stream URLs
+# Format: TOML
+# Source: radio-browser.info
+# Generated: 2026-02-28
+
+[metadata]
+description = "Mexican radio stations compiled from radio-browser.info"
+total_stations = 50
+country = "Mexico"
+country_code = "MX"
+
+# ============================================================
+# CIUDAD DE MÉXICO
+# ============================================================
+
+[[stations]]
+name = "88.9 Noticias - 88.9 FM - XHM-FM - Grupo ACIR - Ciudad de México"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/XHMFMAAC_SC.aac"
+format = "AAC+"
+bitrate = 48
+city = "Ciudad de México"
+region = "Ciudad de México"
+category = "Noticias"
+homepage = "https://www.iheart.com/live/889-noticias-6531/"
+
+[[stations]]
+name = "ALFA 91.3 (Ciudad de México) - 91.3 FM - XHFAJ-FM - Grupo Radio Centro - Ciudad de México"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/XHFAJ_FMAAC.aac"
+format = "AAC+"
+bitrate = 32
+city = "Ciudad de México"
+region = "Ciudad de México"
+category = "Pop Rock"
+homepage = "https://www.alfaenlinea.com/"
+
+[[stations]]
+name = "La Ke Buena Ciudad de México - 92.9 FM - XEQ-FM - Radiópolis - Ciudad de México"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/KEBUENAAAC.aac"
+format = "AAC+"
+bitrate = 56
+city = "Ciudad de México"
+region = "Ciudad de México"
+category = "Regional Mexicano"
+homepage = "https://www.kebuena.com.mx/"
+
+[[stations]]
+name = "Exa FM Ciudad de México - 104.9 FM - XHEXA-FM - MVS Radio - Ciudad de México"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/XHEXAAAC.aac"
+format = "AAC+"
+bitrate = 48
+city = "Ciudad de México"
+region = "Ciudad de México"
+category = "Pop"
+homepage = "https://www.exafm.com/"
+
+[[stations]]
+name = "BEAT 100.9 FM - XHSON-FM - NRM Comunicaciones - Ciudad de México"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/XHSONFMAAC.aac"
+format = "AAC+"
+bitrate = 48
+city = "Ciudad de México"
+region = "Ciudad de México"
+category = "Electronica"
+homepage = "https://www.beat1009.com.mx/"
+
+[[stations]]
+name = "El Fonógrafo, Música las 24 horas (elfonografo.mx) - Online - Grupo Radio Centro - Ciudad de México"
+stream_url = "https://14553.live.streamtheworld.com:443/XEJP_AM_SC"
+format = "MP3"
+bitrate = 48
+city = "Ciudad de México"
+region = "Ciudad de México"
+category = "Clasicos"
+homepage = "https://www.elfonografo.mx/"
+
+[[stations]]
+name = "El Fonógrafo - 690 AM - XEN-AM - Grupo Radio Centro - Ciudad de México"
+stream_url = "https://18853.live.streamtheworld.com:443/XEN_AM_SC"
+format = "MP3"
+bitrate = 48
+city = "Ciudad de México"
+region = "Ciudad de México"
+category = "Clasicos"
+homepage = "https://www.radiocentroelfonografo.com/"
+
+[[stations]]
+name = "STEREOREY: La Máxima Dimensión del Radio."
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/STEREOREYAAC.aac"
+format = "AAC+"
+bitrate = 48
+city = "Ciudad de México"
+region = "Ciudad de México"
+category = "Clasicos"
+homepage = "https://www.stereorey.com/"
+
+[[stations]]
+name = "Horizonte 107.9 FM \"Claridad informativa y todo el jazz\" (XHIMR) IMER"
+stream_url = "https://s2.mexside.net/8014/stream"
+format = "MP3"
+bitrate = 192
+city = "Ciudad de México"
+region = "Ciudad de México"
+category = "Jazz"
+homepage = "https://www.imer.mx/horizonte/"
+
+[[stations]]
+name = "El Heraldo Radio (Ciudad de México) - 98.5 FM - XHDL-FM - Heraldo Media Group - Ciudad de México"
+stream_url = "http://stream.radiojar.com/g33sp4yqd6quv"
+format = "AAC"
+bitrate = 0
+city = "Ciudad de México"
+region = "Ciudad de México"
+category = "Noticias"
+homepage = "https://www.heraldodemexico.com.mx/radio/"
+
+[[stations]]
+name = "Imagen Radio 90.5"
+stream_url = "http://24423.live.streamtheworld.com/XEDAFM_SC"
+format = "MP3"
+bitrate = 48
+city = "CDMX"
+region = "Ciudad de México"
+category = "Noticias"
+homepage = "https://www.imagenradio.com.mx/"
+
+[[stations]]
+name = "Amor Ciudad de México - 95.3 FM - XHSH-FM - Grupo ACIR - Ciudad de México"
+stream_url = "https://27143.live.streamtheworld.com:443/XHSHFMAAC.aac"
+format = "AAC+"
+bitrate = 48
+city = "Ciudad de México"
+region = "Ciudad de México"
+category = "Romantica"
+homepage = "https://www.iheart.com/live/amor-953-cdmx-6532/"
+
+[[stations]]
+name = "La Comadre Ciudad de México - 1260 AM - XEL-AM - Grupo ACIR - Ciudad de México"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/XELAMAAC.aac"
+format = "AAC+"
+bitrate = 48
+city = "Ciudad de México"
+region = "Ciudad de México"
+category = "Regional Mexicano"
+homepage = "https://www.iheart.com/live/la-comadre-1260-6535/"
+
+[[stations]]
+name = "Convoy en vivo"
+stream_url = "https://live.convoynetwork.com/stream"
+format = "AAC"
+bitrate = 64
+city = "Ciudad de México"
+region = "Ciudad de México"
+category = "Variada"
+homepage = "http://convoynetwork.com/"
+
+[[stations]]
+name = "JOYA - 93.7 FM - XEJP-FM - Grupo Radio Centro - Ciudad de México"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/XEJP_FMAAC.aac"
+format = "AAC+"
+bitrate = 32
+city = "Ciudad de México"
+region = "Ciudad de México"
+category = "Clasicos"
+homepage = "https://www.joya937.mx/"
+
+[[stations]]
+name = "90s Dance by Mix (iHeart Radio) - Online - ACIR Online / iHeart Radio - Ciudad de México"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/ACIR11_s01AAC.aac"
+format = "AAC+"
+bitrate = 48
+city = "Ciudad de México"
+region = "Ciudad de México"
+category = "Adulto Contemporaneo"
+homepage = "https://acironline.mx/radio-online/"
+
+[[stations]]
+name = "Amor de Divas (iHeart Radio) - Online - ACIR Online / iHeart Radio - Ciudad de México"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/ACIR01_s01AAC.aac"
+format = "AAC+"
+bitrate = 48
+city = "Ciudad de México"
+region = "Ciudad de México"
+category = "Variada"
+homepage = "https://www.iheart.com/live/amor-de-divas-8042/"
+
+[[stations]]
+name = "Amor Solo Pop (iHeart Radio) - Online - ACIR Online / iHeart Radio - Ciudad de México"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/ACIR03_s01AAC.aac"
+format = "AAC+"
+bitrate = 48
+city = "Ciudad de México"
+region = "Ciudad de México"
+category = "Variada"
+homepage = "https://www.iheart.com/live/amor-solo-pop-8044/"
+
+# ============================================================
+# JALISCO
+# ============================================================
+
+[[stations]]
+name = "Cumbia - La Musica Que Nos Gusta"
+stream_url = "http://stream-142.zeno.fm/9y6n2h9v2ehvv?zs=haS8YwG0TXWB3MU9AdJVjA"
+format = "AAC"
+bitrate = 0
+city = "Guadalajara"
+region = "Jalisco"
+category = "Cumbia"
+homepage = "https://www.radio-en-vivo.mx/"
+
+[[stations]]
+name = "City Pop Guadalajara"
+stream_url = "http://stream-151.zeno.fm/rmksrt451s8uv?zs=Ei64O-pXRfK7v1PY6Sk29A"
+format = "MP3"
+bitrate = 0
+city = "Guadalajara"
+region = "Jalisco"
+category = "Variada"
+homepage = "https://zeno.fm/citypopguadalajara/"
+
+[[stations]]
+name = "RADIO METRÓPOLI 1150 (GDL) - 1150 AM - XEAD-AM - Grupo Unidifusión - Guadalajara, Jalisco"
+stream_url = "https://s2.yesstreaming.net:9088/stream"
+format = "MP3"
+bitrate = 64
+city = "Guadalajara"
+region = "Jalisco"
+category = "Variada"
+homepage = "https://emisoraenvivo.com/mx/radio-metropoli-guadalajara"
+
+[[stations]]
+name = "Retro 107.5 (GDL) - 107.5 FM - XHVOZ-FM - Grupo Audiorama Comunicaciones - Guadalajara, Jalisco"
+stream_url = "https://ss1.audiorama.com.mx:6574/vibefm"
+format = "MP3"
+bitrate = 128
+city = "Guadalajara"
+region = "Jalisco"
+category = "Variada"
+homepage = "https://www.audiorama.mx/"
+
+# ============================================================
+# NUEVO LEÓN
+# ============================================================
+
+[[stations]]
+name = "BANDA 93.3 (MTY) - 93.3 FM - XHQQ-FM - Grupo Radio Centro - Monterrey, Nuevo León"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/XHQQ_FMAAC.aac"
+format = "AAC+"
+bitrate = 32
+city = "Monterrey"
+region = "Nuevo León"
+category = "Regional Mexicano"
+homepage = "https://www.iheart.com/live/banda-933-6522/"
+
+[[stations]]
+name = "LOS40 88.5 (Monterrey) - 88.5 FM - XHWAG-FM - Radiópolis - Monterrey, Nuevo León"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/LOS40_MTYAAC.aac"
+format = "AAC+"
+bitrate = 56
+city = "Monterrey"
+region = "Nuevo León"
+category = "Pop"
+homepage = "https://los40.com.mx/"
+
+[[stations]]
+name = "ABC NOTICIAS 1310 (MTY) - 1310 AM - XEVB-AM - Grupo Radio Alegría - Monterrey, Nuevo León"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/REGIONAL_MEXICANA_570AMAAC.aac"
+format = "AAC+"
+bitrate = 48
+city = "Monterrey"
+region = "Nuevo León"
+category = "Noticias"
+homepage = "http://abcnoticias.mx/"
+
+[[stations]]
+name = "Café Romántico RADIO (Monterrey) - Online - www.caferomanticoradio.com - Grupo Digital Radioland - Monterrey, Nuevo León"
+stream_url = "https://panel.retrolandigital.com/radio/8110/listen"
+format = "AAC"
+bitrate = 96
+city = "Monterrey"
+region = "Nuevo León"
+category = "Romantica"
+homepage = "https://caferomanticoradio.com/"
+
+[[stations]]
+name = "PREMIER 91.7 (MTY) - 91.7 FM - XHXL-FM - Grupo Radio Alegría - Monterrey, Nuevo León"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/NOVA_917.mp3"
+format = "MP3"
+bitrate = 128
+city = "Monterrey"
+region = "Nuevo León"
+category = "Variada"
+homepage = "https://portal.premier917.fm/"
+
+[[stations]]
+name = "ABC DEPORTES 660 (MTY) - 660 AM - XEFZ-AM - Grupo Radio Alegría - Monterrey, Nuevo León"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/ABC_NOTICIAS_660AMAAC.aac"
+format = "AAC+"
+bitrate = 48
+city = "Monterrey"
+region = "Nuevo León"
+category = "Deportes"
+homepage = "https://abcnoticias.mx/deportes"
+
+[[stations]]
+name = "Globo 88.1 (Monterrey) - 88.1 FM - XHJM-FM - MVS Radio - Monterrey, Nuevo León"
+stream_url = "http://playerservices.streamtheworld.com/api/livestream-redirect/XHJMFMAAC.aac"
+format = "AAC+"
+bitrate = 64
+city = "Monterrey"
+region = "Nuevo León"
+category = "Variada"
+homepage = "https://fmglobo.com/plaza/monterrey/"
+
+# ============================================================
+# PUEBLA
+# ============================================================
+
+[[stations]]
+name = "La Grupera (Puebla) - 89.3 FM - XHNP-FM - Cinco Radio - Puebla, PU"
+stream_url = "https://stream.zeno.fm/zpd5he3sz7zuv"
+format = "MP3"
+bitrate = 0
+city = "Puebla"
+region = "Puebla"
+category = "Regional Mexicano"
+homepage = "http://cincoradio.com.mx/"
+
+[[stations]]
+name = "Amor Puebla - 103.3 FM - XHRH-FM - Grupo ACIR - Puebla, PU"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/XHRHFMAAC.aac"
+format = "AAC+"
+bitrate = 48
+city = "Puebla"
+region = "Puebla"
+category = "Romantica"
+homepage = "https://www.iheart.com/live/amor-1033-6572/"
+
+[[stations]]
+name = "La Comadre Puebla - 105.5 FM - XHHIT-FM - Grupo ACIR - Puebla, PU"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/XEHIT_SC.aac"
+format = "MP3"
+bitrate = 48
+city = "Puebla"
+region = "Puebla"
+category = "Regional Mexicano"
+homepage = "https://www.iheart.com/live/la-comadre-1055-8746/"
+
+[[stations]]
+name = "La Ke Buena (Ciudad Serdán) - 93.5 FM - XHLU-FM - Ciudad Serdán, Puebla"
+stream_url = "https://stream.zeno.fm/f7rmwpnakuhvv"
+format = "MP3"
+bitrate = 0
+city = "Puebla"
+region = "Puebla"
+category = "Regional Mexicano"
+homepage = "http://lakebuena935fm.com.mx/"
+
+[[stations]]
+name = "Exa FM Puebla - 94.1 FM - XHJE-FM - MVS Radio - Puebla, PU"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/XHJEFMAAC.aac"
+format = "AAC+"
+bitrate = 64
+city = "Puebla"
+region = "Puebla"
+category = "Pop"
+homepage = "https://www.exafm.com/puebla/"
+
+[[stations]]
+name = "Imagen radio (Puebla) - 105.1 FM [Puebla, Puebla]"
+stream_url = "http://puebla.radio.wnsol.com:8280/;stream.mp3"
+format = "MP3"
+bitrate = 128
+city = "Puebla"
+region = "Puebla"
+category = "Noticias"
+homepage = "http://www.imagenpuebla.mx/"
+
+# ============================================================
+# BAJA CALIFORNIA
+# ============================================================
+
+[[stations]]
+name = "Adictiva Radio (Tijuana) - 98.9 FM - XHMORE-FM - Esquina 32 - Tijuana, Baja California"
+stream_url = "https://cast6.asurahosting.com/proxy/luisf/adictivafmtijuana"
+format = "MP3"
+bitrate = 128
+city = "Tijuana"
+region = "Baja California"
+category = "Variada"
+homepage = "https://i.ibb.co/mzRdDCT/Adictiva-Radio-Tijuana.png"
+
+[[stations]]
+name = "Globo 99.3 (Tijuana) - 99.3 FM - XHOCL-FM - MVS Radio - Tijuana, Baja California"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/XHOCLAAC.aac"
+format = "AAC+"
+bitrate = 48
+city = "Tijuana"
+region = "Baja California"
+category = "Variada"
+homepage = "https://www.fmglobo.com/plaza/tijuana/"
+
+[[stations]]
+name = "Globo 101.9 (Mexicali) - 101.9 FM - XHPF-FM - MVS Radio - Mexicali, Baja California"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/XHPFFMAAC.aac"
+format = "AAC+"
+bitrate = 48
+city = "Mexicali"
+region = "Baja California"
+category = "Variada"
+homepage = "https://fmglobo.com/plaza/mexicali/"
+
+[[stations]]
+name = "BUENISIIMA (Mexicali) - 850 AM - XEZF-AM - Grupo Audiorama Comunicaciones - Mexicali, Baja California"
+stream_url = "https://ss1.audiorama.com.mx:6594/"
+format = "MP3"
+bitrate = 64
+city = "Mexicali"
+region = "Baja California"
+category = "Variada"
+homepage = "https://i.ibb.co/hD83sPC/Buenisiima-Mexicali.png"
+
+# ============================================================
+# YUCATÁN
+# ============================================================
+
+[[stations]]
+name = "AMOR 100.1 (Mérida) - 100.1 FM - XHYU-FM - Grupo SIPSE Radio - Mérida, Yucatán"
+stream_url = "https://webprod.sipse.com.mx:8080/amor"
+format = "MP3"
+bitrate = 96
+city = "Mérida"
+region = "Yucatán"
+category = "Romantica"
+homepage = "https://www.iheart.com/live/amor-1001-merida-8723/"
+
+[[stations]]
+name = "LA COMADRE 98.5 (Mérida) - 98.5 FM - XHMT-FM - Grupo SIPSE Radio - Mérida, Yucatán"
+stream_url = "https://cast4.my-control-panel.com/proxy/televiso/comadremid"
+format = "AAC"
+bitrate = 128
+city = "Mérida"
+region = "Yucatán"
+category = "Regional Mexicano"
+homepage = "https://sipseplay.com/la-comadre-merida-98-5/"
+
+# ============================================================
+# VERACRUZ
+# ============================================================
+
+[[stations]]
+name = "La Fiera Veracruz - 94.1 FM - XHHV-FM - Grupo Pazos - Veracruz, VE"
+stream_url = "https://fiera.centrocibernetico.com/"
+format = "MP3"
+bitrate = 48
+city = "Veracruz"
+region = "Veracruz"
+category = "Variada"
+homepage = "https://www.lafiera.mx/"
+
+[[stations]]
+name = "Exa FM Veracruz - 93.3 FM - XHPS-FM - MVS Radio - Veracruz, VE"
+stream_url = "https://playerservices.streamtheworld.com/api/livestream-redirect/XHPSFM_SC.aac"
+format = "MP3"
+bitrate = 128
+city = "Veracruz"
+region = "Veracruz"
+category = "Pop"
+homepage = "https://www.exafm.com/veracruz/"
+
+[[stations]]
+name = "El Patrón (Xalapa) - 104.9 FM - XHBD-FM - Oliva Radio - Xalapa, Veracruz"
+stream_url = "http://ssc.cnwks.ws:8365/;"
+format = "MP3"
+bitrate = 96
+city = "Veracruz"
+region = "Veracruz"
+category = "Variada"
+homepage = "https://www.elpatronfm.mx/"
+
+[[stations]]
+name = "La Inolvidable (Perote) - 101.1 FM - XHPER-FM - RRADIOTL, A.C. - Perote, VE"
+stream_url = "https://streaming.servicioswebmx.com/8078/stream"
+format = "MP3"
+bitrate = 128
+city = "Veracruz"
+region = "Veracruz"
+category = "Variada"
+homepage = "https://www.lainolvidabledeperote.com/"
+
+# ============================================================
+# SAN LUIS POTOSÍ
+# ============================================================
+
+[[stations]]
+name = "La Ke Buena San Luis Potosí - 105.7 FM - XHBM-FM - GlobalMedia - San Luis Potosí, SL"
+stream_url = "https://kebuenaslp.b-cdn.net/stream"
+format = "MP3"
+bitrate = 128
+city = "San Luis Potosí"
+region = "San Luis Potosí"
+category = "Regional Mexicano"
+homepage = "https://www.globalmedia.mx/kebuena"
+
+# ============================================================
+# AGUASCALIENTES
+# ============================================================
+
+[[stations]]
+name = "Stereorey: 100.9 FM - Aguascalientes, México. La Máxima Dimensión del Radio."
+stream_url = "https://hls.gvstream.live/radiouniversal/life1009.stream/playlist.m3u8"
+format = "AAC"
+bitrate = 32
+city = "Aguascalientes"
+region = "Aguascalientes"
+category = "Clasicos"
+homepage = "https://stereorey.com/"
+
+[[stations]]
+name = "LOS40 95.7 (Aguascalientes) - 95.7 FM - XHAGA-FM - Grupo Radiofónico ZER - Aguascalientes, Aguascalientes"
+stream_url = "https://cast.zuperdns.net/8030/stream/"
+format = "MP3"
+bitrate = 48
+city = "Aguascalientes"
+region = "Aguascalientes"
+category = "Pop"
+homepage = "https://grupozer.mx/portada.php?id=104"
+# ADDITIONAL STATIONS
+
+[[stations]]
+name = "DIGITAL 106.5 (Saltillo) - 106.5 FM - XHZCN-FM - RCG Media - Saltillo, Coahuila"
+stream_url = "https://radio.rcg.com.mx:7000/"
+format = "MP3"
+bitrate = 192
+city = "Saltillo"
+region = "Nuevo León"
+category = "Contemporanea"
+homepage = "https://rcgmedia.mx/radio/digital-106-5-fm"
+
+[[stations]]
+name = "La Ke Buena Puebla - 89.7 FM - XHEPA-FM - Puebla, Puebla"
+stream_url = "http://kebuena1010.com.mx:8001/live"
+format = "MP3"
+bitrate = 24
+city = "Puebla"
+region = "Puebla"
+category = "Regional Mexicano"
+homepage = "https://kebuena1010.com.mx/"
+

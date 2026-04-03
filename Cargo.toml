@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/radio-proto", "crates/radio-daemon", "crates/radio-tui", "crates/sound-viz-lab"]
+members = ["crates/radio-proto", "crates/radio-daemon", "crates/radio-tui"]
 resolver = "2"
 
 [workspace.dependencies]
