@@ -106,6 +106,10 @@ const STREAM_PCM_RATE_HZ: usize = 44_100;
 const METER_FPS: usize = 25;
 const STREAM_FRAME_SAMPLES: usize = STREAM_PCM_RATE_HZ / METER_FPS; // 1764 @ 44.1kHz
 const PCM_RING_MAX: usize = STREAM_PCM_RATE_HZ * 2; // ~2 seconds for scope history
+/// Minimum wall-clock gap between two consecutive `terminal.draw()` calls (~24 fps ceiling).
+/// Timer-driven redraws (maintenance tick, meter tick) are coalesced when they fire faster
+/// than this, preventing stacked draws from competing with the audio pipeline.
+const MIN_RENDER_GAP: Duration = Duration::from_millis(42);
 const PCM_JITTER_TARGET: usize = STREAM_FRAME_SAMPLES * 40; // ~1.6s target buffer
 const PCM_JITTER_STOP: usize = STREAM_FRAME_SAMPLES * 4; // ~160ms stop threshold
 const PCM_JITTER_MAX: usize = STREAM_FRAME_SAMPLES * 125; // ~5.0s cap
@@ -280,6 +284,10 @@ pub struct App {
 
     /// Whether to quit on next iteration.
     should_quit: bool,
+
+    /// Instant of the most recent `terminal.draw()` call.  Used to enforce
+    /// `MIN_RENDER_GAP` so that stacked timer ticks don't trigger redundant frames.
+    last_render: std::time::Instant,
 
     /// Last-drawn layout rects — used for mouse hit-testing.
     pane_areas: PaneAreas,
@@ -488,6 +496,7 @@ impl App {
             jump_from_station: None,
             station_play_history: Vec::new(),
             should_quit: false,
+            last_render: std::time::Instant::now(),
             pane_areas: PaneAreas::default(),
             toast: ToastManager::new(),
             prev_mpv_health: MpvHealth::Absent,
@@ -619,12 +628,10 @@ impl App {
         auto_poll_refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
         // Toast expiry check + spinner animation: 100ms for smooth braille animation
-        let mut toast_tick = tokio::time::interval(Duration::from_millis(100));
-        toast_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-
         // Component maintenance tick (filter cursors, lightweight expiries, etc.).
-        let mut ui_tick = tokio::time::interval(Duration::from_millis(100));
-        ui_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        // Both run at 100ms — merged into one timer to halve wakeup overhead.
+        let mut maintenance_tick = tokio::time::interval(Duration::from_millis(100));
+        maintenance_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
         // tui.log tail refresh: every 2s, only when log panel is open
         let mut log_refresh = tokio::time::interval(Duration::from_secs(2));
@@ -649,11 +656,13 @@ impl App {
         }
 
         loop {
-            // Draw only when something changed (PCM accumulation doesn't need a redraw)
-            if needs_redraw {
+            // Draw only when something changed, rate-limited to MIN_RENDER_GAP (~24 fps).
+            // needs_redraw stays true when we skip a frame so the next opportunity picks it up.
+            if needs_redraw && self.last_render.elapsed() >= MIN_RENDER_GAP {
                 terminal.draw(|f| self.draw(f))?;
+                self.last_render = std::time::Instant::now();
+                needs_redraw = false;
             }
-            needs_redraw = false;
 
             if self.should_quit {
                 break;
@@ -702,7 +711,8 @@ impl App {
                     needs_redraw = true;
                 }
 
-                _ = ui_tick.tick() => {
+                _ = maintenance_tick.tick() => {
+                    // Component animations: ticker scroll, filter cursor blink, etc.
                     let tick_actions: Vec<Action> = {
                         let s = &self.state;
                         let mut all = Vec::new();
@@ -720,6 +730,14 @@ impl App {
                     for action in tick_actions {
                         self.dispatch(action).await;
                     }
+                    // Toast expiry + intent timeouts
+                    self.toast.tick();
+                    self.intent_pause.tick();
+                    self.intent_volume.tick();
+                    self.intent_station.tick();
+                    self.state.pause_hint = self.intent_pause.render_state();
+                    self.state.volume_hint = self.intent_volume.render_state();
+                    self.state.station_hint = self.intent_station.render_state();
                     needs_redraw = true;
                 }
 
@@ -747,18 +765,6 @@ impl App {
                         }
                         self.spawn_passive_poll_task(tx.clone(), "interval");
                     }
-                }
-
-                _ = toast_tick.tick() => {
-                    self.toast.tick();
-                    // Tick intents (checks for timeouts) and propagate hints
-                    self.intent_pause.tick();
-                    self.intent_volume.tick();
-                    self.intent_station.tick();
-                    self.state.pause_hint = self.intent_pause.render_state();
-                    self.state.volume_hint = self.intent_volume.render_state();
-                    self.state.station_hint = self.intent_station.render_state();
-                    needs_redraw = true;
                 }
 
                 _ = log_refresh.tick() => {
@@ -1194,9 +1200,7 @@ impl App {
             AppMessage::PcmChunk(chunk) => {
                 // Station PCM arrives in bursts; stage it in a jitter buffer and
                 // consume it on MeterTick at steady cadence.
-                for &s in chunk.iter() {
-                    self.state.pcm_pending.push_back(s);
-                }
+                self.state.pcm_pending.extend(chunk.iter().copied());
                 if self.state.pcm_pending.len() > PCM_JITTER_MAX {
                     let keep = (PCM_JITTER_TARGET + STREAM_FRAME_SAMPLES * 8)
                         .min(self.state.pcm_pending.len());

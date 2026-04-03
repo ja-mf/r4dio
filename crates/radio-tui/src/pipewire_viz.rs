@@ -60,11 +60,12 @@ async fn run_pipewire_capture(
         stream::Direction,
     };
     use libpulse_simple_binding::Simple;
-    use std::sync::mpsc::{channel, Receiver};
     use std::thread;
 
-    // Create a channel to send PCM data from the PulseAudio thread to the async task
-    let (pcm_tx, pcm_rx): (std::sync::mpsc::Sender<Vec<f32>>, Receiver<Vec<f32>>) = channel();
+    // tokio mpsc: the capture thread sends synchronously (non-blocking unbounded send),
+    // the async receiver side uses .recv().await so it yields between chunks instead
+    // of blocking a tokio worker thread.
+    let (pcm_tx, mut pcm_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<f32>>();
 
     // Spawn the PulseAudio capture in a blocking thread
     let device_owned = device.map(|s| s.to_string());
@@ -144,21 +145,12 @@ async fn run_pipewire_capture(
         debug!("PulseAudio capture thread exiting");
     });
 
-    // Receive PCM data and broadcast it
-    loop {
-        match pcm_rx.recv() {
-            Ok(pcm) => {
-                let _ = broadcast_tx.send(BroadcastMessage::PcmChunk(Arc::new(pcm)));
-            }
-            Err(_) => {
-                // Channel closed, thread exited
-                break;
-            }
-        }
+    // Receive PCM data and broadcast it — async recv yields between chunks.
+    while let Some(pcm) = pcm_rx.recv().await {
+        let _ = broadcast_tx.send(BroadcastMessage::PcmChunk(Arc::new(pcm)));
     }
 
-    // Clean up the thread
-    drop(pcm_rx);
+    // Channel closed — capture thread exited.
     let _ = handle.join();
 
     anyhow::bail!("PipeWire/PulseAudio capture ended")
