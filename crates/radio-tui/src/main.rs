@@ -20,7 +20,7 @@ mod widgets;
 mod workspace;
 
 use tokio::sync::{broadcast, mpsc};
-use tracing::{error, info};
+use tracing::error;
 
 #[cfg(feature = "profiling")]
 use pprof::ProfilerGuard;
@@ -58,6 +58,11 @@ pub enum BroadcastMessage {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let cli_verbose = std::env::args().skip(1).any(|arg| arg == "--verbose" || arg == "-v");
+
+    // ── Load config early (logging config is needed before subscriber init) ───
+    let config = radio_proto::config::Config::load().unwrap_or_default();
+
     // ── Start CPU profiling for entire session ────────────────────────────────
     #[cfg(feature = "profiling")]
     let mut profiler: Option<ProfilerGuard<'_>> = None;
@@ -108,10 +113,8 @@ async fn main() -> anyhow::Result<()> {
     let ui_state_path = tui_data_dir.join("ui_state.json");
 
     // ── Rolling log setup ─────────────────────────────────────────────────────
-    // Rotate daily; keep 7 days of logs. tracing-appender produces files like:
-    //   tui.log.2026-03-22
-    // On startup delete any logs older than 7 days.
-    cleanup_old_logs(&data_dir, 7);
+    // Rotate daily; additionally enforce a total size cap via startup+periodic pruning.
+    prune_logs_to_size_cap(&data_dir, None, config.logging.max_total_size_mb);
 
     let file_appender = tracing_appender::rolling::daily(&data_dir, "tui.log");
     let (non_blocking, _log_guard) = tracing_appender::non_blocking(file_appender);
@@ -121,11 +124,19 @@ async fn main() -> anyhow::Result<()> {
         let today = chrono::Local::now().format("%Y-%m-%d");
         data_dir.join(format!("tui.log.{}", today))
     };
+    let active_log = log_path.clone();
 
-    // Allow RUST_LOG override; default to debug for app code but suppress noisy
-    // connection-level DEBUG from HTTP client internals (hyper_util, reqwest).
-    let log_filter = std::env::var("RUST_LOG")
-        .unwrap_or_else(|_| "debug,hyper_util=warn,reqwest=warn,hyper=warn".to_string());
+    // Precedence: CLI --verbose/-v > RUST_LOG > config.logging.verbose > default.
+    // Default stays concise at info-level for app code.
+    let log_filter = if cli_verbose {
+        "debug,hyper_util=warn,reqwest=warn,hyper=warn".to_string()
+    } else if let Ok(env_filter) = std::env::var("RUST_LOG") {
+        env_filter
+    } else if config.logging.verbose {
+        "debug,hyper_util=warn,reqwest=warn,hyper=warn".to_string()
+    } else {
+        "info,hyper_util=warn,reqwest=warn,hyper=warn".to_string()
+    };
     tracing_subscriber::fmt()
         .with_writer(non_blocking)
         .with_env_filter(log_filter.as_str())
@@ -134,12 +145,12 @@ async fn main() -> anyhow::Result<()> {
 
     // Print log path to stderr so the operator can tail it immediately.
     eprintln!("r4dio log: {}", log_path.display());
+    if cli_verbose {
+        eprintln!("r4dio logging: verbose enabled via CLI");
+    }
 
     tracing::info!("r4dio starting…");
 
-    // ── Load config ──────────────────────────────────────────────────────────
-    let config = radio_proto::config::Config::load().unwrap_or_default();
-    
     // Configure whether to use system dependencies or bundled ones
     radio_proto::platform::set_use_system_deps(config.binaries.use_system_deps);
 
@@ -187,7 +198,7 @@ async fn main() -> anyhow::Result<()> {
         icy_log_path,
         songs_csv_path,
         songs_vds_path,
-        log_path,
+        log_path.clone(),
         stars_path,
         random_history_path,
         recent_path,
@@ -201,6 +212,20 @@ async fn main() -> anyhow::Result<()> {
         config.polling.max_concurrency,
         config.polling.max_jobs_per_cycle,
     );
+
+    // Periodic size-based log cleanup while process stays alive.
+    let cleanup_dir = data_dir.clone();
+    let cleanup_interval_secs = config.logging.cleanup_interval_secs.max(10);
+    let max_log_mb = config.logging.max_total_size_mb;
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(cleanup_interval_secs));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            interval.tick().await;
+            prune_logs_to_size_cap(&cleanup_dir, Some(&active_log), max_log_mb);
+        }
+    });
+
     app.run(broadcast_rx).await?;
 
     // ── Write CPU profiling flamegraph ────────────────────────────────────────
@@ -227,24 +252,102 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Delete `tui.log.<date>` files in `dir` whose date suffix is older than `keep_days` days.
-fn cleanup_old_logs(dir: &std::path::Path, keep_days: i64) {
-    let cutoff = chrono::Local::now() - chrono::Duration::days(keep_days);
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+fn is_managed_log_file(name: &str) -> bool {
+    name == "mpv-stderr.log" || name.starts_with("tui.log.")
+}
+
+fn prune_logs_to_size_cap(
+    dir: &std::path::Path,
+    active_log_path: Option<&std::path::Path>,
+    max_total_size_mb: u64,
+) {
+    let cap_bytes = max_total_size_mb.saturating_mul(1024 * 1024);
+    if cap_bytes == 0 {
+        return;
+    }
+
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+
+    let mut files = Vec::<(std::path::PathBuf, u64, std::time::SystemTime)>::new();
+    let mut total_bytes = 0u64;
+
     for entry in entries.flatten() {
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        // tracing-appender names files "tui.log.YYYY-MM-DD"
-        if let Some(date_str) = name.strip_prefix("tui.log.") {
-            if let Ok(date) = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
-                let file_dt = date.and_hms_opt(0, 0, 0)
-                    .and_then(|dt| dt.and_local_timezone(chrono::Local).single());
-                if let Some(file_dt) = file_dt {
-                    if file_dt < cutoff {
-                        let _ = std::fs::remove_file(entry.path());
-                    }
-                }
-            }
+        let path = entry.path();
+        let file_name = entry.file_name();
+        let name = file_name.to_string_lossy();
+        if !is_managed_log_file(&name) {
+            continue;
         }
+        let Ok(meta) = entry.metadata() else {
+            continue;
+        };
+        if !meta.is_file() {
+            continue;
+        }
+        let size = meta.len();
+        let modified = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+        total_bytes = total_bytes.saturating_add(size);
+        files.push((path, size, modified));
+    }
+
+    if total_bytes <= cap_bytes {
+        return;
+    }
+
+    files.sort_by_key(|(_, _, modified)| *modified);
+    for (path, size, _) in files {
+        if total_bytes <= cap_bytes {
+            break;
+        }
+        if active_log_path.map(|p| p == path.as_path()).unwrap_or(false) {
+            continue;
+        }
+        if std::fs::remove_file(&path).is_ok() {
+            total_bytes = total_bytes.saturating_sub(size);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::prune_logs_to_size_cap;
+    use std::io::Write;
+
+    #[test]
+    fn prune_logs_oldest_first_keeps_active() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p1 = dir.path().join("tui.log.2026-01-01");
+        let p2 = dir.path().join("tui.log.2026-01-02");
+        let active = dir.path().join("tui.log.2026-01-03");
+
+        for (path, bytes) in [
+            (&p1, 900_000usize),
+            (&p2, 900_000usize),
+            (&active, 900_000usize),
+        ] {
+            let mut f = std::fs::File::create(path).expect("create log");
+            f.write_all(&vec![b'x'; bytes]).expect("write log");
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+
+        prune_logs_to_size_cap(dir.path(), Some(active.as_path()), 2);
+
+        assert!(!p1.exists());
+        assert!(p2.exists());
+        assert!(active.exists());
+    }
+
+    #[test]
+    fn prune_logs_noop_when_under_cap() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p1 = dir.path().join("tui.log.2026-01-01");
+        let mut f = std::fs::File::create(&p1).expect("create log");
+        f.write_all(&vec![b'x'; 256]).expect("write log");
+
+        prune_logs_to_size_cap(dir.path(), None, 1);
+
+        assert!(p1.exists());
     }
 }

@@ -24,7 +24,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::{mpsc, oneshot, Mutex};
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 #[cfg(unix)]
 use tokio::net::UnixStream;
@@ -200,7 +200,7 @@ impl MpvDriver {
         let socket_path = std::path::PathBuf::from(&self.socket_name);
         let _ = tokio::fs::remove_file(&socket_path).await;
 
-        info!("mpv: spawning new process");
+        debug!("mpv: spawning new process");
         let mpv_binary = radio_proto::platform::find_mpv_binary()
             .ok_or_else(|| anyhow::anyhow!("mpv binary not found"))?;
 
@@ -216,7 +216,7 @@ impl MpvDriver {
             .create(true)
             .append(true)
             .open(&stderr_path)?;
-        info!("mpv: logging stderr to {:?}", stderr_path);
+        debug!("mpv: logging stderr to {:?}", stderr_path);
 
           let child = tokio::process::Command::new(&mpv_binary)
               .arg("--no-video")
@@ -228,7 +228,7 @@ impl MpvDriver {
               .stderr(stderr_file)
               .spawn()?;
           let pid = child.id();
-          info!("mpv: spawned process with pid {:?}", pid);
+          debug!("mpv: spawned process with pid {:?}", pid);
           self.mpv_pid = pid;
           self.process = Some(child);
 
@@ -245,7 +245,7 @@ impl MpvDriver {
         tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
 
         let stream = UnixStream::connect(&socket_path).await?;
-        info!("mpv: connected to IPC socket");
+        debug!("mpv: connected to IPC socket");
         Ok(Self::start_io_tasks(stream, event_tx))
     }
 
@@ -258,7 +258,7 @@ impl MpvDriver {
         }
         match UnixStream::connect(&socket_path).await {
             Ok(stream) => {
-                info!("mpv: reconnected to existing IPC socket");
+                debug!("mpv: reconnected to existing IPC socket");
                 Some(Self::start_io_tasks(stream, event_tx))
             }
             Err(e) => {
@@ -300,10 +300,10 @@ impl MpvDriver {
             let _ = p.kill().await;
         }
 
-          info!("mpv: spawning new process");
+          debug!("mpv: spawning new process");
           let mpv_binary = radio_proto::platform::find_mpv_binary()
               .ok_or_else(|| anyhow::anyhow!("mpv binary not found"))?;
-          info!("mpv: using binary {:?}", mpv_binary);
+          debug!("mpv: using binary {:?}", mpv_binary);
 
           let vol_arg = format!(
               "--volume={}",
@@ -317,7 +317,7 @@ impl MpvDriver {
               .create(true)
               .append(true)
               .open(&stderr_path)?;
-          info!("mpv: logging stderr to {:?}", stderr_path);
+          debug!("mpv: logging stderr to {:?}", stderr_path);
 
           let child = tokio::process::Command::new(mpv_binary)
               .arg("--no-video")
@@ -329,7 +329,7 @@ impl MpvDriver {
               .stderr(stderr_file)
               .spawn()?;
           let pid = child.id();
-          info!("mpv: spawned process with pid {:?}", pid);
+          debug!("mpv: spawned process with pid {:?}", pid);
           self.mpv_pid = pid;
           self.process = Some(child);
 
@@ -338,7 +338,7 @@ impl MpvDriver {
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
             match ClientOptions::new().open(&pipe_path) {
                 Ok(client) => {
-                    info!("mpv: connected to named pipe");
+                    debug!("mpv: connected to named pipe");
                     return Ok(Self::start_io_tasks_windows(client, event_tx));
                 }
                 Err(_) => continue,
@@ -352,7 +352,7 @@ impl MpvDriver {
         let pipe_path = format!(r"\\.\pipe\{}", self.socket_name);
         match ClientOptions::new().open(&pipe_path) {
             Ok(client) => {
-                info!("mpv: reconnected to named pipe");
+                debug!("mpv: reconnected to named pipe");
                 Some(Self::start_io_tasks_windows(client, event_tx))
             }
             Err(e) => {

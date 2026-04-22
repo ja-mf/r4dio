@@ -60,6 +60,17 @@ cargo build --release -p radio-tui --bin r4dio
 - `starred.toml` — station/file ratings
 - `songs.vds` — recognition history database
 
+### Logging behavior
+
+- Default logging is **essential-only** (`info`/`warn`/`error`), with noisy diagnostics kept at `debug`.
+- Enable verbose logs with `r4dio --verbose` (or `-v`).
+- `RUST_LOG` still works and overrides config-based defaults when set.
+- Log pruning is size-based and runs at startup plus periodically at runtime.
+  - Configure under `[logging]` in `config.toml`:
+    - `verbose` (default `false`)
+    - `max_total_size_mb` (default `500`)
+    - `cleanup_interval_secs` (default `300`)
+
 ## Credits & Dependencies
 
 r4dio stands on the shoulders of exceptional open-source projects. Special thanks to the individual contributors and small teams behind:

@@ -75,3 +75,14 @@ pipewire_device = "pipewire.monitor"
 # When true, r4dio skips bundled/external search and uses PATH only.
 # This is useful for development or when you want to use system packages.
 use_system_deps = false
+
+[logging]
+# Enable verbose internal logs by default.
+# Can be overridden at runtime with --verbose/-v and by RUST_LOG.
+verbose = false
+
+# Maximum total size of retained log files in MB (oldest files are pruned first).
+max_total_size_mb = 500
+
+# How often (seconds) to run periodic log pruning while the app is running.
+cleanup_interval_secs = 300

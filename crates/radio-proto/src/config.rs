@@ -21,6 +21,8 @@ pub struct Config {
     pub viz: VizConfig,
     #[serde(default)]
     pub binaries: BinariesConfig,
+    #[serde(default)]
+    pub logging: LoggingConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -93,6 +95,20 @@ pub struct BinariesConfig {
     pub use_system_deps: bool,
 }
 
+/// Logging configuration for runtime verbosity and retention.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoggingConfig {
+    /// Enable verbose logging by default (equivalent to --verbose when RUST_LOG is unset).
+    #[serde(default = "default_logging_verbose")]
+    pub verbose: bool,
+    /// Maximum combined size (in MB) of retained log files before pruning oldest logs.
+    #[serde(default = "default_logging_max_total_size_mb")]
+    pub max_total_size_mb: u64,
+    /// Periodic log cleanup cadence while running.
+    #[serde(default = "default_logging_cleanup_interval_secs")]
+    pub cleanup_interval_secs: u64,
+}
+
 impl Default for VizConfig {
     fn default() -> Self {
         Self {
@@ -106,6 +122,16 @@ impl Default for BinariesConfig {
     fn default() -> Self {
         Self {
             use_system_deps: default_use_system_deps(),
+        }
+    }
+}
+
+impl Default for LoggingConfig {
+    fn default() -> Self {
+        Self {
+            verbose: default_logging_verbose(),
+            max_total_size_mb: default_logging_max_total_size_mb(),
+            cleanup_interval_secs: default_logging_cleanup_interval_secs(),
         }
     }
 }
@@ -244,6 +270,18 @@ fn default_use_system_deps() -> bool {
     false
 }
 
+fn default_logging_verbose() -> bool {
+    false
+}
+
+fn default_logging_max_total_size_mb() -> u64 {
+    500
+}
+
+fn default_logging_cleanup_interval_secs() -> u64 {
+    300
+}
+
 fn default_m3u_url() -> String {
     "https://raw.githubusercontent.com/ja-mf/radio-curation/refs/heads/main/jamf_radios.m3u"
         .to_string()
@@ -307,6 +345,7 @@ impl Default for Config {
             polling: PollingConfig::default(),
             viz: VizConfig::default(),
             binaries: BinariesConfig::default(),
+            logging: LoggingConfig::default(),
         }
     }
 }
@@ -324,6 +363,9 @@ mod tests {
         assert!(config.stations.m3u_url.starts_with("https://"));
         assert!(config.polling.auto_polling);
         assert_eq!(config.polling.poll_interval_secs, 120);
+        assert!(!config.logging.verbose);
+        assert_eq!(config.logging.max_total_size_mb, 500);
+        assert_eq!(config.logging.cleanup_interval_secs, 300);
         assert!(config
             .stations
             .stations_toml

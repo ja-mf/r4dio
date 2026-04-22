@@ -357,6 +357,10 @@ pub struct App {
     non_nts_poll_cursor: usize,
     poll_max_concurrency: usize,
     poll_max_jobs_per_cycle: usize,
+
+    /// Set to true whenever UI session state changes; flushed to disk every 5 s
+    /// by `ui_save_tick` instead of on every keypress.
+    ui_state_dirty: bool,
 }
 
 impl App {
@@ -540,6 +544,7 @@ impl App {
             non_nts_poll_cursor: 0,
             poll_max_concurrency,
             poll_max_jobs_per_cycle,
+            ui_state_dirty: false,
         };
 
         // Restore file selection in FileList component
@@ -665,17 +670,21 @@ impl App {
             tokio::time::interval(Duration::from_millis((1000 / METER_FPS) as u64));
         meter_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
+        // UI session state flush: write dirty state at most every 5 s instead of on every keypress.
+        let mut ui_save_tick = tokio::time::interval(Duration::from_secs(5));
+        ui_save_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
         // ── Main loop ─────────────────────────────────────────────────────────
         let mut needs_redraw = true;
 
         if self.auto_polling_enabled {
-            info!(
+            debug!(
                 "[poll] auto polling enabled (interval={}s)",
                 self.auto_poll_interval.as_secs()
             );
             self.spawn_passive_poll_task(tx.clone(), "startup");
         } else {
-            info!("[poll] auto polling disabled at startup");
+            debug!("[poll] auto polling disabled at startup");
         }
 
         loop {
@@ -800,6 +809,13 @@ impl App {
                 _ = meter_tick.tick() => {
                     needs_redraw = self.handle_message(AppMessage::MeterTick).await;
                 }
+
+                _ = ui_save_tick.tick() => {
+                    if self.ui_state_dirty {
+                        self.save_ui_session_state();
+                        self.ui_state_dirty = false;
+                    }
+                }
             }
 
             if self.should_quit {
@@ -884,7 +900,7 @@ impl App {
                     for a in actions {
                         self.dispatch(a).await;
                     }
-                    self.save_ui_session_state();
+                    self.ui_state_dirty = true;
                 }
                 Event::Mouse(mouse) => {
                     let actions = self.handle_mouse(mouse);
@@ -1037,7 +1053,7 @@ impl App {
 
                 if before != after {
                     self.auto_poll_cycle_changed += 1;
-                    info!(
+                    debug!(
                         "[poll] {} resolver={} changed: {:?} -> {:?}",
                         outcome.station_name, outcome.resolver, before, after
                     );
@@ -1076,7 +1092,7 @@ impl App {
                         self.auto_poll_cycle_errors,
                     );
                 } else {
-                    info!(
+                    debug!(
                         "[poll] cycle #{} complete in {}ms (targets={} seen={}, changed={}, unchanged={}, errors={})",
                         cycle_id,
                         elapsed_ms,
@@ -1091,7 +1107,7 @@ impl App {
             }
 
             AppMessage::RecognitionStarted(result) => {
-                info!(
+                debug!(
                     "[app] Recognition started job_id={} station={:?}",
                     result.job_id, result.station
                 );
@@ -1110,7 +1126,7 @@ impl App {
             }
 
             AppMessage::RecognitionPatch(job_id, patch) => {
-                info!("[app] Recognition patch job_id={}", job_id);
+                debug!("[app] Recognition patch job_id={}", job_id);
                 // Update in-memory history
                 if let Some(entry) = self
                     .state
@@ -1149,7 +1165,7 @@ impl App {
             }
 
             AppMessage::RecognitionComplete(job_id, rec_display) => {
-                info!(
+                debug!(
                     "[app] Recognition complete job_id={} display={:?}",
                     job_id, rec_display
                 );
@@ -1171,7 +1187,7 @@ impl App {
             }
 
             AppMessage::RecognitionNoMatch => {
-                info!("[app] Recognition: no match from vibra");
+                debug!("[app] Recognition: no match from vibra");
                 self.recognize_in_flight = false;
                 self.toast.resolve_spinner(
                     crate::widgets::toast::Severity::Warning,
@@ -1193,7 +1209,7 @@ impl App {
                 if let Some((station_name, stream_url, icy_title, nts_ch, nts_mixtape_url)) =
                     self.recognize_queue.pop_front()
                 {
-                    info!(
+                    debug!(
                         "[app] Starting next queued recognition ({} remaining)",
                         self.recognize_queue.len()
                     );
@@ -2333,7 +2349,7 @@ impl App {
 
             // ── Song recognition ──────────────────────────────────────────────
             Action::RecognizeSong => {
-                info!("[app] RecognizeSong action triggered");
+                debug!("[app] RecognizeSong action triggered");
 
                 let station = self
                     .state
@@ -2382,7 +2398,7 @@ impl App {
                             .map(|e| e.raw.clone())
                     });
 
-                info!(
+                debug!(
                     "[app] Recognition context: station={:?}, icy={:?}",
                     station_name, icy_title
                 );
@@ -2429,12 +2445,12 @@ impl App {
                                 nts_ch,
                                 nts_mixtape_url,
                             ));
-                            info!(
+                            debug!(
                                 "[app] Recognition queued ({} in queue)",
                                 self.recognize_queue.len()
                             );
                         } else {
-                            info!("[app] Recognition queue full (3), ignoring duplicate press");
+                            debug!("[app] Recognition queue full (3), ignoring duplicate press");
                         }
                     } else {
                         // Start immediately.
@@ -2477,7 +2493,7 @@ impl App {
             Action::ToggleAutoPolling => {
                 self.auto_polling_enabled = !self.auto_polling_enabled;
                 if self.auto_polling_enabled {
-                    info!(
+                    debug!(
                         "[poll] auto polling enabled (interval={}s)",
                         self.auto_poll_interval.as_secs()
                     );
@@ -2489,7 +2505,7 @@ impl App {
                         self.spawn_passive_poll_task(tx, "manual-toggle");
                     }
                 } else {
-                    info!("[poll] auto polling disabled");
+                    debug!("[poll] auto polling disabled");
                     self.toast
                         .info("auto polling: off (press p to re-enable)".to_string());
                 }
@@ -2536,12 +2552,12 @@ impl App {
                             // Queue only if this URL isn't already pending.
                             if !self.download_queue.iter().any(|(u, _)| u == &url) {
                                 self.download_queue.push_back((url, display));
-                                info!(
+                                debug!(
                                     "[app] Download queued ({} in queue)",
                                     self.download_queue.len()
                                 );
                             } else {
-                                info!("[app] Download already queued, ignoring duplicate press");
+                                debug!("[app] Download already queued, ignoring duplicate press");
                             }
                         } else {
                             self.start_download(url, display);
@@ -2954,7 +2970,7 @@ impl App {
 
     fn spawn_passive_poll_task(&mut self, tx: mpsc::Sender<AppMessage>, reason: &str) {
         if self.auto_poll_in_flight {
-            info!("[poll] skip cycle (already in flight)");
+            debug!("[poll] skip cycle (already in flight)");
             return;
         }
 
@@ -2962,7 +2978,7 @@ impl App {
         let targets = build_station_poll_targets(&stations, &mut self.non_nts_poll_cursor, self.poll_max_jobs_per_cycle);
         let target_count = targets.len();
         if target_count == 0 {
-            info!("[poll] skip cycle (no resolvable polling targets)");
+            debug!("[poll] skip cycle (no resolvable polling targets)");
             return;
         }
 
@@ -2997,7 +3013,7 @@ impl App {
             .collect();
 
         let why = reason.to_string();
-        info!(
+        debug!(
             "[poll] cycle #{} start reason={} targets={} (nts-live={}, nts-mixtape={}, non-nts={})",
             cycle_id, why, target_count, nts_live_count, nts_mixtape_count, non_nts_count,
         );
@@ -3053,7 +3069,7 @@ impl App {
 
         let now = chrono::Local::now();
         let job_id = make_job_id(&now, station_name.as_deref());
-        info!(
+        debug!(
             "[app] Spawning recognition job_id={} station={:?} icy={:?} nts_ch={:?} nts_mixtape_url={:?} url={:?}",
             job_id, station_name, icy_title, nts_ch, nts_mixtape_url, stream_url
         );
@@ -3094,7 +3110,7 @@ impl App {
         if let Some(ch) = nts_ch {
             tokio::spawn(async move {
                 if let Some((show, tag, url)) = recognize_via_nts(ch).await {
-                    info!("[recognition] nts ch{}: show={:?}", ch + 1, show);
+                    debug!("[recognition] nts ch{}: show={:?}", ch + 1, show);
                     let patch = VdsPatch {
                         nts_show: Some(show.clone()),
                         nts_tag: tag,
@@ -3109,7 +3125,7 @@ impl App {
         } else if let Some(mixtape_url) = nts_mixtape_url {
             tokio::spawn(async move {
                 if let Some((show, url)) = recognize_via_nts_mixtape(&mixtape_url).await {
-                    info!("[recognition] nts mixtape: show={:?}", show);
+                    debug!("[recognition] nts mixtape: show={:?}", show);
                     let patch = VdsPatch {
                         nts_show: Some(show),
                         nts_url: url,
@@ -3117,7 +3133,7 @@ impl App {
                     };
                     let _ = tx3.send(AppMessage::RecognitionPatch(job_id3, patch)).await;
                 } else {
-                    info!("[recognition] nts mixtape: no announced show");
+                    debug!("[recognition] nts mixtape: no announced show");
                 }
             });
         }
@@ -3125,11 +3141,11 @@ impl App {
         // ── Task C: vibra patch (async, ~10s) ────────────────────────────────
         if let Some(url) = stream_url {
             tokio::spawn(async move {
-                info!("[recognition] vibra task started for url={}", url);
+                debug!("[recognition] vibra task started for url={}", url);
                 let vibra_result = recognize_via_vibra(&url).await;
                 if let Some(json) = vibra_result {
                     let rec_str = vibra_rec_string(&json);
-                    info!("[recognition] vibra result: {:?}", rec_str);
+                    debug!("[recognition] vibra result: {:?}", rec_str);
                     let display = rec_str.clone().unwrap_or_else(|| "?".to_string());
                     let patch = VdsPatch {
                         vibra_rec: rec_str,
@@ -3613,7 +3629,7 @@ async fn run_station_poll_cycle(
                     q.len()
                 };
                 if deferred > 0 {
-                    info!(
+                    debug!(
                         "[poll] cycle #{} non-nts done: {} jobs deferred to next cycle (budget/concurrency)",
                         cycle_id, deferred
                     );
@@ -3667,7 +3683,7 @@ async fn poll_nts_target(
             Ok(Ok(ch)) => {
                 let show = ch.now.broadcast_title.trim().to_string();
                 let show = if show.is_empty() { None } else { Some(show) };
-                info!(
+                debug!(
                     "[poll] [{}/{}] {} resolver=nts-live show={:?}",
                     ord, total, station_name, show
                 );
@@ -3723,7 +3739,7 @@ async fn poll_nts_target(
                     (None, Some("timeout".to_string()))
                 }
             };
-            info!(
+            debug!(
                 "[poll] [{}/{}] {} resolver=nts-mixtape show={:?}",
                 ord, total, station_name, show
             );
@@ -3762,7 +3778,7 @@ async fn poll_non_nts_station_icy(
                 effective_url = next;
             }
             Ok(None) => {
-                info!(
+                debug!(
                     "[poll] [{}/{}] {} resolver=icy-probe playlist-no-target",
                     ord, total, station_name
                 );
@@ -3789,7 +3805,7 @@ async fn poll_non_nts_station_icy(
     }
 
     if looks_hls_url(&effective_url) {
-        info!(
+        debug!(
             "[poll] [{}/{}] {} resolver=icy-probe hls-skip {:?}",
             ord, total, station_name, effective_url
         );
@@ -3841,7 +3857,7 @@ async fn poll_non_nts_station_icy(
         .to_ascii_lowercase();
 
     if content_type.contains("mpegurl") || looks_hls_url(&effective_url) {
-        info!(
+        debug!(
             "[poll] [{}/{}] {} resolver=icy-probe non-icy content-type={}",
             ord, total, station_name, content_type
         );
@@ -3860,7 +3876,7 @@ async fn poll_non_nts_station_icy(
         .and_then(|s| s.parse::<usize>().ok());
 
     let Some(metaint) = metaint else {
-        info!(
+        debug!(
             "[poll] [{}/{}] {} resolver=icy-probe no icy-metaint{}",
             ord,
             total,
@@ -3893,7 +3909,7 @@ async fn poll_non_nts_station_icy(
     .await
     {
         Ok((Some(title), bytes_read)) => {
-            info!(
+            debug!(
                 "[poll] [{}/{}] {} resolver=icy-probe show={:?} bytes={} elapsed={}ms",
                 ord,
                 total,
@@ -3910,7 +3926,7 @@ async fn poll_non_nts_station_icy(
             }
         }
         Ok((None, bytes_read)) => {
-            info!(
+            debug!(
                 "[poll] [{}/{}] {} resolver=icy-probe no-title bytes={} elapsed={}ms",
                 ord,
                 total,

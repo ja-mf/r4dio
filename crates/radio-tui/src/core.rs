@@ -160,7 +160,7 @@ impl DaemonCore {
                 }
 
                 Some(DaemonEvent::ClientCommand(cmd)) => {
-                    info!("DaemonCore: command {:?}", cmd);
+                    debug!("DaemonCore: command {:?}", cmd);
                     if let Err(e) = self.handle_command(cmd).await {
                         error!("DaemonCore: command error: {}", e);
                     }
@@ -249,7 +249,7 @@ impl DaemonCore {
                         }
                     });
                     if val != self.obs_icy_title {
-                        info!("mpv: icy-title {:?} → {:?}", self.obs_icy_title, val);
+                        debug!("mpv: icy-title {:?} → {:?}", self.obs_icy_title, val);
                         self.obs_icy_title = val.clone();
                         self.state_manager.set_icy_title(val.clone()).await;
                         if val != self.last_icy {
@@ -313,7 +313,7 @@ impl DaemonCore {
                     .get("playlist_entry_id")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0);
-                info!(
+                debug!(
                     "mpv: end-file reason={}, file_error={}, playlist_entry_id={}",
                     reason, file_error, playlist_entry_id
                 );
@@ -339,7 +339,7 @@ impl DaemonCore {
                                 let _ = self.broadcast_tx.send(BroadcastMessage::StateUpdated);
                                 self.last_status = PlaybackStatus::Error;
                             } else {
-                                info!("mpv: successfully fell back to direct URL");
+                                warn!("mpv: proxy stream failed; switched to direct URL");
                                 // Update stream_url for VU meter to use direct URL
                                 if let Some(ref mut handle) = self.vu_task_handle {
                                     handle.abort();
@@ -393,13 +393,13 @@ impl DaemonCore {
                     .get("playlist_entry_id")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0);
-                info!("mpv: start-file playlist_entry_id={}", playlist_entry_id);
+                debug!("mpv: start-file playlist_entry_id={}", playlist_entry_id);
                 self.connecting_since = None;
                 self.obs_core_idle = Some(true); // will flip to false when audio flows
                 self.maybe_update_status().await;
             }
             Some("file-loaded") => {
-                info!("mpv: file-loaded — re-issuing observe_property and audio filter");
+                debug!("mpv: file-loaded — re-issuing observe_property and audio filter");
                 // Wait 50ms before re-observing so mpv has settled on the new file,
                 // then re-register observations so mpv pushes current values immediately.
                 if let Some(h) = self.mpv_handle.clone() {
@@ -448,7 +448,7 @@ impl DaemonCore {
         };
 
         if status != self.last_status {
-            info!("DaemonCore: status {:?} → {:?}", self.last_status, status);
+            debug!("DaemonCore: status {:?} → {:?}", self.last_status, status);
             self.last_status = status.clone();
             self.state_manager.set_playback_status(status).await;
             let _ = self.broadcast_tx.send(BroadcastMessage::StateUpdated);
@@ -508,7 +508,7 @@ impl DaemonCore {
             // Try to reconnect to an existing socket first, then spawn fresh.
             let handle = match self.mpv_driver.try_reconnect(event_tx.clone()).await {
                 Some(h) => {
-                    info!("DaemonCore: reconnected to existing mpv socket");
+                    debug!("DaemonCore: reconnected to existing mpv socket");
                     h
                 }
                 None => {
