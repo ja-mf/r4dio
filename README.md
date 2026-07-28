@@ -31,6 +31,16 @@ For stations, mpv and ffmpeg both consume the proxied stream path so visual feed
 2. Extract/open the package
 3. Run `r4dio` (`r4dio.exe` on Windows)
 
+### Homebrew (macOS)
+
+```bash
+# Self-contained app — ships its own Ghostty terminal, double-click to run
+brew install --cask ja-mf/tap/r4dio
+
+# CLI only — uses Homebrew's mpv/ffmpeg/yt-dlp (vibra included for recognition)
+brew install ja-mf/tap/r4dio
+```
+
 ### Build from source
 
 ```bash

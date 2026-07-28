@@ -9,6 +9,10 @@ on:
 permissions:
   contents: write
 
+env:
+  # Pinned Ghostty release bundled into r4dio.app (universal dmg, macOS 13+)
+  GHOSTTY_VERSION: "1.3.1"
+
 jobs:
   build-r4dio-windows:
     runs-on: ubuntu-latest
@@ -298,6 +302,16 @@ jobs:
         with:
           name: vibra-macos-intel
           path: dist/r4dio-macos-x86_64/
+      - name: Package CLI tarball (Homebrew formula)
+        run: |
+          set -euo pipefail
+          CLI=dist/r4dio-macos-x86_64-cli
+          mkdir -p "$CLI"
+          cp dist/r4dio-macos-x86_64/r4dio "$CLI/r4dio"
+          cp dist/r4dio-macos-x86_64/vibra "$CLI/vibra"
+          cp LICENSE "$CLI/LICENSE"
+          chmod +x "$CLI/r4dio" "$CLI/vibra"
+          tar czf "$CLI.tar.gz" -C dist "r4dio-macos-x86_64-cli"
       - name: Bundle mpv + ffmpeg
         env:
           GH_TOKEN: ${{ github.token }}
@@ -342,14 +356,26 @@ jobs:
           curl -fsSL "https://github.com/yt-dlp/yt-dlp/releases/download/2025.08.11/yt-dlp_macos_legacy" -o dist/r4dio-macos-x86_64/yt-dlp
           chmod +x dist/r4dio-macos-x86_64/yt-dlp
           echo "yt-dlp downloaded successfully"
+      - name: Bundle Ghostty terminal
+        run: |
+          set -euo pipefail
+          DIST="dist/r4dio-macos-x86_64"
+          curl -fsSL "https://release.files.ghostty.org/${GHOSTTY_VERSION}/Ghostty.dmg" -o /tmp/ghostty.dmg
+          hdiutil attach /tmp/ghostty.dmg -nobrowse -mountpoint /tmp/ghostty-mount
+          mkdir -p "$DIST/r4dio.app/Contents/MacOS"
+          cp -R /tmp/ghostty-mount/Ghostty.app "$DIST/r4dio.app/Contents/MacOS/Ghostty.app"
+          hdiutil detach /tmp/ghostty-mount
       - name: Add runtime files
         run: |
           set -euo pipefail
           DIST="dist/r4dio-macos-x86_64"
           BUNDLE="$DIST/r4dio.app/Contents/MacOS"
           mkdir -p "$BUNDLE"
+          # Version from git tag (fallback for workflow_dispatch runs)
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then VERSION="${GITHUB_REF_NAME#v}"; else VERSION="0.0.0-dev"; fi
+          echo "Bundling r4dio version $VERSION"
           # Info.plist
-          cat > "$DIST/r4dio.app/Contents/Info.plist" << 'PLIST'
+          cat > "$DIST/r4dio.app/Contents/Info.plist" << PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
@@ -358,9 +384,9 @@ jobs:
             <key>CFBundleIdentifier</key><string>com.ja-mf.r4dio</string>
             <key>CFBundleName</key><string>r4dio</string>
             <key>CFBundlePackageType</key><string>APPL</string>
-            <key>CFBundleShortVersionString</key><string>1.1</string>
-            <key>CFBundleVersion</key><string>2</string>
-            <key>LSMinimumSystemVersion</key><string>10.14</string>
+            <key>CFBundleShortVersionString</key><string>${VERSION}</string>
+            <key>CFBundleVersion</key><string>${VERSION}</string>
+            <key>LSMinimumSystemVersion</key><string>13.0</string>
             <key>NSHighResolutionCapable</key><true/>
           </dict>
           </plist>
@@ -374,6 +400,8 @@ jobs:
           export PATH="$DIR:$PATH"
           if [ -t 0 ]; then
             exec "$DIR/r4dio-bin" "$@"
+          elif [ -x "$DIR/Ghostty.app/Contents/MacOS/ghostty" ]; then
+            exec "$DIR/Ghostty.app/Contents/MacOS/ghostty" -e "$DIR/r4dio-bin"
           else
             osascript -e "tell application \"Terminal\" to activate" \
                       -e "tell application \"Terminal\" to do script \"'$DIR/r4dio-bin'\""
@@ -412,6 +440,11 @@ jobs:
           cp starred.toml "$BUNDLE/starred.toml"
           cp songs.vds.template "$BUNDLE/songs.vds"
           cp LICENSE "$BUNDLE/LICENSE"
+          # Sign the whole bundle ad-hoc (prevents "damaged" Gatekeeper errors)
+          chmod -R u+w "$DIST/r4dio.app"
+          codesign --force --deep --sign - "$DIST/r4dio.app"
+          # Zip the .app for the Homebrew cask
+          ditto -c -k --keepParent "$DIST/r4dio.app" "$DIST-app.zip"
           # Create DMG with Applications symlink for drag-to-install
           mkdir -p /tmp/dmg-staging-intel
           cp -R "$DIST/r4dio.app" /tmp/dmg-staging-intel/
@@ -424,6 +457,14 @@ jobs:
         with:
           name: r4dio-macos-x86_64-package
           path: dist/r4dio-macos-x86_64.dmg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: r4dio-macos-x86_64-appzip
+          path: dist/r4dio-macos-x86_64-app.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: r4dio-macos-x86_64-cli
+          path: dist/r4dio-macos-x86_64-cli.tar.gz
 
   build-r4dio-macos-arm:
     runs-on: macos-14
@@ -466,6 +507,16 @@ jobs:
         with:
           name: vibra-macos-arm
           path: dist/r4dio-macos-arm64/
+      - name: Package CLI tarball (Homebrew formula)
+        run: |
+          set -euo pipefail
+          CLI=dist/r4dio-macos-arm64-cli
+          mkdir -p "$CLI"
+          cp dist/r4dio-macos-arm64/r4dio "$CLI/r4dio"
+          cp dist/r4dio-macos-arm64/vibra "$CLI/vibra"
+          cp LICENSE "$CLI/LICENSE"
+          chmod +x "$CLI/r4dio" "$CLI/vibra"
+          tar czf "$CLI.tar.gz" -C dist "r4dio-macos-arm64-cli"
       - name: Bundle mpv + ffmpeg
         env:
           GH_TOKEN: ${{ github.token }}
@@ -509,14 +560,26 @@ jobs:
           curl -fsSL "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos" -o dist/r4dio-macos-arm64/yt-dlp
           chmod +x dist/r4dio-macos-arm64/yt-dlp
           echo "yt-dlp downloaded successfully"
+      - name: Bundle Ghostty terminal
+        run: |
+          set -euo pipefail
+          DIST="dist/r4dio-macos-arm64"
+          curl -fsSL "https://release.files.ghostty.org/${GHOSTTY_VERSION}/Ghostty.dmg" -o /tmp/ghostty.dmg
+          hdiutil attach /tmp/ghostty.dmg -nobrowse -mountpoint /tmp/ghostty-mount
+          mkdir -p "$DIST/r4dio.app/Contents/MacOS"
+          cp -R /tmp/ghostty-mount/Ghostty.app "$DIST/r4dio.app/Contents/MacOS/Ghostty.app"
+          hdiutil detach /tmp/ghostty-mount
       - name: Add runtime files
         run: |
           set -euo pipefail
           DIST="dist/r4dio-macos-arm64"
           BUNDLE="$DIST/r4dio.app/Contents/MacOS"
           mkdir -p "$BUNDLE"
+          # Version from git tag (fallback for workflow_dispatch runs)
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then VERSION="${GITHUB_REF_NAME#v}"; else VERSION="0.0.0-dev"; fi
+          echo "Bundling r4dio version $VERSION"
           # Info.plist
-          cat > "$DIST/r4dio.app/Contents/Info.plist" << 'PLIST'
+          cat > "$DIST/r4dio.app/Contents/Info.plist" << PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
@@ -525,9 +588,9 @@ jobs:
             <key>CFBundleIdentifier</key><string>com.ja-mf.r4dio</string>
             <key>CFBundleName</key><string>r4dio</string>
             <key>CFBundlePackageType</key><string>APPL</string>
-            <key>CFBundleShortVersionString</key><string>1.0</string>
-            <key>CFBundleVersion</key><string>1</string>
-            <key>LSMinimumSystemVersion</key><string>10.14</string>
+            <key>CFBundleShortVersionString</key><string>${VERSION}</string>
+            <key>CFBundleVersion</key><string>${VERSION}</string>
+            <key>LSMinimumSystemVersion</key><string>13.0</string>
             <key>NSHighResolutionCapable</key><true/>
           </dict>
           </plist>
@@ -541,6 +604,8 @@ jobs:
           export PATH="$DIR:$PATH"
           if [ -t 0 ]; then
             exec "$DIR/r4dio-bin" "$@"
+          elif [ -x "$DIR/Ghostty.app/Contents/MacOS/ghostty" ]; then
+            exec "$DIR/Ghostty.app/Contents/MacOS/ghostty" -e "$DIR/r4dio-bin"
           else
             osascript -e "tell application \"Terminal\" to activate" \
                       -e "tell application \"Terminal\" to do script \"'$DIR/r4dio-bin'\""
@@ -579,6 +644,11 @@ jobs:
           cp starred.toml "$BUNDLE/starred.toml"
           cp songs.vds.template "$BUNDLE/songs.vds"
           cp LICENSE "$BUNDLE/LICENSE"
+          # Sign the whole bundle ad-hoc (prevents "damaged" Gatekeeper errors)
+          chmod -R u+w "$DIST/r4dio.app"
+          codesign --force --deep --sign - "$DIST/r4dio.app"
+          # Zip the .app for the Homebrew cask
+          ditto -c -k --keepParent "$DIST/r4dio.app" "$DIST-app.zip"
           # Create DMG with Applications symlink for drag-to-install
           mkdir -p /tmp/dmg-staging-arm
           cp -R "$DIST/r4dio.app" /tmp/dmg-staging-arm/
@@ -591,6 +661,14 @@ jobs:
         with:
           name: r4dio-macos-arm64-package
           path: dist/r4dio-macos-arm64.dmg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: r4dio-macos-arm64-appzip
+          path: dist/r4dio-macos-arm64-app.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: r4dio-macos-arm64-cli
+          path: dist/r4dio-macos-arm64-cli.tar.gz
 
   release:
     needs:
@@ -624,9 +702,14 @@ jobs:
             r4dio-linux-package/r4dio-linux-x86_64.tar.gz
             r4dio-macos-x86_64-package/r4dio-macos-x86_64.dmg
             r4dio-macos-arm64-package/r4dio-macos-arm64.dmg
+            r4dio-macos-x86_64-appzip/r4dio-macos-x86_64-app.zip
+            r4dio-macos-arm64-appzip/r4dio-macos-arm64-app.zip
+            r4dio-macos-x86_64-cli/r4dio-macos-x86_64-cli.tar.gz
+            r4dio-macos-arm64-cli/r4dio-macos-arm64-cli.tar.gz
           body: |
             **Windows**: unzip `r4dio-windows-x86_64.zip`, run `r4dio.exe`. Binaries in `external/`, data files in `data/`.
-            **macOS**: open DMG, drag `r4dio` to Applications. First launch: right-click → Open to bypass Gatekeeper.
+            **macOS (app)**: open DMG, drag `r4dio` to Applications — ships its own Ghostty terminal, double-click works.
+            **macOS (Homebrew)**: `brew install --cask ja-mf/tap/r4dio` (self-contained app) or `brew install ja-mf/tap/r4dio` (CLI, uses brew's mpv/ffmpeg/yt-dlp).
             **Linux**: `tar xzf r4dio-linux-x86_64.tar.gz && cd r4dio-linux-x86_64 && ./r4dio`
 
             Space = pause · n/p = next/prev · i = identify song · q = quit
@@ -635,3 +718,51 @@ jobs:
             ${{ steps.changelog.outputs.log }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  bump-tap:
+    needs: release
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/checkout@v4
+      - name: Render and publish Homebrew tap
+        env:
+          GH_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          mkdir -p assets && cd assets
+          for f in r4dio-macos-arm64-cli.tar.gz r4dio-macos-x86_64-cli.tar.gz \
+                   r4dio-macos-arm64-app.zip r4dio-macos-x86_64-app.zip; do
+            gh release download "$TAG" --repo ja-mf/r4dio --pattern "$f"
+          done
+          export SHA_CLI_ARM64=$(shasum -a 256 r4dio-macos-arm64-cli.tar.gz | cut -d' ' -f1)
+          export SHA_CLI_X86_64=$(shasum -a 256 r4dio-macos-x86_64-cli.tar.gz | cut -d' ' -f1)
+          export SHA_APP_ARM64=$(shasum -a 256 r4dio-macos-arm64-app.zip | cut -d' ' -f1)
+          export SHA_APP_X86_64=$(shasum -a 256 r4dio-macos-x86_64-app.zip | cut -d' ' -f1)
+          export VERSION
+          cd ..
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/ja-mf/homebrew-tap.git" tap
+          mkdir -p tap/Casks tap/Formula
+          for tpl in homebrew/Casks/*.tpl homebrew/Formula/*.tpl; do
+            rel="${tpl#homebrew/}"
+            out="tap/${rel%.tpl}"
+            mkdir -p "$(dirname "$out")"
+            sed -e "s|@@VERSION@@|${VERSION}|g" \
+                -e "s|@@SHA_CLI_ARM64@@|${SHA_CLI_ARM64}|g" \
+                -e "s|@@SHA_CLI_X86_64@@|${SHA_CLI_X86_64}|g" \
+                -e "s|@@SHA_APP_ARM64@@|${SHA_APP_ARM64}|g" \
+                -e "s|@@SHA_APP_X86_64@@|${SHA_APP_X86_64}|g" \
+                "$tpl" > "$out"
+          done
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks Formula
+          if git diff --cached --quiet; then
+            echo "Tap already up to date"
+          else
+            git commit -m "r4dio ${VERSION}"
+            git push
+          fi
