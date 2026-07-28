@@ -848,3 +848,64 @@ description = "Kinshasa's leading FM station — rumba, soukous, Congolese pop"
 tags        = ["rumba", "soukous", "congolese", "central africa", "african", "french"]
 city        = "Kinshasa"
 country     = "DR Congo"
+
+# ── United States ─────────────────────────────────────────────────────────────
+
+[[station]]
+name        = "Radio Paradise — Main Mix"
+url         = "https://stream.radioparadise.com/aac-320"
+network     = "Radio Paradise"
+description = "Two humans curating eclectic radio because they still believe taste beats the algorithm. No ads, no skip button, no escape."
+tags        = ["eclectic", "indie", "rock", "electronic", "world", "internet radio"]
+country     = "United States"
+
+[[station]]
+name        = "Radio Paradise — Mellow Mix"
+url         = "https://stream.radioparadise.com/mellow-320"
+network     = "Radio Paradise"
+description = "The downtempo channel for when reality is already plenty stimulating."
+tags        = ["eclectic", "mellow", "chill", "acoustic", "downtempo", "internet radio"]
+country     = "United States"
+
+[[station]]
+name        = "Radio Paradise — RockIt!"
+url         = "https://stream.radioparadise.com/rock-320"
+network     = "Radio Paradise"
+description = "Loud guitars for people who have decided to age disgracefully."
+tags        = ["rock", "alternative", "classic rock", "eclectic", "internet radio"]
+country     = "United States"
+
+[[station]]
+name        = "Radio Paradise — The Globe"
+url         = "https://stream.radioparadise.com/world-320"
+network     = "Radio Paradise"
+description = "World music, so you can feel cosmopolitan without leaving your chair or confronting your problems."
+tags        = ["world", "global", "eclectic", "internet radio"]
+country     = "United States"
+
+[[station]]
+name        = "Radio Paradise — Sanctuary"
+url         = "https://stream.radioparadise.com/sanctuary"
+network     = "Radio Paradise"
+description = "Ambient drift for backgrounding your slow, dignified unraveling."
+tags        = ["ambient", "atmospheric", "chill", "instrumental"]
+country     = "United States"
+
+[[station]]
+name        = "Radio Paradise — Serenity"
+url         = "https://stream.radioparadise.com/serenity"
+network     = "Radio Paradise"
+description = "Calm soundscapes that fix nothing, but play very softly while it all goes wrong."
+tags        = ["ambient", "calm", "chill", "meditation", "internet radio"]
+country     = "United States"
+
+# ── Canada ────────────────────────────────────────────────────────────────────
+
+[[station]]
+name        = "Jack 94.5"
+url         = "https://rawlco.leanstream.co/CKCKFM"
+network     = "Rawlco Communications"
+description = "Regina's Greatest Hits — the same few hundred songs on loop until the heat death of the universe. You will sing along."
+tags        = ["adult hits", "classic hits", "hits", "rock", "pop"]
+city        = "Regina"
+country     = "Canada"
