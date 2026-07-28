@@ -47,6 +47,15 @@ pub struct HttpConfig {
 pub struct MpvConfig {
     #[serde(default = "default_volume")]
     pub default_volume: f32,
+    /// Enable mpv's stream cache for network playback.
+    #[serde(default = "default_mpv_cache")]
+    pub cache: bool,
+    /// Target cache duration in seconds.  Kept small so radio stays responsive.
+    #[serde(default = "default_mpv_cache_secs")]
+    pub cache_secs: u64,
+    /// Demuxer readahead in seconds.  Usually matches `cache_secs`.
+    #[serde(default = "default_mpv_demuxer_readahead_secs")]
+    pub demuxer_readahead_secs: u64,
 }
 
 /// User-configurable paths for downloads, cache, and data.
@@ -209,6 +218,9 @@ impl Default for MpvConfig {
     fn default() -> Self {
         Self {
             default_volume: default_volume(),
+            cache: default_mpv_cache(),
+            cache_secs: default_mpv_cache_secs(),
+            demuxer_readahead_secs: default_mpv_demuxer_readahead_secs(),
         }
     }
 }
@@ -246,6 +258,18 @@ fn default_volume() -> f32 {
     0.5
 }
 
+fn default_mpv_cache() -> bool {
+    true
+}
+
+fn default_mpv_cache_secs() -> u64 {
+    4
+}
+
+fn default_mpv_demuxer_readahead_secs() -> u64 {
+    4
+}
+
 fn default_auto_polling() -> bool {
     true
 }
@@ -259,7 +283,7 @@ fn default_max_concurrency() -> usize {
 }
 
 fn default_max_jobs_per_cycle() -> usize {
-    64
+    32
 }
 
 fn default_pipewire_viz() -> bool {
@@ -363,6 +387,9 @@ mod tests {
         assert!(config.stations.m3u_url.starts_with("https://"));
         assert!(config.polling.auto_polling);
         assert_eq!(config.polling.poll_interval_secs, 120);
+        assert!(config.mpv.cache);
+        assert_eq!(config.mpv.cache_secs, 4);
+        assert_eq!(config.mpv.demuxer_readahead_secs, 4);
         assert!(!config.logging.verbose);
         assert_eq!(config.logging.max_total_size_mb, 500);
         assert_eq!(config.logging.cleanup_interval_secs, 300);

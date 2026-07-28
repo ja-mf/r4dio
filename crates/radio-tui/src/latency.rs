@@ -223,13 +223,13 @@ impl TestSignal {
     pub fn generate(&self, duration_ms: u64) -> Vec<i16> {
         let num_samples = (self.sample_rate as u64 * duration_ms / 1000) as usize;
         let mut samples = Vec::with_capacity(num_samples);
-        
+
         for i in 0..num_samples {
             let t = i as f32 / self.sample_rate as f32;
             let value = (t * self.frequency * 2.0 * std::f32::consts::PI).sin();
             samples.push((value * self.amplitude * 32767.0) as i16);
         }
-        
+
         samples
     }
 
@@ -248,12 +248,12 @@ pub async fn measure_broadcast_latency<T: Clone + Send + 'static>(
 ) -> Option<Duration> {
     let start = Instant::now();
     let test_value = unsafe { std::mem::zeroed::<T>() };
-    
+
     // Send test value
     if tx.send(test_value).is_err() {
         return None;
     }
-    
+
     // Wait for receive with timeout
     match tokio::time::timeout(Duration::from_millis(100), rx.recv()).await {
         Ok(Ok(_)) => Some(start.elapsed()),
@@ -273,7 +273,7 @@ mod tests {
             ffmpeg_to_vu_us: Some(10000),
             total_samples: 44100,
         };
-        
+
         let formatted = report.format();
         assert!(formatted.contains("5000us"));
         assert!(formatted.contains("15000us"));
@@ -285,9 +285,9 @@ mod tests {
         let telemetry = PipelineTelemetry::new();
         telemetry.record_proxy_first_byte();
         telemetry.increment_samples(100);
-        
+
         telemetry.reset();
-        
+
         let report = telemetry.report();
         assert_eq!(report.total_samples, 0);
     }
@@ -296,10 +296,10 @@ mod tests {
     fn test_test_signal_generation() {
         let signal = TestSignal::sine_1khz();
         let samples = signal.generate(100); // 100ms
-        
+
         // 44100 Hz * 0.1s = 4410 samples
         assert_eq!(samples.len(), 4410);
-        
+
         // Check amplitude is reasonable
         let max = samples.iter().map(|s| s.abs()).max().unwrap();
         assert!(max > 1000); // Should have significant amplitude

@@ -127,7 +127,7 @@ pub fn draw_keys_bar(
     let keys = match mode {
         InputMode::Normal => match workspace {
             crate::action::Workspace::Radio => {
-                " ↵ ▶/■  spc ⏸  ←→ vol  n⏭  P⏮  r⇀  l⏴last  c cur  ` prev  p poll  !/@ NTS  2/3 panes  / filter  ? help  q quit"
+                " ↵ ▶/■  spc ⏸  F5 reload  ←→ vol  n⏭  P⏮  r⇀  l⏴last  c cur  p poll  ? help  q quit"
             }
             crate::action::Workspace::Files => {
                 " ↵ ▶/■  spc ⏸  ←→ vol  ,/. seek  n⏭  P⏮  / filter  ? help  q quit"

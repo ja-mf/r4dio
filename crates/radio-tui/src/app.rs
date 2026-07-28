@@ -12,7 +12,6 @@ use std::io;
 use std::path::PathBuf;
 use std::time::Duration;
 
-
 use ratatui::crossterm::{
     event::{
         self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
@@ -82,7 +81,7 @@ enum AppMessage {
     RecognitionQueueNext,
     /// Real-time audio RMS level from daemon (dBFS).
     AudioLevel(f32),
-    /// Raw PCM chunk (mono f32 normalised -1..1, 44100 Hz) for scope display.
+    /// Raw PCM chunk (mono f32 normalised -1..1, 22050 Hz) for scope display.
     PcmChunk {
         samples: std::sync::Arc<Vec<f32>>,
         captured_at: std::time::Instant,
@@ -91,7 +90,9 @@ enum AppMessage {
     /// Independent render tick — drives VU-meter animation / peak decay.
     MeterTick,
     /// Audio-output latency reported by the viz source (microseconds).
-    VizLatencyReport { latency_us: u64 },
+    VizLatencyReport {
+        latency_us: u64,
+    },
     /// Download completed (success or failure).
     DownloadComplete {
         url: String,
@@ -108,9 +109,9 @@ enum AppMessage {
     },
 }
 
-const STREAM_PCM_RATE_HZ: usize = 44_100;
-const METER_FPS: usize = 25;
-const STREAM_FRAME_SAMPLES: usize = STREAM_PCM_RATE_HZ / METER_FPS; // 1764 @ 44.1kHz
+const STREAM_PCM_RATE_HZ: usize = 22_050;
+const METER_FPS: usize = 18;
+const STREAM_FRAME_SAMPLES: usize = STREAM_PCM_RATE_HZ / METER_FPS; // 1225 @ 22.05kHz
 const PCM_RING_MAX: usize = STREAM_PCM_RATE_HZ * 2; // ~2 seconds for scope history
 /// Minimum wall-clock gap between two consecutive `terminal.draw()` calls (~24 fps ceiling).
 /// Timer-driven redraws (maintenance tick, meter tick) are coalesced when they fire faster
@@ -141,7 +142,7 @@ const NTS_MAX_STAGGER_MS: u64 = 200; // Maximum delay between NTS requests (rand
 //
 // Defaults:
 //   max_concurrency=3  (reduced from 6 for lower CPU usage on slower machines)
-//   max_jobs_per_cycle=64
+//   max_jobs_per_cycle=32
 const NON_NTS_CYCLE_BUDGET_SECS: u64 = 30;
 const NON_NTS_CONNECT_TIMEOUT_MS: u64 = 4_000;
 const NON_NTS_REQUEST_TIMEOUT_MS: u64 = 8_000;
@@ -165,6 +166,14 @@ enum StationPollTarget {
 }
 
 impl StationPollTarget {
+    fn station_name(&self) -> &str {
+        match self {
+            Self::NtsLive { station_name, .. }
+            | Self::NtsMixtape { station_name, .. }
+            | Self::NonNtsIcy { station_name, .. } => station_name,
+        }
+    }
+
     fn resolver_label(&self) -> &'static str {
         match self {
             Self::NtsLive { .. } => "nts-live",
@@ -357,6 +366,7 @@ pub struct App {
     non_nts_poll_cursor: usize,
     poll_max_concurrency: usize,
     poll_max_jobs_per_cycle: usize,
+    poll_error_counts: HashMap<(String, String), usize>,
 
     /// Set to true whenever UI session state changes; flushed to disk every 5 s
     /// by `ui_save_tick` instead of on every keypress.
@@ -543,7 +553,8 @@ impl App {
             auto_poll_cycle_errors: 0,
             non_nts_poll_cursor: 0,
             poll_max_concurrency,
-            poll_max_jobs_per_cycle,
+            poll_max_jobs_per_cycle: poll_max_jobs_per_cycle.clamp(1, 32),
+            poll_error_counts: HashMap::new(),
             ui_state_dirty: false,
         };
 
@@ -623,9 +634,15 @@ impl App {
                             BroadcastMessage::IcyUpdated(title) => AppMessage::IcyUpdated(title),
                             BroadcastMessage::Log(s) => AppMessage::Log(s),
                             BroadcastMessage::AudioLevel(rms) => AppMessage::AudioLevel(rms),
-                            BroadcastMessage::PcmChunk { samples, captured_at, source } => {
-                                AppMessage::PcmChunk { samples, captured_at, source }
-                            }
+                            BroadcastMessage::PcmChunk {
+                                samples,
+                                captured_at,
+                                source,
+                            } => AppMessage::PcmChunk {
+                                samples,
+                                captured_at,
+                                source,
+                            },
                             BroadcastMessage::VizLatencyReport { latency_us } => {
                                 AppMessage::VizLatencyReport { latency_us }
                             }
@@ -759,18 +776,21 @@ impl App {
                         all.extend(self.help_overlay.tick(s));
                         all
                     };
+                    let mut maintenance_changed = !tick_actions.is_empty();
                     for action in tick_actions {
                         self.dispatch(action).await;
                     }
                     // Toast expiry + intent timeouts
-                    self.toast.tick();
-                    self.intent_pause.tick();
-                    self.intent_volume.tick();
-                    self.intent_station.tick();
+                    maintenance_changed |= self.toast.tick();
+                    maintenance_changed |= self.intent_pause.tick();
+                    maintenance_changed |= self.intent_volume.tick();
+                    maintenance_changed |= self.intent_station.tick();
                     self.state.pause_hint = self.intent_pause.render_state();
                     self.state.volume_hint = self.intent_volume.render_state();
                     self.state.station_hint = self.intent_station.render_state();
-                    needs_redraw = true;
+                    if maintenance_changed {
+                        needs_redraw = true;
+                    }
                 }
 
                 _ = nts_refresh.tick() => {
@@ -992,12 +1012,25 @@ impl App {
 
                 if let Some(err) = outcome.error {
                     self.auto_poll_cycle_errors += 1;
-                    warn!(
-                        "[poll] {} resolver={} error={} ",
-                        outcome.station_name, outcome.resolver, err
-                    );
+                    let key = (outcome.station_name.clone(), outcome.resolver.clone());
+                    let count = self.poll_error_counts.entry(key).or_insert(0);
+                    *count = count.saturating_add(1);
+                    if *count == 1 || *count == 5 || *count % 25 == 0 {
+                        warn!(
+                            "[poll] {} resolver={} repeated_errors={} error={}",
+                            outcome.station_name, outcome.resolver, *count, err
+                        );
+                    } else {
+                        debug!(
+                            "[poll] {} resolver={} repeated_errors={} error={}",
+                            outcome.station_name, outcome.resolver, *count, err
+                        );
+                    }
                     return false;
                 }
+
+                self.poll_error_counts
+                    .remove(&(outcome.station_name.clone(), outcome.resolver.clone()));
 
                 let active_station_name = self
                     .state
@@ -1078,7 +1111,8 @@ impl App {
                 }
 
                 self.auto_poll_in_flight = false;
-                let missing = (self.auto_poll_cycle_total as isize) - (self.auto_poll_cycle_seen as isize);
+                let missing =
+                    (self.auto_poll_cycle_total as isize) - (self.auto_poll_cycle_seen as isize);
                 if missing > 0 {
                     warn!(
                         "[poll] cycle #{} complete in {}ms — MISSING {} outcomes (targets={} seen={}, changed={}, unchanged={}, errors={})",
@@ -1236,7 +1270,11 @@ impl App {
                 return false;
             }
 
-            AppMessage::PcmChunk { samples, captured_at: _, source } => {
+            AppMessage::PcmChunk {
+                samples,
+                captured_at: _,
+                source,
+            } => {
                 // Track which source is active so MeterTick can adapt its
                 // jitter buffer strategy.
                 self.state.viz_source = Some(source);
@@ -1348,14 +1386,14 @@ impl App {
                             // Multi-band onset strength: half-wave-rectified frame-to-frame
                             // energy increase, weighted by perceptual importance to beat detection.
                             // Approximates spectral flux without FFT (à la BTrack energy difference).
-                            let onset = (bass  - self.state.prev_bass_db).max(0.0) * 0.50
-                                      + (mid   - self.state.prev_mid_db).max(0.0)  * 0.30
-                                      + (treble - self.state.prev_treble_db).max(0.0) * 0.20;
-                            self.state.prev_bass_db   = bass;
-                            self.state.prev_mid_db    = mid;
+                            let onset = (bass - self.state.prev_bass_db).max(0.0) * 0.50
+                                + (mid - self.state.prev_mid_db).max(0.0) * 0.30
+                                + (treble - self.state.prev_treble_db).max(0.0) * 0.20;
+                            self.state.prev_bass_db = bass;
+                            self.state.prev_mid_db = mid;
                             self.state.prev_treble_db = treble;
-                            self.state.bass_db   = bass;
-                            self.state.mid_db    = mid;
+                            self.state.bass_db = bass;
+                            self.state.mid_db = mid;
                             self.state.treble_db = treble;
                             self.state.bpm_estimator.push_onset(onset);
                             self.state.tempo_lock.push_onset(onset);
@@ -1815,7 +1853,10 @@ impl App {
             KeyCode::Char('?') if self.state.input_mode == InputMode::Normal => {
                 return vec![Action::ToggleHelp];
             }
-            KeyCode::Char('l') if self.state.input_mode == InputMode::Normal && key.modifiers == KeyModifiers::NONE => {
+            KeyCode::Char('l')
+                if self.state.input_mode == InputMode::Normal
+                    && key.modifiers == KeyModifiers::NONE =>
+            {
                 return vec![Action::PlayLast];
             }
             KeyCode::Char('l') if key.modifiers == KeyModifiers::CONTROL => {
@@ -1855,6 +1896,7 @@ impl App {
         if self.state.input_mode == InputMode::Normal {
             match key.code {
                 KeyCode::Char(' ') => return vec![Action::TogglePause],
+                KeyCode::F(5) => return vec![Action::ReloadCurrent],
                 KeyCode::Char('n') => return vec![Action::Next],
                 KeyCode::Char('p') => return vec![Action::ToggleAutoPolling],
                 KeyCode::Char('P') => return vec![Action::Prev],
@@ -2149,6 +2191,10 @@ impl App {
             }
             Action::Stop => {
                 self.send_cmd(Command::Stop).await;
+            }
+            Action::ReloadCurrent => {
+                self.toast.info("reloading stream".to_string());
+                self.send_cmd(Command::ReloadCurrent).await;
             }
             Action::TogglePause => {
                 // Intent: flip the current is_playing state
@@ -2745,8 +2791,22 @@ impl App {
                     .split(bottom_area);
                 let icy_sum = self.icy_ticker.collapse_summary(&self.state);
                 let songs_sum = self.songs_ticker.collapse_summary(&self.state);
-                draw_collapsed_pane(frame, halves[0], "icy history", Some('2'), icy_sum.as_deref(), icy_focused);
-                draw_collapsed_pane(frame, halves[1], "logged mixtapes/songs", Some('3'), songs_sum.as_deref(), songs_focused);
+                draw_collapsed_pane(
+                    frame,
+                    halves[0],
+                    "icy history",
+                    Some('2'),
+                    icy_sum.as_deref(),
+                    icy_focused,
+                );
+                draw_collapsed_pane(
+                    frame,
+                    halves[1],
+                    "logged mixtapes/songs",
+                    Some('3'),
+                    songs_sum.as_deref(),
+                    songs_focused,
+                );
                 self.pane_areas.icy_ticker = halves[0];
                 self.pane_areas.songs_ticker = halves[1];
             }
@@ -2758,7 +2818,14 @@ impl App {
                     .constraints([Constraint::Length(1), Constraint::Min(0)])
                     .split(bottom_area);
                 let icy_sum = self.icy_ticker.collapse_summary(&self.state);
-                draw_collapsed_pane(frame, rows[0], "icy history", Some('2'), icy_sum.as_deref(), icy_focused);
+                draw_collapsed_pane(
+                    frame,
+                    rows[0],
+                    "icy history",
+                    Some('2'),
+                    icy_sum.as_deref(),
+                    icy_focused,
+                );
                 self.songs_ticker.borders = Borders::ALL;
                 self.songs_ticker
                     .draw(frame, rows[1], songs_focused, &self.state);
@@ -2776,7 +2843,14 @@ impl App {
                 self.icy_ticker
                     .draw(frame, rows[0], icy_focused, &self.state);
                 let songs_sum = self.songs_ticker.collapse_summary(&self.state);
-                draw_collapsed_pane(frame, rows[1], "logged mixtapes/songs", Some('3'), songs_sum.as_deref(), songs_focused);
+                draw_collapsed_pane(
+                    frame,
+                    rows[1],
+                    "logged mixtapes/songs",
+                    Some('3'),
+                    songs_sum.as_deref(),
+                    songs_focused,
+                );
                 self.pane_areas.icy_ticker = rows[0];
                 self.pane_areas.songs_ticker = rows[1];
             }
@@ -2862,7 +2936,14 @@ impl App {
         if file_collapsed {
             use crate::widgets::pane_chrome::draw_collapsed_pane;
             let summary = self.file_list.collapse_summary(&self.state);
-            draw_collapsed_pane(frame, left_area, "files", None, summary.as_deref(), file_focused);
+            draw_collapsed_pane(
+                frame,
+                left_area,
+                "files",
+                None,
+                summary.as_deref(),
+                file_focused,
+            );
         } else {
             self.file_list.borders = Borders::TOP | Borders::LEFT | Borders::BOTTOM;
             self.file_list
@@ -2903,7 +2984,14 @@ impl App {
         if meta_collapsed {
             use crate::widgets::pane_chrome::draw_collapsed_pane;
             let summary = self.file_meta.collapse_summary(&self.state);
-            draw_collapsed_pane(frame, rows[0], "meta", None, summary.as_deref(), meta_focused);
+            draw_collapsed_pane(
+                frame,
+                rows[0],
+                "meta",
+                None,
+                summary.as_deref(),
+                meta_focused,
+            );
         } else {
             self.file_meta.borders = Borders::ALL;
             self.file_meta
@@ -2913,7 +3001,14 @@ impl App {
         if icy_collapsed {
             use crate::widgets::pane_chrome::draw_collapsed_pane;
             let summary = self.icy_ticker.collapse_summary(&self.state);
-            draw_collapsed_pane(frame, rows[1], "icy history", Some('2'), summary.as_deref(), icy_focused);
+            draw_collapsed_pane(
+                frame,
+                rows[1],
+                "icy history",
+                Some('2'),
+                summary.as_deref(),
+                icy_focused,
+            );
         } else {
             // Omit top border if meta is expanded above (shares bottom/top edge)
             self.icy_ticker.borders = if meta_collapsed {
@@ -2928,7 +3023,14 @@ impl App {
         if songs_collapsed {
             use crate::widgets::pane_chrome::draw_collapsed_pane;
             let summary = self.songs_ticker.collapse_summary(&self.state);
-            draw_collapsed_pane(frame, rows[2], "logged mixtapes/songs", Some('3'), summary.as_deref(), songs_focused);
+            draw_collapsed_pane(
+                frame,
+                rows[2],
+                "logged mixtapes/songs",
+                Some('3'),
+                summary.as_deref(),
+                songs_focused,
+            );
         } else {
             // Omit top border if icy is expanded above
             self.songs_ticker.borders = if icy_collapsed {
@@ -2975,7 +3077,20 @@ impl App {
         }
 
         let stations = self.state.daemon_state.stations.clone();
-        let targets = build_station_poll_targets(&stations, &mut self.non_nts_poll_cursor, self.poll_max_jobs_per_cycle);
+        let active_station_name = self
+            .state
+            .daemon_state
+            .current_station
+            .and_then(|idx| stations.get(idx))
+            .map(|s| s.name.clone());
+        let mut targets = build_station_poll_targets(
+            &stations,
+            &mut self.non_nts_poll_cursor,
+            self.poll_max_jobs_per_cycle,
+        );
+        if let Some(active) = active_station_name.as_deref() {
+            targets.retain(|target| target.station_name() != active);
+        }
         let target_count = targets.len();
         if target_count == 0 {
             debug!("[poll] skip cycle (no resolvable polling targets)");
@@ -3024,12 +3139,12 @@ impl App {
         );
 
         let max_concurrency = self.poll_max_concurrency;
-        
+
         // Small initial yield to prevent UI freeze when spawning many tasks
         tokio::spawn(async move {
             // Yield immediately to let UI thread process events
             tokio::task::yield_now().await;
-            
+
             let started = std::time::Instant::now();
             debug!("[poll] cycle #{} task spawned", cycle_id);
             run_station_poll_cycle(targets, tx.clone(), cycle_id, max_concurrency).await;
@@ -3402,12 +3517,12 @@ async fn run_station_poll_cycle(
 
     for (idx, target) in targets.into_iter().enumerate() {
         let ord = idx + 1;
-        
+
         // Yield every 8 spawns to prevent UI freeze
         if idx % 8 == 0 && idx > 0 {
             tokio::task::yield_now().await;
         }
-        
+
         match target {
             StationPollTarget::NonNtsIcy {
                 station_name,
@@ -3419,7 +3534,10 @@ async fn run_station_poll_cycle(
                     stream_url,
                 });
             }
-            StationPollTarget::NtsMixtape { station_name, mixtape_url } => {
+            StationPollTarget::NtsMixtape {
+                station_name,
+                mixtape_url,
+            } => {
                 mixtape_queue.push_back(MixtapePollJob {
                     ord,
                     station_name,
@@ -3442,7 +3560,7 @@ async fn run_station_poll_cycle(
     let non_nts_total = non_nts_queue.len();
     let mixtape_total = mixtape_queue.len();
     let nts_live_total = total - non_nts_total - mixtape_total;
-    
+
     debug!(
         "[poll] cycle #{} scheduling: nts-live={} mixtapes={} non-nts={}",
         cycle_id, nts_live_total, mixtape_total, non_nts_total,
@@ -3455,12 +3573,12 @@ async fn run_station_poll_cycle(
         // Single worker for mixtapes to prevent CPU spike - gentle on NTS servers
         let mixtape_concurrency = 1usize;
         let worker_count = mixtape_concurrency.min(mixtape_total).max(1);
-        
+
         debug!(
             "[poll] cycle #{} launching {} workers for {} mixtape jobs",
             cycle_id, worker_count, mixtape_total
         );
-        
+
         for worker_idx in 0..worker_count {
             let queue = queue.clone();
             let txw = tx.clone();
@@ -3474,13 +3592,14 @@ async fn run_station_poll_cycle(
                     let Some(job) = job else {
                         break;
                     };
-                    
+
                     // Random stagger 100-200ms between requests
-                    let delay_ms = NTS_MIN_STAGGER_MS + (rand::random::<u64>() % (NTS_MAX_STAGGER_MS - NTS_MIN_STAGGER_MS + 1));
+                    let delay_ms = NTS_MIN_STAGGER_MS
+                        + (rand::random::<u64>() % (NTS_MAX_STAGGER_MS - NTS_MIN_STAGGER_MS + 1));
                     if delay_ms > 0 {
                         tokio::time::sleep(Duration::from_millis(delay_ms)).await;
                     }
-                    
+
                     let job_start = std::time::Instant::now();
                     let target = StationPollTarget::NtsMixtape {
                         station_name: job.station_name.clone(),
@@ -3488,7 +3607,7 @@ async fn run_station_poll_cycle(
                     };
                     let outcome = poll_nts_target(target, job.ord, total).await;
                     let job_ms = job_start.elapsed().as_millis();
-                    
+
                     debug!(
                         "[poll] mixtape-worker={} done job {}/{} '{}' elapsed={}ms",
                         worker_idx, job.ord, total, job.station_name, job_ms
@@ -3509,21 +3628,27 @@ async fn run_station_poll_cycle(
     // Wait for NTS Live + Mixtape to complete (they run concurrently)
     let nts_pending = nts_live_join.len();
     if nts_pending > 0 {
-        debug!("[poll] cycle #{} waiting on {} nts-live tasks", cycle_id, nts_pending);
+        debug!(
+            "[poll] cycle #{} waiting on {} nts-live tasks",
+            cycle_id, nts_pending
+        );
     }
     while let Some(joined) = nts_live_join.join_next().await {
         if let Err(e) = joined {
             warn!("[poll] nts-live task join error: {}", e);
         }
     }
-    
+
     // Wait for mixtape workers
     while let Some(joined) = mixtape_workers.join_next().await {
         if let Err(e) = joined {
             warn!("[poll] mixtape worker join error: {}", e);
         }
     }
-    debug!("[poll] cycle #{} nts-live + mixtape tasks finished", cycle_id);
+    debug!(
+        "[poll] cycle #{} nts-live + mixtape tasks finished",
+        cycle_id
+    );
 
     // Now launch non-NTS worker pool (runs after NTS tasks complete)
     let mut non_nts_workers = tokio::task::JoinSet::new();
@@ -4126,7 +4251,6 @@ fn adaptive_icy_blocks(metaint: usize) -> usize {
         NON_NTS_ICY_BLOCKS
     }
 }
-
 
 // ── NTS fetch ─────────────────────────────────────────────────────────────────
 

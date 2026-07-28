@@ -91,7 +91,9 @@ fn get_smoothed_rms_position(target_frac: f32, style: MeterStyle) -> f32 {
         MeterStyle::Analog => &ANALOG_PHYSICS,
     };
 
-    let mut phys = physics.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut phys = physics
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     phys.update(target_frac)
 }
 
@@ -150,25 +152,25 @@ impl MeterChars {
 
     /// LED: Dotted segments that blend together smoothly
     const LED: Self = Self {
-        bg: '·',        // Small dot for inactive (subtle)
-        fg: '●',        // Large dot for active (connected look)
+        bg: '·', // Small dot for inactive (subtle)
+        fg: '●', // Large dot for active (connected look)
         fractional: &['·', '·', '•', '•', '●', '●', '●'],
-        peak: '⬤',      // Largest dot at peak
+        peak: '⬤', // Largest dot at peak
         rms: &['○', '◐', '⬤'],
         trail: &['·', '•', '●'],
-        segment_gap: None,       // No gap - dots blend together
+        segment_gap: None, // No gap - dots blend together
         segment_width: 1,
     };
 
     /// LED Dense: Even tighter with half-width feel
     const LED_DENSE: Self = Self {
-        bg: '│',        // Thin vertical line
-        fg: '┃',        // Thick vertical line  
+        bg: '│', // Thin vertical line
+        fg: '┃', // Thick vertical line
         fractional: &['▏', '▎', '▍', '▌', '▋', '▊', '▉'],
         peak: '▌',
         rms: &['◆', '●', '⬤'],
         trail: &['·', '•', '●'],
-        segment_gap: None,       // No gap, segments touch
+        segment_gap: None, // No gap, segments touch
         segment_width: 1,
     };
 
@@ -455,7 +457,7 @@ fn build_studio_meter(vu_db: f32, peak_db: f32, instant_db: f32, width: usize) -
     let full_cells = total_eighths / 8;
     let partial = total_eighths % 8;
     let peak_cell = ((peak_frac * width as f32) as usize).min(width.saturating_sub(1));
-    
+
     // Instant marker also smoothed but less so
     let smoothed_instant_frac = get_smoothed_rms_position(instant_frac, MeterStyle::Studio);
     let instant_pos = smoothed_instant_frac * width as f32;
@@ -483,7 +485,8 @@ fn build_studio_meter(vu_db: f32, peak_db: f32, instant_db: f32, width: usize) -
 
         let is_peak = i == peak_cell && peak_db > DB_MIN + 1.0;
         let is_instant = i == instant_cell && instant_db > DB_MIN + 1.0;
-        let is_trail = i >= stela_start && i < stela_end && i > full_cells && instant_db > DB_MIN + 1.0;
+        let is_trail =
+            i >= stela_start && i < stela_end && i > full_cells && instant_db > DB_MIN + 1.0;
         let stela_distance = if is_trail {
             (i - instant_cell) as f32 / stela_length as f32
         } else {
@@ -506,7 +509,11 @@ fn build_studio_meter(vu_db: f32, peak_db: f32, instant_db: f32, width: usize) -
         } else if i < full_cells {
             (chars.fg, fill_color)
         } else if i == full_cells && partial > 0 {
-            let frac_char = chars.fractional.get(partial - 1).copied().unwrap_or(chars.fg);
+            let frac_char = chars
+                .fractional
+                .get(partial - 1)
+                .copied()
+                .unwrap_or(chars.fg);
             (frac_char, fill_color)
         } else {
             (chars.bg, empty_color)
@@ -550,8 +557,10 @@ fn build_led_meter(vu_db: f32, peak_db: f32, instant_db: f32, width: usize) -> L
     let num_segments = width / unit_width;
 
     let lit_segments = (smoothed_rms_frac * num_segments as f32) as usize;
-    let peak_segment = ((peak_frac * num_segments as f32) as usize).min(num_segments.saturating_sub(1));
-    let instant_segment = ((smoothed_instant_frac * num_segments as f32) as usize).min(num_segments.saturating_sub(1));
+    let peak_segment =
+        ((peak_frac * num_segments as f32) as usize).min(num_segments.saturating_sub(1));
+    let instant_segment = ((smoothed_instant_frac * num_segments as f32) as usize)
+        .min(num_segments.saturating_sub(1));
 
     let rms_char = select_rms_char(energy, chars.rms);
 
@@ -680,7 +689,11 @@ fn build_analog_meter(vu_db: f32, peak_db: f32, instant_db: f32, width: usize) -
         // Trail behind needle
         let trail_dist = if i < needle_pos {
             let dist = (needle_pos - i) as f32 / trail_len.max(1) as f32;
-            if dist < 1.0 { Some(dist) } else { None }
+            if dist < 1.0 {
+                Some(dist)
+            } else {
+                None
+            }
         } else {
             None
         };
@@ -798,15 +811,15 @@ mod tests {
     #[test]
     fn test_physics_smoothing() {
         let mut phys = RmsPhysics::new();
-        
+
         // Should start at 0 and move toward target
         let pos1 = phys.update(1.0);
         assert!(pos1 > 0.0 && pos1 < 1.0);
-        
+
         // Should continue approaching target
         let pos2 = phys.update(1.0);
         assert!(pos2 > pos1);
-        
+
         // Should eventually reach target
         let mut pos = pos2;
         for _ in 0..100 {

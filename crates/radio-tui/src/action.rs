@@ -33,6 +33,7 @@ pub enum Action {
     PlayFileAt(String, f64),     // play file starting at position
     PlayFilePaused(String, f64), // play file paused at position
     Stop,
+    ReloadCurrent,
     TogglePause,
     Next,
     Prev,

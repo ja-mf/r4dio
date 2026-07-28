@@ -11,6 +11,9 @@
 *.swo
 *~
 
+# Agent tooling
+.serena/
+
 # OS
 .DS_Store
 Thumbs.db

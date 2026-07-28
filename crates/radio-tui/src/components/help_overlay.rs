@@ -101,6 +101,7 @@ impl Component for HelpOverlay {
             help_row("l", "⏴ play last station"),
             help_row("m", "⊘ mute toggle"),
             help_row("i", "identify current song"),
+            help_row("F5", "reload current stream"),
             help_row("d", "download NTS episode"),
             Line::from(""),
             Line::from(Span::styled(

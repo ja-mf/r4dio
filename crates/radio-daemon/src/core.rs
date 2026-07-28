@@ -103,6 +103,7 @@ impl DaemonCore {
         let initial_volume = state_manager.get_state().await.volume;
         let mut mpv_driver = MpvDriver::new();
         mpv_driver.last_volume = initial_volume;
+        mpv_driver.configure_cache(&config.mpv);
 
         Ok(Self {
             config,
@@ -329,11 +330,7 @@ impl DaemonCore {
                     .and_then(|v| v.as_str())
                     .unwrap_or("unknown");
                 // mpv provides additional error details in the "error" field
-                let error_detail = evt
-                    .raw
-                    .get("error")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
+                let error_detail = evt.raw.get("error").and_then(|v| v.as_str()).unwrap_or("");
                 if !error_detail.is_empty() {
                     warn!("mpv: end-file reason={} error=\"{}\"", reason, error_detail);
                 } else {
@@ -583,6 +580,7 @@ impl DaemonCore {
                 self.play_file(path, Some(start_secs), true).await?
             }
             Command::Stop => self.stop().await?,
+            Command::ReloadCurrent => self.reload_current().await?,
             Command::Next => self.next().await?,
             Command::Prev => self.prev().await?,
             Command::Random => self.random().await?,
@@ -673,6 +671,19 @@ impl DaemonCore {
             let _ = self.broadcast_tx.send(BroadcastMessage::IcyUpdated(None));
         }
         let _ = self.broadcast_tx.send(BroadcastMessage::StateUpdated);
+        Ok(())
+    }
+
+    async fn reload_current(&mut self) -> anyhow::Result<()> {
+        let state = self.state_manager.get_state().await;
+        if let Some(idx) = state.current_station {
+            info!("Reloading current station idx={}", idx);
+            self.play_station(idx).await?;
+        } else if let Some(path) = state.current_file {
+            let start = state.time_pos_secs;
+            info!("Reloading current file: {}", path);
+            self.play_file(path, start, state.is_paused).await?;
+        }
         Ok(())
     }
 

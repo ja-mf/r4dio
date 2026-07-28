@@ -194,7 +194,7 @@ async fn stream_station(
     State(state): State<ProxyState>,
 ) -> impl IntoResponse {
     info!("proxy: new subscriber request for idx={}", idx);
-    
+
     let shared = match state.get_or_start_stream(idx).await {
         Ok(s) => {
             debug!(
@@ -206,7 +206,10 @@ async fn stream_station(
             s
         }
         Err(code) => {
-            warn!("proxy: failed to start stream for idx={}, status={}", idx, code);
+            warn!(
+                "proxy: failed to start stream for idx={}, status={}",
+                idx, code
+            );
             return Response::builder()
                 .status(code)
                 .body(Body::empty())
@@ -253,9 +256,7 @@ async fn stream_station(
     builder.body(Body::from_stream(stream)).unwrap()
 }
 
-pub fn start_server(
-    state_manager: Arc<StateManager>,
-) -> tokio::task::JoinHandle<()> {
+pub fn start_server(state_manager: Arc<StateManager>) -> tokio::task::JoinHandle<()> {
     let proxy_state = ProxyState::new(state_manager);
     let app = Router::new()
         .route("/stream/:idx", get(stream_station))

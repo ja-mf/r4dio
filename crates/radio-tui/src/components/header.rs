@@ -157,7 +157,6 @@ fn tempo_lock_bulb_color(state: &AppState) -> Color {
     )
 }
 
-
 /// Calculate title text color from lamp level.
 fn title_text_color(state: &AppState) -> Color {
     let level = title_lamp_level(state);

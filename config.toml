@@ -27,6 +27,14 @@ port = 8989
 # Default volume level (0.0 - 1.0)
 default_volume = 0.5
 
+# Enable a small mpv network cache to absorb brief radio stream stalls.
+cache = true
+
+# Target cache/readahead duration in seconds.  4s keeps radio responsive while
+# avoiding the sub-second underruns common on uneven streams.
+cache_secs = 4
+demuxer_readahead_secs = 4
+
 [stations]
 # Path to the stations TOML file (local file)
 # On Windows portable, this can be a relative path like "stations.toml"
@@ -51,8 +59,8 @@ poll_interval_secs = 120
 # Lower values reduce CPU/network load on slower machines. Default: 3
 max_concurrency = 3
 
-# Maximum number of stations to poll per cycle. Default: 64
-max_jobs_per_cycle = 64
+# Maximum number of stations to poll per cycle. Default: 32
+max_jobs_per_cycle = 32
 
 [viz]
 # Use PipeWire/PulseAudio monitor for VU meter and oscilloscope visualization (Linux only)

@@ -110,12 +110,16 @@ impl ToastManager {
     }
 
     /// Remove expired toasts and advance the spinner frame. Call each tick.
-    pub fn tick(&mut self) {
+    /// Returns true when the visible toast state changed.
+    pub fn tick(&mut self) -> bool {
+        let had_spinner = self.spinner.is_some();
+        let before_len = self.toasts.len();
         let now = Instant::now();
         self.toasts.retain(|t| t.expires > now);
         if let Some(ref mut s) = self.spinner {
             s.frame = (s.frame + 1) % SPINNER_FRAMES.len();
         }
+        had_spinner || self.toasts.len() != before_len
     }
 
     pub fn is_empty(&self) -> bool {

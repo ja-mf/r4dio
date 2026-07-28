@@ -14,7 +14,7 @@ use tracing::{debug, error, info, warn};
 use crate::BroadcastMessage;
 
 const VU_WINDOW_SAMPLES: usize = 1024;
-const VU_SAMPLE_RATE: u32 = 44100;
+const VU_SAMPLE_RATE: u32 = 22050;
 
 /// Spawn a task that captures audio from PipeWire/PulseAudio monitor
 /// and broadcasts PcmChunk messages.
@@ -100,13 +100,13 @@ async fn run_pipewire_capture(
         };
 
         let simple = match Simple::new(
-            None,                  // Use default server
-            "r4dio-viz",          // Application name
-            Direction::Record,     // Record from output monitor
-            device_name,           // Device (None = default)
-            "visualizer",         // Stream description
+            None,              // Use default server
+            "r4dio-viz",       // Application name
+            Direction::Record, // Record from output monitor
+            device_name,       // Device (None = default)
+            "visualizer",      // Stream description
             &spec,
-            None,                  // Use default channel map
+            None, // Use default channel map
             Some(&attrs),
         ) {
             Ok(s) => s,
@@ -123,7 +123,7 @@ async fn run_pipewire_capture(
             let buffer_bytes = unsafe {
                 std::slice::from_raw_parts_mut(
                     buffer.as_mut_ptr() as *mut u8,
-                    buffer.len() * std::mem::size_of::<i16>()
+                    buffer.len() * std::mem::size_of::<i16>(),
                 )
             };
             match simple.read(buffer_bytes) {

@@ -9,18 +9,35 @@ pub const PROTOCOL_VERSION: u32 = 1;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "cmd")]
 pub enum Command {
-    Play { station_idx: usize },
-    PlayFile { path: String },
-    PlayFileAt { path: String, start_secs: f64 },
-    PlayFilePausedAt { path: String, start_secs: f64 },
+    Play {
+        station_idx: usize,
+    },
+    PlayFile {
+        path: String,
+    },
+    PlayFileAt {
+        path: String,
+        start_secs: f64,
+    },
+    PlayFilePausedAt {
+        path: String,
+        start_secs: f64,
+    },
     Stop,
+    ReloadCurrent,
     Next,
     Prev,
     Random,
     TogglePause,
-    Volume { value: f32 },
-    SeekRelative { seconds: f64 },
-    SeekTo { seconds: f64 },
+    Volume {
+        value: f32,
+    },
+    SeekRelative {
+        seconds: f64,
+    },
+    SeekTo {
+        seconds: f64,
+    },
     GetState,
     /// Enable latency telemetry for debugging.
     EnableTelemetry,

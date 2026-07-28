@@ -148,7 +148,11 @@ impl BandEnergy {
                 (20.0 * rms.log10()) as f32
             }
         };
-        (to_db(self.bass_sum), to_db(self.mid_sum), to_db(self.treble_sum))
+        (
+            to_db(self.bass_sum),
+            to_db(self.mid_sum),
+            to_db(self.treble_sum),
+        )
     }
 }
 
@@ -194,19 +198,29 @@ const BPM_MAX: f32 = 200.0;
 /// common radio music tempo without hard-coding anything.
 fn acf_comb_bpm(onset: &[f32], fps: f32, lag_min: usize, lag_max: usize) -> (f32, f32) {
     let n = onset.len();
-    if n < lag_min + 1 { return (0.0, 0.0); }
+    if n < lag_min + 1 {
+        return (0.0, 0.0);
+    }
     let lag_max = lag_max.min(n.saturating_sub(1));
-    if lag_max < lag_min { return (0.0, 0.0); }
+    if lag_max < lag_min {
+        return (0.0, 0.0);
+    }
 
     // Silence gate.
     let onset_sum: f32 = onset.iter().sum();
-    if onset_sum < 1e-6 { return (0.0, 0.0); }
+    if onset_sum < 1e-6 {
+        return (0.0, 0.0);
+    }
 
     // Normalised direct ACF: r[τ] = Σ x[i]·x[i+τ] / (n−τ)
     let mut acf = vec![0.0_f32; lag_max + 1];
     for lag in lag_min..=lag_max {
         let valid = n - lag;
-        acf[lag] = onset[..valid].iter().zip(onset[lag..].iter()).map(|(a, b)| a * b).sum::<f32>()
+        acf[lag] = onset[..valid]
+            .iter()
+            .zip(onset[lag..].iter())
+            .map(|(a, b)| a * b)
+            .sum::<f32>()
             / valid as f32;
     }
 
@@ -214,27 +228,52 @@ fn acf_comb_bpm(onset: &[f32], fps: f32, lag_min: usize, lag_max: usize) -> (f32
     let sigma = 12.0_f32;
     let (mut best_val, mut best_lag, mut comb_total) = (0.0_f32, lag_min, 0.0_f32);
     for p in lag_min..=lag_max {
-        let rayleigh = (p as f32 / (sigma * sigma))
-            * (-(p as f32 * p as f32) / (2.0 * sigma * sigma)).exp();
+        let rayleigh =
+            (p as f32 / (sigma * sigma)) * (-(p as f32 * p as f32) / (2.0 * sigma * sigma)).exp();
         let c = acf[p]
-            + if 2 * p <= lag_max { 0.50 * acf[2 * p] } else { 0.0 }
-            + if 3 * p <= lag_max { 0.33 * acf[3 * p] } else { 0.0 }
-            + if 4 * p <= lag_max { 0.25 * acf[4 * p] } else { 0.0 };
+            + if 2 * p <= lag_max {
+                0.50 * acf[2 * p]
+            } else {
+                0.0
+            }
+            + if 3 * p <= lag_max {
+                0.33 * acf[3 * p]
+            } else {
+                0.0
+            }
+            + if 4 * p <= lag_max {
+                0.25 * acf[4 * p]
+            } else {
+                0.0
+            };
         let scored = c * rayleigh;
         comb_total += scored;
-        if scored > best_val { best_val = scored; best_lag = p; }
+        if scored > best_val {
+            best_val = scored;
+            best_lag = p;
+        }
     }
 
     // Lag → BPM, snap into [BPM_MIN, BPM_MAX] via halving / doubling.
     let mut raw_bpm = fps * 60.0 / best_lag as f32;
-    while raw_bpm > BPM_MAX * 1.05 { raw_bpm /= 2.0; }
-    while raw_bpm < BPM_MIN * 0.95 { raw_bpm *= 2.0; }
-    if raw_bpm < BPM_MIN * 0.9 || raw_bpm > BPM_MAX * 1.1 { return (0.0, 0.0); }
+    while raw_bpm > BPM_MAX * 1.05 {
+        raw_bpm /= 2.0;
+    }
+    while raw_bpm < BPM_MIN * 0.95 {
+        raw_bpm *= 2.0;
+    }
+    if raw_bpm < BPM_MIN * 0.9 || raw_bpm > BPM_MAX * 1.1 {
+        return (0.0, 0.0);
+    }
 
     // Confidence = normalised peak dominance. tanh maps: 2.5→0, 4→0.6, 6→0.9.
     let num_lags = (lag_max - lag_min + 1) as f32;
     let comb_mean = comb_total / num_lags;
-    let dominance = if comb_mean > 1e-10 { best_val / comb_mean } else { 0.0 };
+    let dominance = if comb_mean > 1e-10 {
+        best_val / comb_mean
+    } else {
+        0.0
+    };
     let confidence = ((dominance - 2.5) / 2.0).tanh().max(0.0);
     (raw_bpm, confidence)
 }
@@ -330,14 +369,18 @@ impl BpmEstimator {
     }
 
     fn estimate(&mut self) {
-        if self.frame_count < 50 { return; }
+        if self.frame_count < 50 {
+            return;
+        }
         let onset = prepare_onset_buf(&self.onset_buf, self.write_pos, self.frame_count);
         let fill = (self.frame_count as f32 / 200.0).min(1.0);
         let (raw_bpm, conf_raw) = acf_comb_bpm(&onset, self.fps, 6, 50);
 
         if raw_bpm <= 0.0 || conf_raw <= 0.0 {
             self.cached_confidence = (self.cached_confidence * 0.8).max(0.0);
-            if self.cached_confidence < 0.15 { self.cached_bpm = None; }
+            if self.cached_confidence < 0.15 {
+                self.cached_bpm = None;
+            }
             return;
         }
 
@@ -346,7 +389,9 @@ impl BpmEstimator {
             let jump = (raw_bpm - self.smoothed_bpm).abs() / self.smoothed_bpm;
             if jump > 0.35 {
                 self.cached_confidence *= 0.7;
-                if self.cached_confidence < 0.15 { self.cached_bpm = None; }
+                if self.cached_confidence < 0.15 {
+                    self.cached_bpm = None;
+                }
                 return;
             }
             self.smoothed_bpm = 0.75 * self.smoothed_bpm + 0.25 * raw_bpm;
@@ -364,9 +409,15 @@ impl BpmEstimator {
         }
     }
 
-    pub fn bpm(&self) -> Option<f32> { self.cached_bpm }
-    pub fn confidence(&self) -> f32 { self.cached_confidence }
-    pub fn beat_phase(&self) -> f32 { self.phase }
+    pub fn bpm(&self) -> Option<f32> {
+        self.cached_bpm
+    }
+    pub fn confidence(&self) -> f32 {
+        self.cached_confidence
+    }
+    pub fn beat_phase(&self) -> f32 {
+        self.phase
+    }
 
     pub fn reset(&mut self) {
         self.onset_buf.fill(0.0);
@@ -411,9 +462,9 @@ pub struct TempoLock {
 }
 
 impl TempoLock {
-    const BUF_LEN: usize = 750;       // ~30 s at 25 FPS
+    const BUF_LEN: usize = 750; // ~30 s at 25 FPS
     const ESTIMATE_EVERY: usize = 75; // ~3 s update rate
-    const HISTORY_LEN: usize = 8;     // last 8 estimates (~24 s)
+    const HISTORY_LEN: usize = 8; // last 8 estimates (~24 s)
 
     pub fn new(fps: f32) -> Self {
         Self {
@@ -457,14 +508,18 @@ impl TempoLock {
     }
 
     fn estimate(&mut self) {
-        if self.frame_count < 100 { return; }
+        if self.frame_count < 100 {
+            return;
+        }
         let onset = prepare_onset_buf(&self.onset_buf, self.write_pos, self.frame_count);
         let fill = (self.frame_count as f32 / 400.0).min(1.0);
         let (raw_bpm, conf_raw) = acf_comb_bpm(&onset, self.fps, 6, 55);
         let confidence = (conf_raw * fill).clamp(0.0, 1.0);
         self.cached_confidence = confidence;
 
-        if raw_bpm <= 0.0 || confidence < 0.2 { return; }
+        if raw_bpm <= 0.0 || confidence < 0.2 {
+            return;
+        }
 
         // If locked: reject estimates that deviate > 8%.
         if let Some(locked) = self.locked_bpm {
@@ -486,7 +541,9 @@ impl TempoLock {
         // Record estimate in history ring.
         self.history[self.hist_pos] = raw_bpm;
         self.hist_pos = (self.hist_pos + 1) % Self::HISTORY_LEN;
-        if self.hist_count < Self::HISTORY_LEN { self.hist_count += 1; }
+        if self.hist_count < Self::HISTORY_LEN {
+            self.hist_count += 1;
+        }
 
         if self.hist_count >= 4 {
             let valid = &self.history[..self.hist_count];
@@ -508,10 +565,18 @@ impl TempoLock {
         }
     }
 
-    pub fn bpm(&self) -> Option<f32> { self.locked_bpm }
-    pub fn is_locked(&self) -> bool { self.locked_bpm.is_some() }
-    pub fn confidence(&self) -> f32 { self.cached_confidence }
-    pub fn beat_phase(&self) -> f32 { self.phase }
+    pub fn bpm(&self) -> Option<f32> {
+        self.locked_bpm
+    }
+    pub fn is_locked(&self) -> bool {
+        self.locked_bpm.is_some()
+    }
+    pub fn confidence(&self) -> f32 {
+        self.cached_confidence
+    }
+    pub fn beat_phase(&self) -> f32 {
+        self.phase
+    }
 
     pub fn reset(&mut self) {
         self.onset_buf.fill(0.0);
@@ -530,7 +595,6 @@ impl TempoLock {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -548,7 +612,11 @@ mod tests {
     fn rms_db(samples: &[f32]) -> f32 {
         let sum: f64 = samples.iter().map(|&s| (s as f64) * (s as f64)).sum();
         let rms = (sum / samples.len() as f64).sqrt();
-        if rms < 1e-10 { -90.0 } else { (20.0 * rms.log10()) as f32 }
+        if rms < 1e-10 {
+            -90.0
+        } else {
+            (20.0 * rms.log10()) as f32
+        }
     }
 
     /// Verify that a low-pass filter passes bass and rejects treble.
@@ -563,7 +631,10 @@ mod tests {
         let in_db = rms_db(&input[4410..]); // skip transient
         let out_db = rms_db(&output[4410..]);
         let attenuation = in_db - out_db;
-        assert!(attenuation < 1.5, "100Hz through LP250: attenuation {attenuation:.1} dB should be < 1.5");
+        assert!(
+            attenuation < 1.5,
+            "100Hz through LP250: attenuation {attenuation:.1} dB should be < 1.5"
+        );
 
         // 4000 Hz sine → should be heavily attenuated (>20 dB)
         lp.reset();
@@ -572,7 +643,10 @@ mod tests {
         let in_db = rms_db(&input[4410..]);
         let out_db = rms_db(&output[4410..]);
         let attenuation = in_db - out_db;
-        assert!(attenuation > 20.0, "4kHz through LP250: attenuation {attenuation:.1} dB should be > 20");
+        assert!(
+            attenuation > 20.0,
+            "4kHz through LP250: attenuation {attenuation:.1} dB should be > 20"
+        );
     }
 
     /// Verify that a high-pass filter passes treble and rejects bass.
@@ -585,14 +659,20 @@ mod tests {
         let input = sine(8000.0, n);
         let output: Vec<f32> = input.iter().map(|&s| hp.tick(s)).collect();
         let attenuation = rms_db(&input[4410..]) - rms_db(&output[4410..]);
-        assert!(attenuation < 1.5, "8kHz through HP2k: attenuation {attenuation:.1} dB should be < 1.5");
+        assert!(
+            attenuation < 1.5,
+            "8kHz through HP2k: attenuation {attenuation:.1} dB should be < 1.5"
+        );
 
         // 100 Hz → should be heavily attenuated
         hp.reset();
         let input = sine(100.0, n);
         let output: Vec<f32> = input.iter().map(|&s| hp.tick(s)).collect();
         let attenuation = rms_db(&input[4410..]) - rms_db(&output[4410..]);
-        assert!(attenuation > 20.0, "100Hz through HP2k: attenuation {attenuation:.1} dB should be > 20");
+        assert!(
+            attenuation > 20.0,
+            "100Hz through HP2k: attenuation {attenuation:.1} dB should be > 20"
+        );
     }
 
     /// Verify 3-band splitter routes frequencies to correct bands.
@@ -651,8 +731,12 @@ mod tests {
     fn test_adaptive_bulb_color_properties() {
         /// Test-only params mirroring the freq_bulb_color inputs.
         struct BulbParams {
-            level_db: f32, mean_db: f32, spread_db: f32,
-            bass_db: f32, mid_db: f32, treble_db: f32,
+            level_db: f32,
+            mean_db: f32,
+            spread_db: f32,
+            bass_db: f32,
+            mid_db: f32,
+            treble_db: f32,
         }
 
         // Replicate the bulb_color logic for testing (the actual fn is private,
@@ -662,7 +746,9 @@ mod tests {
             let spread = p.spread_db.clamp(2.0, 22.0);
             let mut floor = (p.mean_db - 2.5 * spread).clamp(-90.0, -10.0);
             let ceil = (p.mean_db + 2.0 * spread).clamp(-40.0, -1.0);
-            if ceil - floor < 8.0 { floor = (ceil - 8.0).max(-90.0); }
+            if ceil - floor < 8.0 {
+                floor = (ceil - 8.0).max(-90.0);
+            }
 
             let t = ((p.level_db - floor) / (ceil - floor)).clamp(0.0, 1.0);
             let t = t * t * (3.0 - 2.0 * t);
@@ -688,12 +774,20 @@ mod tests {
 
         // ── Bass-heavy signal should be warmer (more red, less blue) ───────
         let bass_heavy = BulbParams {
-            level_db: -15.0, mean_db: -18.0, spread_db: 4.0,
-            bass_db: -10.0, mid_db: -30.0, treble_db: -40.0,
+            level_db: -15.0,
+            mean_db: -18.0,
+            spread_db: 4.0,
+            bass_db: -10.0,
+            mid_db: -30.0,
+            treble_db: -40.0,
         };
         let treble_heavy = BulbParams {
-            level_db: -15.0, mean_db: -18.0, spread_db: 4.0,
-            bass_db: -40.0, mid_db: -30.0, treble_db: -10.0,
+            level_db: -15.0,
+            mean_db: -18.0,
+            spread_db: 4.0,
+            bass_db: -40.0,
+            mid_db: -30.0,
+            treble_db: -10.0,
         };
         let (br, _bg, bb) = adaptive_bulb(&bass_heavy);
         let (tr, _tg, tb) = adaptive_bulb(&treble_heavy);
@@ -709,16 +803,29 @@ mod tests {
 
         // ── Adaptive window gives more brightness variation ────────────────
         let levels = [-21.0_f32, -19.0, -17.0, -15.0, -13.0];
-        let adaptive_brightness: Vec<f32> = levels.iter().map(|&l| {
-            let (r, g, b) = adaptive_bulb(&BulbParams {
-                level_db: l, mean_db: -17.0, spread_db: 3.0,
-                bass_db: -20.0, mid_db: -20.0, treble_db: -20.0,
-            });
-            (r as f32 + g as f32 + b as f32) / 3.0
-        }).collect();
+        let adaptive_brightness: Vec<f32> = levels
+            .iter()
+            .map(|&l| {
+                let (r, g, b) = adaptive_bulb(&BulbParams {
+                    level_db: l,
+                    mean_db: -17.0,
+                    spread_db: 3.0,
+                    bass_db: -20.0,
+                    mid_db: -20.0,
+                    treble_db: -20.0,
+                });
+                (r as f32 + g as f32 + b as f32) / 3.0
+            })
+            .collect();
 
-        let range = adaptive_brightness.iter().cloned().fold(f32::NEG_INFINITY, f32::max)
-                   - adaptive_brightness.iter().cloned().fold(f32::INFINITY, f32::min);
+        let range = adaptive_brightness
+            .iter()
+            .cloned()
+            .fold(f32::NEG_INFINITY, f32::max)
+            - adaptive_brightness
+                .iter()
+                .cloned()
+                .fold(f32::INFINITY, f32::min);
         assert!(
             range > 50.0,
             "6 dB span should produce >50 brightness units of variation (got {range:.1})"
@@ -726,12 +833,17 @@ mod tests {
 
         // ── Silence should produce a dim bulb ──────────────────────────────
         let silence = adaptive_bulb(&BulbParams {
-            level_db: -90.0, mean_db: -30.0, spread_db: 6.0,
-            bass_db: -90.0, mid_db: -90.0, treble_db: -90.0,
+            level_db: -90.0,
+            mean_db: -30.0,
+            spread_db: 6.0,
+            bass_db: -90.0,
+            mid_db: -90.0,
+            treble_db: -90.0,
         });
         assert!(
             silence.0 < 30 && silence.1 < 30 && silence.2 < 30,
-            "silence should be very dim: {:?}", silence
+            "silence should be very dim: {:?}",
+            silence
         );
     }
 
@@ -750,13 +862,21 @@ mod tests {
         let bpm = est.bpm();
         assert!(bpm.is_some(), "should detect BPM from regular beats");
         let bpm = bpm.unwrap();
-        assert!(bpm > 100.0 && bpm < 130.0, "expected ~115 BPM, got {bpm:.1}");
+        assert!(
+            bpm > 100.0 && bpm < 130.0,
+            "expected ~115 BPM, got {bpm:.1}"
+        );
         assert!(est.confidence() >= 0.25, "confidence={}", est.confidence());
 
         // Reset + silence → no BPM.
         est.reset();
-        for _ in 0..300 { est.push_onset(0.0); }
-        assert!(est.bpm().is_none(), "silence should not produce a BPM estimate");
+        for _ in 0..300 {
+            est.push_onset(0.0);
+        }
+        assert!(
+            est.bpm().is_none(),
+            "silence should not produce a BPM estimate"
+        );
     }
 
     /// ACF should find the correct period in a clean synthetic onset signal.
@@ -765,13 +885,18 @@ mod tests {
         let n = 512;
         let lag_true = 13usize; // ~115 BPM at 25 FPS
         let mut onset = vec![0.0_f32; n];
-        for i in (0..n).step_by(lag_true) { onset[i] = 1.0; }
+        for i in (0..n).step_by(lag_true) {
+            onset[i] = 1.0;
+        }
         let mean = onset.iter().sum::<f32>() / n as f32;
         let centered: Vec<f32> = onset.iter().map(|&x| (x - mean).max(0.0)).collect();
 
         let (bpm, conf) = acf_comb_bpm(&centered, 25.0, 6, 50);
         assert!(bpm > 0.0, "should find a BPM for periodic signal");
-        assert!(bpm > 100.0 && bpm < 130.0, "ACF should find ~115 BPM, got {bpm:.1}");
+        assert!(
+            bpm > 100.0 && bpm < 130.0,
+            "ACF should find ~115 BPM, got {bpm:.1}"
+        );
         assert!(conf > 0.3, "confidence should be clear: {conf:.2}");
     }
 
@@ -781,14 +906,20 @@ mod tests {
         let n = 512;
         let lag_true = 12usize; // 125 BPM at 25 FPS
         let mut onset = vec![0.0_f32; n];
-        for i in (0..n).step_by(lag_true) { onset[i] = 1.0; }
+        for i in (0..n).step_by(lag_true) {
+            onset[i] = 1.0;
+        }
         let mean = onset.iter().sum::<f32>() / n as f32;
         let centered: Vec<f32> = onset.iter().map(|&x| (x - mean).max(0.0)).collect();
 
         // Manually compute comb scores at lag=12 and lag=24.
         let acf_at = |lag: usize| -> f32 {
             let valid = n - lag;
-            centered[..valid].iter().zip(centered[lag..].iter()).map(|(a, b)| a * b).sum::<f32>()
+            centered[..valid]
+                .iter()
+                .zip(centered[lag..].iter())
+                .map(|(a, b)| a * b)
+                .sum::<f32>()
                 / valid as f32
         };
         let comb_12 = acf_at(12) + 0.5 * acf_at(24) + 0.33 * acf_at(36) + 0.25 * acf_at(48);

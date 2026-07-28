@@ -55,6 +55,11 @@ struct PendingRequest {
     reply: oneshot::Sender<anyhow::Result<Value>>,
 }
 
+enum WriterMessage {
+    Request(PendingRequest),
+    Cancel(u64),
+}
+
 /// An mpv event / property-change that arrived unsolicited (no request_id).
 #[derive(Debug, Clone)]
 pub struct MpvEvent {
@@ -85,7 +90,7 @@ impl MpvEvent {
 /// and await the response.
 #[derive(Clone)]
 pub struct MpvHandle {
-    tx: mpsc::Sender<PendingRequest>,
+    tx: mpsc::Sender<WriterMessage>,
 }
 
 impl MpvHandle {
@@ -97,18 +102,23 @@ impl MpvHandle {
 
         let (reply_tx, reply_rx) = oneshot::channel();
         self.tx
-            .send(PendingRequest {
+            .send(WriterMessage::Request(PendingRequest {
                 req_id,
                 payload: raw,
                 reply: reply_tx,
-            })
+            }))
             .await
             .map_err(|_| anyhow::anyhow!("mpv writer task gone"))?;
 
-        tokio::time::timeout(tokio::time::Duration::from_secs(5), reply_rx)
-            .await
-            .map_err(|_| anyhow::anyhow!("mpv IPC timeout for req={}", req_id))?
-            .map_err(|_| anyhow::anyhow!("mpv reply channel dropped req={}", req_id))?
+        let timeout = tokio::time::Duration::from_secs(5);
+        let reply = match tokio::time::timeout(timeout, reply_rx).await {
+            Ok(reply) => reply,
+            Err(_) => {
+                let _ = self.tx.send(WriterMessage::Cancel(req_id)).await;
+                anyhow::bail!("mpv IPC timeout for req={}", req_id);
+            }
+        };
+        reply.map_err(|_| anyhow::anyhow!("mpv reply channel dropped req={}", req_id))?
     }
 }
 
@@ -125,6 +135,9 @@ pub struct MpvDriver {
     /// (where `process` is None because we connected to an existing mpv).
     mpv_pid: Option<u32>,
     pub last_volume: f32,
+    cache: bool,
+    cache_secs: u64,
+    demuxer_readahead_secs: u64,
 }
 
 impl MpvDriver {
@@ -134,7 +147,30 @@ impl MpvDriver {
             process: None,
             mpv_pid: None,
             last_volume: 0.5,
+            cache: true,
+            cache_secs: 4,
+            demuxer_readahead_secs: 4,
         }
+    }
+
+    pub fn configure_cache(&mut self, config: &radio_proto::config::MpvConfig) {
+        self.cache = config.cache;
+        self.cache_secs = config.cache_secs.clamp(1, 30);
+        self.demuxer_readahead_secs = config.demuxer_readahead_secs.clamp(1, 30);
+    }
+
+    fn apply_cache_args(&self, cmd: &mut tokio::process::Command) {
+        if !self.cache {
+            return;
+        }
+        cmd.arg("--cache=yes")
+            .arg(format!("--cache-secs={}", self.cache_secs))
+            .arg(format!(
+                "--demuxer-readahead-secs={}",
+                self.demuxer_readahead_secs
+            ))
+            .arg("--demuxer-max-bytes=16MiB")
+            .arg("--demuxer-max-back-bytes=2MiB");
     }
 
     pub fn process_alive(&mut self) -> bool {
@@ -218,19 +254,25 @@ impl MpvDriver {
             .open(&stderr_path)?;
         debug!("mpv: logging stderr to {:?}", stderr_path);
 
-          let child = tokio::process::Command::new(&mpv_binary)
-              .arg("--no-video")
-              .arg("--idle=yes")
-              .arg(&ipc_arg)
-              .arg("--quiet")
-              .arg(&vol_arg)
-              .stdout(std::process::Stdio::null())
-              .stderr(stderr_file)
-              .spawn()?;
-          let pid = child.id();
-          debug!("mpv: spawned process with pid {:?}", pid);
-          self.mpv_pid = pid;
-          self.process = Some(child);
+        let mut cmd = tokio::process::Command::new(&mpv_binary);
+        cmd.arg("--no-video")
+            .arg("--idle=yes")
+            .arg(&ipc_arg)
+            .arg("--quiet")
+            .arg("--terminal=no")
+            .arg("--osc=no")
+            .arg("--load-scripts=no")
+            .arg("--ytdl=no")
+            .arg(&vol_arg);
+        self.apply_cache_args(&mut cmd);
+        let child = cmd
+            .stdout(std::process::Stdio::null())
+            .stderr(stderr_file)
+            .spawn()?;
+        let pid = child.id();
+        debug!("mpv: spawned process with pid {:?}", pid);
+        self.mpv_pid = pid;
+        self.process = Some(child);
 
         // Wait for socket to appear
         for _ in 0..50 {
@@ -277,7 +319,7 @@ impl MpvDriver {
         let pending: Arc<Mutex<HashMap<u64, oneshot::Sender<anyhow::Result<Value>>>>> =
             Arc::new(Mutex::new(HashMap::new()));
 
-        let (cmd_tx, cmd_rx) = mpsc::channel::<PendingRequest>(64);
+        let (cmd_tx, cmd_rx) = mpsc::channel::<WriterMessage>(64);
 
         // writer task
         let pending_w = pending.clone();
@@ -300,38 +342,44 @@ impl MpvDriver {
             let _ = p.kill().await;
         }
 
-          debug!("mpv: spawning new process");
-          let mpv_binary = radio_proto::platform::find_mpv_binary()
-              .ok_or_else(|| anyhow::anyhow!("mpv binary not found"))?;
-          debug!("mpv: using binary {:?}", mpv_binary);
+        debug!("mpv: spawning new process");
+        let mpv_binary = radio_proto::platform::find_mpv_binary()
+            .ok_or_else(|| anyhow::anyhow!("mpv binary not found"))?;
+        debug!("mpv: using binary {:?}", mpv_binary);
 
-          let vol_arg = format!(
-              "--volume={}",
-              (self.last_volume * 100.0).clamp(0.0, 100.0).round() as i64
-          );
-          let ipc_arg = radio_proto::platform::mpv_socket_arg();
+        let vol_arg = format!(
+            "--volume={}",
+            (self.last_volume * 100.0).clamp(0.0, 100.0).round() as i64
+        );
+        let ipc_arg = radio_proto::platform::mpv_socket_arg();
 
-          // Redirect mpv stderr to a log file for debugging on Windows
-          let stderr_path = radio_proto::platform::data_dir().join("mpv-stderr.log");
-          let stderr_file = std::fs::OpenOptions::new()
-              .create(true)
-              .append(true)
-              .open(&stderr_path)?;
-          debug!("mpv: logging stderr to {:?}", stderr_path);
+        // Redirect mpv stderr to a log file for debugging on Windows
+        let stderr_path = radio_proto::platform::data_dir().join("mpv-stderr.log");
+        let stderr_file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&stderr_path)?;
+        debug!("mpv: logging stderr to {:?}", stderr_path);
 
-          let child = tokio::process::Command::new(mpv_binary)
-              .arg("--no-video")
-              .arg("--idle=yes")
-              .arg(&ipc_arg)
-              .arg("--quiet")
-              .arg(vol_arg)
-              .stdout(std::process::Stdio::null())
-              .stderr(stderr_file)
-              .spawn()?;
-          let pid = child.id();
-          debug!("mpv: spawned process with pid {:?}", pid);
-          self.mpv_pid = pid;
-          self.process = Some(child);
+        let mut cmd = tokio::process::Command::new(mpv_binary);
+        cmd.arg("--no-video")
+            .arg("--idle=yes")
+            .arg(&ipc_arg)
+            .arg("--quiet")
+            .arg("--terminal=no")
+            .arg("--osc=no")
+            .arg("--load-scripts=no")
+            .arg("--ytdl=no")
+            .arg(vol_arg);
+        self.apply_cache_args(&mut cmd);
+        let child = cmd
+            .stdout(std::process::Stdio::null())
+            .stderr(stderr_file)
+            .spawn()?;
+        let pid = child.id();
+        debug!("mpv: spawned process with pid {:?}", pid);
+        self.mpv_pid = pid;
+        self.process = Some(child);
 
         let pipe_path = format!(r"\\.\pipe\{}", self.socket_name);
         for _ in 0..50 {
@@ -373,7 +421,7 @@ impl MpvDriver {
 
         let pending: Arc<Mutex<HashMap<u64, oneshot::Sender<anyhow::Result<Value>>>>> =
             Arc::new(Mutex::new(HashMap::new()));
-        let (cmd_tx, cmd_rx) = mpsc::channel::<PendingRequest>(64);
+        let (cmd_tx, cmd_rx) = mpsc::channel::<WriterMessage>(64);
 
         let pending_w = pending.clone();
         tokio::spawn(writer_task(write_half, cmd_rx, pending_w));
@@ -456,12 +504,22 @@ async fn reader_task<R>(
 
 async fn writer_task<W>(
     mut writer: W,
-    mut rx: mpsc::Receiver<PendingRequest>,
+    mut rx: mpsc::Receiver<WriterMessage>,
     pending: Arc<Mutex<HashMap<u64, oneshot::Sender<anyhow::Result<Value>>>>>,
 ) where
     W: tokio::io::AsyncWrite + Unpin,
 {
-    while let Some(req) = rx.recv().await {
+    while let Some(msg) = rx.recv().await {
+        let req = match msg {
+            WriterMessage::Request(req) => req,
+            WriterMessage::Cancel(req_id) => {
+                let mut map = pending.lock().await;
+                if map.remove(&req_id).is_some() {
+                    debug!("mpv writer: cancelled timed-out req={}", req_id);
+                }
+                continue;
+            }
+        };
         // Register reply channel before writing so reader can match it
         {
             let mut map = pending.lock().await;

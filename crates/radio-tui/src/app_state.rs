@@ -172,7 +172,7 @@ pub struct AppState {
     pub meter_spread_db: f32,
 
     // ── Scope / oscilloscope PCM ring buffer ─────────────────────────────────
-    /// Rolling buffer of normalised f32 PCM samples (mono, 44100 Hz).
+    /// Rolling buffer of normalised f32 PCM samples (mono, 22050 Hz).
     /// Holds ~2 seconds of audio (88200 samples).  The scope panel reads the
     /// most recent `SCOPE_SAMPLES` entries from the back.
     pub pcm_ring: VecDeque<f32>,

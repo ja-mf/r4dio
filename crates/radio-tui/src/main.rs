@@ -58,7 +58,9 @@ pub enum BroadcastMessage {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let cli_verbose = std::env::args().skip(1).any(|arg| arg == "--verbose" || arg == "-v");
+    let cli_verbose = std::env::args()
+        .skip(1)
+        .any(|arg| arg == "--verbose" || arg == "-v");
 
     // ── Load config early (logging config is needed before subscriber init) ───
     let config = radio_proto::config::Config::load().unwrap_or_default();
@@ -218,7 +220,8 @@ async fn main() -> anyhow::Result<()> {
     let cleanup_interval_secs = config.logging.cleanup_interval_secs.max(10);
     let max_log_mb = config.logging.max_total_size_mb;
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(cleanup_interval_secs));
+        let mut interval =
+            tokio::time::interval(std::time::Duration::from_secs(cleanup_interval_secs));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             interval.tick().await;
@@ -236,12 +239,10 @@ async fn main() -> anyhow::Result<()> {
             Ok(report) => {
                 let flamegraph_path = data_dir.join("flamegraph.svg");
                 match std::fs::File::create(&flamegraph_path) {
-                    Ok(file) => {
-                        match report.flamegraph(file) {
-                            Ok(_) => info!("Flamegraph written to {:?}", flamegraph_path),
-                            Err(e) => error!("Failed to write flamegraph: {}", e),
-                        }
-                    }
+                    Ok(file) => match report.flamegraph(file) {
+                        Ok(_) => info!("Flamegraph written to {:?}", flamegraph_path),
+                        Err(e) => error!("Failed to write flamegraph: {}", e),
+                    },
                     Err(e) => error!("Failed to create flamegraph file: {}", e),
                 }
             }
@@ -301,7 +302,10 @@ fn prune_logs_to_size_cap(
         if total_bytes <= cap_bytes {
             break;
         }
-        if active_log_path.map(|p| p == path.as_path()).unwrap_or(false) {
+        if active_log_path
+            .map(|p| p == path.as_path())
+            .unwrap_or(false)
+        {
             continue;
         }
         if std::fs::remove_file(&path).is_ok() {

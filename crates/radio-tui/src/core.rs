@@ -99,6 +99,7 @@ impl DaemonCore {
         let initial_volume = state_manager.get_state().await.volume;
         let mut mpv_driver = MpvDriver::new();
         mpv_driver.last_volume = initial_volume;
+        mpv_driver.configure_cache(&config.mpv);
 
         Ok(Self {
             config,
@@ -174,7 +175,8 @@ impl DaemonCore {
                     // Check process liveness — if mpv died, degrade health
                     if self.mpv_handle.is_some() && !self.mpv_driver.process_alive() {
                         let state = self.state_manager.get_state().await;
-                        let current = state.current_station
+                        let current = state
+                            .current_station
                             .and_then(|idx| state.stations.get(idx))
                             .map(|s| s.name.as_str())
                             .or_else(|| state.current_file.as_deref())
@@ -399,14 +401,13 @@ impl DaemonCore {
                 self.maybe_update_status().await;
             }
             Some("file-loaded") => {
-                debug!("mpv: file-loaded — re-issuing observe_property and audio filter");
+                debug!("mpv: file-loaded — re-issuing observe_property");
                 // Wait 50ms before re-observing so mpv has settled on the new file,
                 // then re-register observations so mpv pushes current values immediately.
                 if let Some(h) = self.mpv_handle.clone() {
                     tokio::spawn(async move {
                         tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
                         h.observe_all_properties().await;
-                        h.set_audio_filter().await;
                     });
                 }
             }
@@ -526,11 +527,12 @@ impl DaemonCore {
 
             self.set_mpv_health(MpvHealth::Running).await;
 
-            // Register property observations + audio filter on the fresh handle.
+            // Register property observations on the fresh handle.  The lavfi
+            // audio filter is installed only for local files, where it is the
+            // main meter source.  Station visualization uses the PCM path.
             let h_clone = handle.clone();
             tokio::spawn(async move {
                 h_clone.observe_all_properties().await;
-                h_clone.set_audio_filter().await;
             });
 
             // Audio observer (lavfi) — only used for local file playback.
@@ -559,6 +561,7 @@ impl DaemonCore {
                 self.play_file(path, Some(start_secs), true).await?
             }
             Command::Stop => self.stop().await?,
+            Command::ReloadCurrent => self.reload_current().await?,
             Command::Next => self.next().await?,
             Command::Prev => self.prev().await?,
             Command::Random => self.random().await?,
@@ -583,7 +586,10 @@ impl DaemonCore {
         };
 
         if let Some(station) = station {
-            info!("Playing station: {} (idx={}, url={})", station.name, idx, station.url);
+            info!(
+                "Playing station: {} (idx={}, url={})",
+                station.name, idx, station.url
+            );
 
             // Abort any running VU ffmpeg task and lavfi observer before starting a new one.
             if let Some(h) = self.vu_task_handle.take() {
@@ -615,7 +621,10 @@ impl DaemonCore {
                     let mut used_proxy = false;
                     if wants_proxy {
                         let proxy_url = crate::proxy::proxy_url(idx);
-                        info!("Attempting to load '{}' via proxy: {}", station.name, proxy_url);
+                        info!(
+                            "Attempting to load '{}' via proxy: {}",
+                            station.name, proxy_url
+                        );
                         match handle.load_stream(&proxy_url, volume).await {
                             Ok(()) => {
                                 info!("Successfully loaded proxy stream for '{}'", station.name);
@@ -667,14 +676,6 @@ impl DaemonCore {
                     } else {
                         info!("Playing '{}' direct URL (HLS stream)", station.name);
                     }
-
-                    // Spawn mpv lavfi observer for debug RMS bulb (independent
-                    // from the PCM-driven VU/scope path used for streams).
-                    let obs = crate::mpv::spawn_audio_observer(
-                        self.mpv_driver.socket_name.clone(),
-                        self.broadcast_tx.clone(),
-                    );
-                    self.audio_observer_handle = Some(obs);
 
                     // Spawn VU/scope PCM task.
                     // Use PipeWire monitor on Linux if configured, otherwise use ffmpeg from stream.
@@ -744,6 +745,19 @@ impl DaemonCore {
         Ok(())
     }
 
+    async fn reload_current(&mut self) -> anyhow::Result<()> {
+        let state = self.state_manager.get_state().await;
+        if let Some(idx) = state.current_station {
+            info!("Reloading current station idx={}", idx);
+            self.play_station(idx).await?;
+        } else if let Some(path) = state.current_file {
+            let start = state.time_pos_secs;
+            info!("Reloading current file: {}", path);
+            self.play_file(path, start, state.is_paused).await?;
+        }
+        Ok(())
+    }
+
     async fn play_file(
         &mut self,
         path: String,
@@ -791,6 +805,7 @@ impl DaemonCore {
                     if let Some(prev) = self.audio_observer_handle.take() {
                         prev.abort();
                     }
+                    handle.set_audio_filter().await;
                     let obs = crate::mpv::spawn_audio_observer(
                         self.mpv_driver.socket_name.clone(),
                         self.broadcast_tx.clone(),
@@ -1003,7 +1018,7 @@ async fn fetch_m3u_url(url: &str) -> anyhow::Result<Vec<Station>> {
 // ── VU meter / PCM capture ────────────────────────────────────────────────────
 
 const VU_WINDOW_SAMPLES: usize = 1024;
-const VU_SAMPLE_RATE: u32 = 44100;
+const VU_SAMPLE_RATE: u32 = 22050;
 
 /// Spawn ffmpeg, decode mono s16le PCM, broadcast only PcmChunk.
 /// RMS / AudioLevel is computed from PcmChunk in the app handler — single source of truth.
