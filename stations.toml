@@ -396,38 +396,38 @@ city        = "Barcelona"
 country     = "Spain"
 
 [[station]]
-name        = "Juanito's local stream #1"
+name        = "Juanito 1"
 url         = "https://radio.chungo.es:10000/uno"
 network     = "Juanito Local"
-description = "Local Icecast channel 1 from Juanito"
-tags        = ["local", "barcelona", "personal", "icecast"]
+description = "nts + hitters. mostly nts."
+tags        = ["local", "nts", "hitters"]
 city        = "Barcelona"
 country     = "Spain"
 
 [[station]]
-name        = "Juanito's local stream #2"
+name        = "Juanito 2"
 url         = "https://radio.chungo.es:10000/dos"
 network     = "Juanito Local"
-description = "Local Icecast channel 2 from Juanito"
-tags        = ["local", "barcelona", "personal", "icecast"]
+description = "crates. bootlegs. stuff you can't stream."
+tags        = ["local", "rarities", "bootlegs", "latin"]
 city        = "Barcelona"
 country     = "Spain"
 
 [[station]]
-name        = "Juanito's local stream #3"
+name        = "Juanito 3"
 url         = "https://radio.chungo.es:10000/tres"
 network     = "Juanito Local"
-description = "Analog Africa + South America + rarities"
-tags        = ["local", "barcelona", "world", "latin", "africa", "rarities", "icecast"]
+description = "brazil / africa / latin. the good soup."
+tags        = ["local", "brazil", "latin", "africa"]
 city        = "Barcelona"
 country     = "Spain"
 
 [[station]]
-name        = "Juanito's local stream #4"
+name        = "Juanito 4"
 url         = "https://radio.chungo.es:10000/cuatro"
 network     = "Juanito Local"
-description = "Classic FLACs + good classics"
-tags        = ["local", "barcelona", "classics", "flac", "icecast"]
+description = "jazz & old dead people. flacs."
+tags        = ["local", "jazz", "classics"]
 city        = "Barcelona"
 country     = "Spain"
 
