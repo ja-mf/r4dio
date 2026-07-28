@@ -758,7 +758,12 @@ jobs:
   bump-tap:
     needs: release
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
+    # always() required: on rc tags some transitive needs (windows/linux
+    # package jobs) are skipped, and GitHub propagates that skip to this job
+    # unless always() is present.
+    if: >-
+      always() && startsWith(github.ref, 'refs/tags/') &&
+      needs.release.result == 'success'
     steps:
       - uses: actions/checkout@v4
       - name: Render and publish Homebrew tap
