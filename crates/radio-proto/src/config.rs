@@ -186,10 +186,12 @@ fn default_downloads_dir() -> PathBuf {
 /// Station list source — either an https:// URL or a local file path.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StationsConfig {
-    /// Path to a local TOML station file (highest priority).
-    /// Defaults to `$XDG_CONFIG_HOME/radio/stations.toml`.
+    /// Primary station source: an https:// URL (TOML or m3u, detected by
+    /// extension) or a local TOML file path.
+    /// Defaults to the curated stations.toml from the r4dio repo — edit that
+    /// file to curate stations for all installs, no repackaging needed.
     #[serde(default = "default_stations_toml")]
-    pub stations_toml: PathBuf,
+    pub stations_toml: String,
     /// URL or file path for an m3u station list (fallback when TOML not found).
     #[serde(default = "default_m3u_url")]
     pub m3u_url: String,
@@ -312,21 +314,10 @@ fn default_m3u_url() -> String {
     "https://raw.githubusercontent.com/ja-mf/r4dio/refs/heads/main/stations.toml".to_string()
 }
 
-fn default_stations_toml() -> PathBuf {
-    // On Windows, check for portable stations.toml in executable directory
-    #[cfg(windows)]
-    {
-        if let Ok(exe_path) = std::env::current_exe() {
-            if let Some(exe_dir) = exe_path.parent() {
-                let portable_stations = exe_dir.join("stations.toml");
-                if portable_stations.exists() {
-                    return portable_stations;
-                }
-            }
-        }
-    }
-
-    platform::config_dir().join("stations.toml")
+fn default_stations_toml() -> String {
+    // The curated station list lives in the repo; installs fetch it at startup
+    // (with bundled/beside-exe stations.toml as offline fallback).
+    "https://raw.githubusercontent.com/ja-mf/r4dio/refs/heads/main/stations.toml".to_string()
 }
 
 impl Config {
@@ -394,9 +385,6 @@ mod tests {
         assert!(!config.logging.verbose);
         assert_eq!(config.logging.max_total_size_mb, 500);
         assert_eq!(config.logging.cleanup_interval_secs, 300);
-        assert!(config
-            .stations
-            .stations_toml
-            .ends_with("radio/stations.toml"));
+        assert!(config.stations.stations_toml.starts_with("https://"));
     }
 }

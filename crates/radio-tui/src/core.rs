@@ -914,19 +914,31 @@ impl DaemonCore {
 pub async fn load_stations(config: &Config) -> anyhow::Result<Vec<Station>> {
     use std::path::PathBuf;
 
-    // 1. User config dir (highest priority — user's custom stations)
-    let toml_path = &config.stations.stations_toml;
-    if toml_path.exists() {
-        match load_stations_from_toml(toml_path) {
+    // 1. Configured primary source — https URL (TOML or m3u) or local TOML path.
+    //    Default is the curated stations.toml from the r4dio repo.
+    let source = &config.stations.stations_toml;
+    if source.starts_with("http://") || source.starts_with("https://") {
+        match fetch_stations_url(source).await {
             Ok(s) => {
-                info!(
-                    "Loaded {} stations from TOML: {}",
-                    s.len(),
-                    toml_path.display()
-                );
+                info!("Loaded {} stations from URL: {}", s.len(), source);
                 return Ok(s);
             }
-            Err(e) => warn!("Failed to parse TOML stations: {}", e),
+            Err(e) => warn!("Failed to fetch stations from {}: {}", source, e),
+        }
+    } else {
+        let toml_path = std::path::Path::new(source);
+        if toml_path.exists() {
+            match load_stations_from_toml(toml_path) {
+                Ok(s) => {
+                    info!(
+                        "Loaded {} stations from TOML: {}",
+                        s.len(),
+                        toml_path.display()
+                    );
+                    return Ok(s);
+                }
+                Err(e) => warn!("Failed to parse TOML stations: {}", e),
+            }
         }
     }
 

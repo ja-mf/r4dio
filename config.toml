@@ -36,11 +36,12 @@ cache_secs = 4
 demuxer_readahead_secs = 4
 
 [stations]
-# Path to the stations TOML file (local file)
-# On Windows portable, this can be a relative path like "stations.toml"
-stations_toml = "~/.config/radio/stations.toml"
+# Primary station source: an https:// URL (TOML or m3u, detected by extension)
+# or a local TOML file path. Default is the curated list from the r4dio repo —
+# edit that file on GitHub to curate stations, no repackaging needed.
+stations_toml = "https://raw.githubusercontent.com/ja-mf/r4dio/refs/heads/main/stations.toml"
 
-# URL for an M3U playlist (fallback if stations_toml doesn't exist)
+# URL for an M3U playlist (fallback if stations_toml can't be loaded)
 m3u_url = "https://raw.githubusercontent.com/ja-mf/r4dio/refs/heads/main/stations.toml"
 
 [paths]
