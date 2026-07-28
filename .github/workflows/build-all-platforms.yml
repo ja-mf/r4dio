@@ -5,6 +5,15 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      targets:
+        description: "What to build (macos = quick iteration cycle)"
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - all
+          - macos
 
 permissions:
   contents: write
@@ -16,6 +25,9 @@ env:
 jobs:
   build-r4dio-windows:
     runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'push' && !contains(github.ref_name, '-') ||
+      github.event_name == 'workflow_dispatch' && github.event.inputs.targets == 'all'
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -30,6 +42,9 @@ jobs:
 
   build-vibra-windows:
     runs-on: windows-2022
+    if: >-
+      github.event_name == 'push' && !contains(github.ref_name, '-') ||
+      github.event_name == 'workflow_dispatch' && github.event.inputs.targets == 'all'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -50,6 +65,9 @@ jobs:
   package-windows:
     needs: [build-r4dio-windows, build-vibra-windows]
     runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'push' && !contains(github.ref_name, '-') ||
+      github.event_name == 'workflow_dispatch' && github.event.inputs.targets == 'all'
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get update && sudo apt-get install -y p7zip-full jq zip
@@ -150,6 +168,9 @@ jobs:
 
   build-r4dio-linux:
     runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'push' && !contains(github.ref_name, '-') ||
+      github.event_name == 'workflow_dispatch' && github.event.inputs.targets == 'all'
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libpulse-dev pkg-config
@@ -162,6 +183,9 @@ jobs:
 
   build-vibra-linux:
     runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'push' && !contains(github.ref_name, '-') ||
+      github.event_name == 'workflow_dispatch' && github.event.inputs.targets == 'all'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -177,6 +201,9 @@ jobs:
   package-linux:
     needs: [build-r4dio-linux, build-vibra-linux]
     runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'push' && !contains(github.ref_name, '-') ||
+      github.event_name == 'workflow_dispatch' && github.event.inputs.targets == 'all'
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get update && sudo apt-get install -y jq xz-utils tar
@@ -677,7 +704,14 @@ jobs:
       - package-macos-intel
       - package-macos-arm
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
+    # On rc tags (name contains '-') windows/linux jobs are skipped; release
+    # still runs with just the macOS artifacts.
+    if: >-
+      always() && startsWith(github.ref, 'refs/tags/') &&
+      (needs.package-windows.result == 'success' || needs.package-windows.result == 'skipped') &&
+      (needs.package-linux.result == 'success' || needs.package-linux.result == 'skipped') &&
+      needs.package-macos-intel.result == 'success' &&
+      needs.package-macos-arm.result == 'success'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -697,6 +731,8 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
       - uses: softprops/action-gh-release@v1
         with:
+          # rc runs only have macOS artifacts; don't fail on the missing ones
+          fail_on_unmatched_files: false
           files: |
             r4dio-windows-package/r4dio-windows-x86_64.zip
             r4dio-linux-package/r4dio-linux-x86_64.tar.gz
