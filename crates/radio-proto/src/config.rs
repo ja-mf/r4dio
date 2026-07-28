@@ -307,8 +307,9 @@ fn default_logging_cleanup_interval_secs() -> u64 {
 }
 
 fn default_m3u_url() -> String {
-    "https://raw.githubusercontent.com/ja-mf/radio-curation/refs/heads/main/jamf_radios.m3u"
-        .to_string()
+    // Despite the field name, this is the generic remote-stations fallback:
+    // the loader parses TOML or M3U based on the URL extension.
+    "https://raw.githubusercontent.com/ja-mf/r4dio/refs/heads/main/stations.toml".to_string()
 }
 
 fn default_stations_toml() -> PathBuf {

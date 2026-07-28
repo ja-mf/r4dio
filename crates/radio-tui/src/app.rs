@@ -107,6 +107,9 @@ enum AppMessage {
         total: usize,
         elapsed_ms: u128,
     },
+    /// SIGHUP/SIGTERM received (unix) — request graceful quit so teardown
+    /// kills mpv instead of orphaning it.
+    QuitRequested,
 }
 
 const STREAM_PCM_RATE_HZ: usize = 22_050;
@@ -704,6 +707,24 @@ impl App {
             debug!("[poll] auto polling disabled at startup");
         }
 
+        // Forward SIGHUP/SIGTERM (e.g. terminal window closed by the window
+        // manager) into the normal quit path so teardown runs and mpv is
+        // killed instead of orphaned.
+        #[cfg(unix)]
+        {
+            let sig_tx = tx.clone();
+            tokio::spawn(async move {
+                use tokio::signal::unix::{signal, SignalKind};
+                let mut hup = signal(SignalKind::hangup()).expect("install SIGHUP handler");
+                let mut term = signal(SignalKind::terminate()).expect("install SIGTERM handler");
+                tokio::select! {
+                    _ = hup.recv() => info!("[app] SIGHUP received — quitting"),
+                    _ = term.recv() => info!("[app] SIGTERM received — quitting"),
+                }
+                let _ = sig_tx.send(AppMessage::QuitRequested).await;
+            });
+        }
+
         loop {
             // Draw only when something changed, rate-limited to MIN_RENDER_GAP (~24 fps).
             // needs_redraw stays true when we skip a frame so the next opportunity picks it up.
@@ -944,6 +965,10 @@ impl App {
 
             AppMessage::Log(msg) => {
                 self.push_log(msg);
+            }
+
+            AppMessage::QuitRequested => {
+                self.should_quit = true;
             }
 
             AppMessage::NtsUpdated(ch, data) => {

@@ -962,12 +962,12 @@ pub async fn load_stations(config: &Config) -> anyhow::Result<Vec<Station>> {
         }
     }
 
-    // 3. m3u URL or file
+    // 3. Remote URL (TOML or m3u, detected by extension) or local m3u file
     let source = &config.stations.m3u_url;
-    info!("Loading stations from m3u: {}", source);
+    info!("Loading stations from URL: {}", source);
 
     if source.starts_with("http://") || source.starts_with("https://") {
-        match fetch_m3u_url(source).await {
+        match fetch_stations_url(source).await {
             Ok(s) => {
                 info!("Loaded {} stations from URL", s.len());
                 return Ok(s);
@@ -1006,13 +1006,18 @@ pub async fn load_stations(config: &Config) -> anyhow::Result<Vec<Station>> {
     Ok(Vec::new())
 }
 
-async fn fetch_m3u_url(url: &str) -> anyhow::Result<Vec<Station>> {
+async fn fetch_stations_url(url: &str) -> anyhow::Result<Vec<Station>> {
     let response = reqwest::get(url).await?;
     if !response.status().is_success() {
         anyhow::bail!("HTTP {}", response.status());
     }
     let text = response.text().await?;
-    parse_m3u_from_str(&text)
+    // Pick parser by URL extension: stations.toml over HTTP or classic m3u.
+    if url.split('?').next().unwrap_or(url).ends_with(".toml") {
+        radio_proto::state::parse_stations_from_toml_str(&text)
+    } else {
+        parse_m3u_from_str(&text)
+    }
 }
 
 // ── VU meter / PCM capture ────────────────────────────────────────────────────

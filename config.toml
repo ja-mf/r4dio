@@ -41,7 +41,7 @@ demuxer_readahead_secs = 4
 stations_toml = "~/.config/radio/stations.toml"
 
 # URL for an M3U playlist (fallback if stations_toml doesn't exist)
-m3u_url = "https://raw.githubusercontent.com/ja-mf/radio-curation/refs/heads/main/jamf_radios.m3u"
+m3u_url = "https://raw.githubusercontent.com/ja-mf/r4dio/refs/heads/main/stations.toml"
 
 [paths]
 # Directory for NTS show downloads

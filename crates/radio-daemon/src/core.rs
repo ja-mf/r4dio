@@ -916,7 +916,12 @@ async fn fetch_m3u_url(url: &str) -> anyhow::Result<Vec<Station>> {
         anyhow::bail!("HTTP {}", response.status());
     }
     let text = response.text().await?;
-    parse_m3u_from_str(&text)
+    // Pick parser by URL extension: stations.toml over HTTP or classic m3u.
+    if url.split('?').next().unwrap_or(url).ends_with(".toml") {
+        radio_proto::state::parse_stations_from_toml_str(&text)
+    } else {
+        parse_m3u_from_str(&text)
+    }
 }
 
 // ── VU meter helpers ──────────────────────────────────────────────────────────
