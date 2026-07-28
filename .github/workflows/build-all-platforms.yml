@@ -145,7 +145,7 @@ jobs:
           default_volume = 0.5
           [stations]
           stations_toml = "data/stations.toml"
-          m3u_url = "https://raw.githubusercontent.com/ja-mf/radio-curation/refs/heads/main/jamf_radios.m3u"
+          m3u_url = "https://raw.githubusercontent.com/ja-mf/r4dio/refs/heads/main/stations.toml"
           EOF
           cat > "$DIST/README.txt" << 'EOF'
           r4dio (Windows x86_64)
@@ -257,7 +257,7 @@ jobs:
           default_volume = 0.5
           [stations]
           stations_toml = "stations.toml"
-          m3u_url = "https://raw.githubusercontent.com/ja-mf/radio-curation/refs/heads/main/jamf_radios.m3u"
+          m3u_url = "https://raw.githubusercontent.com/ja-mf/r4dio/refs/heads/main/stations.toml"
           EOF
           cat > dist/r4dio-linux-x86_64/README.txt << 'EOF'
           r4dio (Linux x86_64)
@@ -336,6 +336,7 @@ jobs:
           mkdir -p "$CLI"
           cp dist/r4dio-macos-x86_64/r4dio "$CLI/r4dio"
           cp dist/r4dio-macos-x86_64/vibra "$CLI/vibra"
+          cp stations.toml "$CLI/stations.toml"
           cp LICENSE "$CLI/LICENSE"
           chmod +x "$CLI/r4dio" "$CLI/vibra"
           tar czf "$CLI.tar.gz" -C dist "r4dio-macos-x86_64-cli"
@@ -541,6 +542,7 @@ jobs:
           mkdir -p "$CLI"
           cp dist/r4dio-macos-arm64/r4dio "$CLI/r4dio"
           cp dist/r4dio-macos-arm64/vibra "$CLI/vibra"
+          cp stations.toml "$CLI/stations.toml"
           cp LICENSE "$CLI/LICENSE"
           chmod +x "$CLI/r4dio" "$CLI/vibra"
           tar czf "$CLI.tar.gz" -C dist "r4dio-macos-arm64-cli"

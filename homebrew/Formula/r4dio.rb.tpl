@@ -19,9 +19,10 @@ class R4dio < Formula
   end
 
   def install
-    # vibra lives next to the resolved r4dio binary in libexec so r4dio's
-    # beside-the-exe discovery finds it (song recognition keeps working).
-    libexec.install "r4dio", "vibra", "LICENSE"
+    # vibra and stations.toml live next to the resolved r4dio binary in
+    # libexec so r4dio's beside-the-exe discovery finds them (song
+    # recognition and the bundled station list keep working).
+    libexec.install "r4dio", "vibra", "stations.toml", "LICENSE"
     bin.install_symlink libexec/"r4dio"
   end
 
